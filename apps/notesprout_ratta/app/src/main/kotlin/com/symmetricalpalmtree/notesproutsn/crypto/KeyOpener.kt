@@ -33,14 +33,10 @@ object KeyOpener {
      *  [SoilLockedException] if the file is missing/empty — this path never creates. */
     fun roomFactoryFor(context: Context, fileId: String, file: File, passphrase: String): SupportSQLiteOpenHelper.Factory {
         SoilCrypto.requireExisting(file)
-        val cached = KeyMaterial.peekOrLoad(context, fileId)
+        val cached = KeyMaterial.peekVerified(context, fileId, file)
         if (cached != null) {
-            if (SoilCrypto.verifyRawKey(file, cached)) {
-                Slog.d(TAG) { "raw-key open: $fileId" }
-                return SoilCrypto.roomFactoryRawKey(cached)
-            }
-            Slog.d(TAG) { "cached raw key stale for $fileId — invalidating" }
-            KeyMaterial.invalidate(context, fileId)
+            Slog.d(TAG) { "raw-key open: $fileId" }
+            return SoilCrypto.roomFactoryRawKey(cached)
         }
         warm(context, fileId, file, passphrase)
         Slog.d(TAG) { "passphrase open (cold; warming raw key): $fileId" }
@@ -60,11 +56,7 @@ object KeyOpener {
             is KeyResolver.Resolved.Passphrases -> {
                 val candidates = resolved.candidates
                 if (candidates.size == 1) return roomFactoryFor(context, fileId, file, candidates[0])
-                val cached = KeyMaterial.peekOrLoad(context, fileId)
-                if (cached != null) {
-                    if (SoilCrypto.verifyRawKey(file, cached)) return SoilCrypto.roomFactoryRawKey(cached)
-                    KeyMaterial.invalidate(context, fileId)
-                }
+                KeyMaterial.peekVerified(context, fileId, file)?.let { return SoilCrypto.roomFactoryRawKey(it) }
                 val fitting = candidates.firstOrNull { SoilCrypto.verifyPassphrase(file, it) }
                     ?: throw SoilLockedException("no candidate key opens $fileId")
                 warm(context, fileId, file, fitting)
@@ -89,10 +81,16 @@ object KeyOpener {
     /** Derive + cache [file]'s raw key in the background. No-op if cached. Never throws. */
     fun warm(context: Context, fileId: String, file: File, passphrase: String) {
         val app = context.applicationContext
+        // The generation at queue time: a rekey that lands while this waits its turn (the queue is
+        // serial and a derive is ~9 s) must not have its invalidate undone by a late store.
+        val gen = KeyMaterial.generation(fileId)
         warmScope.launch {
             val t0 = android.os.SystemClock.elapsedRealtime()
-            runCatching { KeyMaterial.rawKey(app, fileId, file, passphrase) }
-                .onSuccess { Slog.d(TAG) { "warmed $fileId in ${android.os.SystemClock.elapsedRealtime() - t0} ms" } }
+            runCatching { KeyMaterial.rawKey(app, fileId, file, passphrase, ifGeneration = gen) }
+                .onSuccess {
+                    val kept = KeyMaterial.generation(fileId) == gen
+                    Slog.d(TAG) { "warmed $fileId in ${android.os.SystemClock.elapsedRealtime() - t0} ms${if (kept) "" else " — discarded, the key was dropped meanwhile"}" }
+                }
                 .onFailure { Slog.d(TAG) { "warm failed for $fileId: ${it.message}" } }
         }
     }

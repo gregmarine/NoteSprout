@@ -13,7 +13,9 @@ import androidx.lifecycle.lifecycleScope
 import com.symmetricalpalmtree.notesproutsn.R
 import com.symmetricalpalmtree.notesproutsn.core.Dialogs
 import com.symmetricalpalmtree.notesproutsn.core.Slog
+import com.symmetricalpalmtree.notesproutsn.crypto.KeyScope
 import com.symmetricalpalmtree.notesproutsn.crypto.KeySession
+import com.symmetricalpalmtree.notesproutsn.crypto.NotebookPassphrasePrompt
 import com.symmetricalpalmtree.notesproutsn.crypto.SoilCrypto
 import com.symmetricalpalmtree.notesproutsn.crypto.SoilFileKind
 import com.symmetricalpalmtree.notesproutsn.data.extensionStoreFile
@@ -68,6 +70,9 @@ import java.io.File
  *    the on-device proof of `SoilRekey`: global → throwaway → global with `integrity_check` and row
  *    counts before/between/after, and a hand-made "death between the two renames" that the next
  *    launch's `recoverGarden` must put right (the process is killed on purpose, like Forget).
+ *  - **Break keying** ([RekeyProbe.breakKeying], arc 26 / U6) — re-key one notebook to
+ *    `RekeyProbe.BROKEN_KEY` while the index keeps its scope: the next open fails on the key and
+ *    `NotebookRecovery` runs (og's precedent — never a release entry point).
  *  - **WEBP encoder measurement** ([WebpProbe]) — lossless vs lossy-q100 on this device's own page
  *    size, for the open question in `BuiltInTemplates.toWebp`. Skia's encoders are the subject, so
  *    no host tool can answer it; run it on every device tier before changing the format.
@@ -99,6 +104,7 @@ object DebugMenu {
             "WEBP encoder measurement",
             "Rekey one notebook round-trip (debug)",
             "Break a rekey commit (debug)",
+            "Break keying (debug)",
         )
         val actions = listOf<() -> Unit>(
             { storeSelfTest(activity) },
@@ -107,6 +113,7 @@ object DebugMenu {
             { webpProbe(activity) },
             { pickNotebook(activity, "Rekey round-trip") { id -> rekeyRoundTrip(activity, id) } },
             { pickNotebook(activity, "Break a rekey commit") { id -> breakRekeyCommit(activity, id) } },
+            { pickNotebook(activity, "Break keying") { id -> breakKeying(activity, id) } },
         )
         Dialogs.style(
             AlertDialog.Builder(activity)
@@ -162,6 +169,35 @@ object DebugMenu {
                     .setNegativeButton("Close", null)
                     .create()
             ).show()
+        }
+    }
+
+    /** Arc 26 / U6 — re-key one notebook to [RekeyProbe.BROKEN_KEY] behind the index's back so the
+     *  next open exercises `NotebookRecovery`. A `NOTEBOOK`-scope notebook's current passphrase is
+     *  prompted for (the real prompt); a `GLOBAL` one's is the session's. */
+    private fun breakKeying(activity: AppCompatActivity, notebookId: String) {
+        activity.lifecycleScope.launch {
+            val row = withContext(Dispatchers.IO) { SnIndex.dao().summaryById(notebookId) }
+            val scope = KeyScope.of(row?.keyScope)
+            val current = when (scope) {
+                KeyScope.GLOBAL -> KeySession.get()
+                KeyScope.NOTEBOOK -> NotebookPassphrasePrompt.ask(activity, notebookId, row?.name ?: notebookId)
+            }
+            if (current == null) { Dialogs.problem(activity, "Break keying", "No key to re-key from."); return@launch }
+            val progress = Dialogs.style(
+                AlertDialog.Builder(activity)
+                    .setTitle("Break keying")
+                    .setMessage("Re-keying to \"${RekeyProbe.BROKEN_KEY}\"…")
+                    .setCancelable(false)
+                    .create()
+            ).also { it.show() }
+            val text = try {
+                RekeyProbe.breakKeying(activity, notebookId, current, scope.column)
+            } finally {
+                runCatching { progress.dismiss() }
+            }
+            Slog.d("DebugMenu") { "break keying: $text" }
+            Dialogs.problem(activity, "Break keying", text)
         }
     }
 

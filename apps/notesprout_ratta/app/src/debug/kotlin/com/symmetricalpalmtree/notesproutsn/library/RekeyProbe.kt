@@ -89,6 +89,32 @@ object RekeyProbe {
         }
     }
 
+    /** The passphrase [breakKeying] puts a file under — short and all on the Supernote keyboard's
+     *  first page, because the walk types it on-screen. A throwaway, not a secret. */
+    const val BROKEN_KEY = "brokenkey1"
+
+    /**
+     * Arc 26 / U6 — put the file under [BROKEN_KEY] while the index still says what it said: the
+     * exact state a backup restored from before a rotation (or a file re-keyed elsewhere) leaves
+     * behind, so the notebook screen's open fails on the key and `NotebookRecovery` gets to run.
+     * [current] is what the file is under now — the session's global for a `GLOBAL` notebook, the
+     * prompted passphrase for a `NOTEBOOK` one (the caller collects it). A real rekey through the
+     * one door ([SoilRekey]) so the raw key is invalidated too. Never a release entry point.
+     */
+    suspend fun breakKeying(context: Context, notebookId: String, current: String, keyScope: String): String = withContext(Dispatchers.IO) {
+        val file = soilFile(context, notebookId)
+        if (SoilOpenFiles.isOpen(file)) return@withContext "FAIL — notebook is open in this process"
+        try {
+            val t = SystemClock.elapsedRealtime()
+            SoilRekey.rekeyInPlace(context, file, notebookId, current, BROKEN_KEY, keyScope)
+            "File re-keyed to \"$BROKEN_KEY\" in ${SystemClock.elapsedRealtime() - t} ms; index scope unchanged ($keyScope). " +
+                if (keyScope == KEY_SCOPE_GLOBAL) "Open the notebook: Can't open → Try a passphrase → type it → Repair and open."
+                else "Open the notebook: the prompt asks as always — type it; no repair (the front door is the recovery for this scope)."
+        } catch (e: Exception) {
+            "FAIL — ${e.javaClass.simpleName}: ${e.message}"
+        }
+    }
+
     enum class Break { TMP_VERIFIES, TMP_GARBAGE }
 
     /** Leave the Garden as a commit that died between its two renames would. The caller kills the

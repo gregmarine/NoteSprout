@@ -43,9 +43,9 @@ object NotebookPassphrasePrompt {
 
     /** The passphrase that opens [notebookId], or null when the person cancelled (or the activity
      *  is going away). Suspends across the whole verify loop; call from the activity's scope. */
-    suspend fun ask(activity: Activity, notebookId: String, name: String): String? {
+    suspend fun ask(activity: Activity, notebookId: String, name: String, body: CharSequence? = null): String? {
         if (activity.isFinishing || activity.isDestroyed) return null
-        val typed = dialog(activity, notebookId, name) ?: return null
+        val typed = dialog(activity, notebookId, name, body) ?: return null
         accept(activity, notebookId, typed)
         return typed
     }
@@ -69,13 +69,14 @@ object NotebookPassphrasePrompt {
         KeyOpener.warm(activity, notebookId, soilFile(activity, notebookId), passphrase)
     }
 
-    /** The dialog itself; resumes with a **verified** passphrase or null. */
-    private suspend fun dialog(activity: Activity, notebookId: String, name: String): String? =
+    /** The dialog itself; resumes with a **verified** passphrase or null. [body] replaces the
+     *  "has its own passphrase" sentence — recovery (U6) asks for *a* passphrase, not its own. */
+    private suspend fun dialog(activity: Activity, notebookId: String, name: String, body: CharSequence?): String? =
         suspendCancellableCoroutine { cont ->
             val app = activity.applicationContext
             val file = soilFile(activity, notebookId)
             val view = DialogNotebookPassphraseBinding.inflate(activity.layoutInflater)
-            view.body.text = activity.getString(R.string.notebook_passphrase_body, name)
+            view.body.text = body ?: activity.getString(R.string.notebook_passphrase_body, name)
             val handler = Handler(Looper.getMainLooper())
             val scope = CoroutineScope(Dispatchers.Main + Job())
             var accepted: String? = null

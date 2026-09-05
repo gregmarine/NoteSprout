@@ -6,7 +6,7 @@ the root `CLAUDE.md` and `apps/notesprout_ratta/CLAUDE.md`. **Do not load `RATTA
 this arc** unless a standing trap needs checking; its protocol and traps are summarized at the end
 so this file is enough. `DRIVE_PLAN.md` is the shape this file copies.
 
-**Status:** wizard locked 2026-09-05 · U1 ✅ (2026-09-05) · U2 ✅ (2026-09-05) · U3 ✅ (2026-09-05) · U4 ✅ (2026-09-05) · U5 ✅ (2026-09-05) · U6 ⬜ · U7 ⬜
+**Status:** wizard locked 2026-09-05 · U1 ✅ (2026-09-05) · U2 ✅ (2026-09-05) · U3 ✅ (2026-09-05) · U4 ✅ (2026-09-05) · U5 ✅ (2026-09-05) · U6 ✅ (2026-09-05) · U7 ⬜
 
 ---
 
@@ -303,7 +303,7 @@ Encryption screen, once U1 lands — the debug item is gone) so no walk can lock
   radio's shape): *This device's key* (default) / *Its own passphrase*. (2) scope rows on the
   notebook's own bar → **no** — the library long-press sheet is the only door.
 
-### U6 ⬜ — Recovery + the raw-path audit
+### U6 ✅ — Recovery + the raw-path audit (2026-09-05)
 - `NotebookRecovery` per D5; `NotebookSession`'s key-failure classification + once-per-launch
   latch; the `peekOrLoad` audit; debug "Break keying".
 - Tests: the failure classifier, the offer's decision table (scope × which key worked), the latch.
@@ -625,3 +625,53 @@ Encryption screen, once U1 lands — the debug item is gone) so no walk can lock
   NOTEBOOK → GLOBAL row already brings it back once the person knows that key, which is the manual
   half of recovery; (3) `ImportKeying`'s pass-through log line now says "destination key".
 
+### U6 — Outcome (2026-09-05)
+- **Built (`crypto/`, Fable):** `KeyFailure` — the pure classifier (chain walked, first verdict wins:
+  `SoilLockedException` / `SQLiteDatabaseCorruptException` by name / SQLCipher's wrong-key phrases →
+  KEY; Room's schema/migration/identity wording on an `IllegalStateException` → SCHEMA, never a
+  prompt). `NotebookRecovery` — og's dialog on this app's seams: `Plan` (pure: `shouldOffer` =
+  keyed ∧ key failure ∧ not yet attempted; `silentCandidates` = global then the marker's key;
+  `decide` = GLOBAL + foreign key → REPAIR_TO_GLOBAL · NOTEBOOK → PARK_FOR_REOPEN · else REOPEN)
+  and `offer` ("Can't open <name>" / Try a passphrase · Back to library → the silent candidates
+  → `NotebookPassphrasePrompt.ask` with a recovery body, bucket = notebook id → `KeyMaterial.
+  invalidate` → "Repair this notebook?" → **`ScopeChange.toGlobal`** under a "Re-keying…" box
+  (planner note 1 honoured — never `SoilRekey` directly) / park / reopen). `NotebookSession.
+  OpenResult.Failed` carries its `cause`; the notebook screen offers **once per launch**
+  (`EXTRA_RECOVERY_ATTEMPTED` on the Intent, og's `openFixAttempted`), a RETRY re-runs
+  `openSession()` whole (keyFor → open), a decline leaves quietly with the last-open pointer cleared.
+  `NotebookPassphrasePrompt.ask` gained an optional `body`.
+- **The raw-path audit:** one helper, **`KeyMaterial.peekVerified(context, fileId, file)`** — a hit
+  verified against the file, a stale one dropped everywhere — replaces every bare `peekOrLoad` on an
+  open path: `KeyOpener` (both factories), `SelfContainedSnapshot.absorbWal`, `GlobalRotation`
+  (`opensUnderOld` + the resume candidates, which never invalidated before) and **`KeyResolver.
+  forOpen`** (a stale key now answers `NeedsPrompt`, as its doc always said, instead of an
+  `Unlocked` the opener had to refuse). `peekOrLoad` stays for "is one cached?" questions only
+  (`RekeyProbe`'s report).
+- **Walk-found race, fixed:** a warm queued *before* a rekey landed *after* the rekey's
+  invalidate and stored a key for a file that no longer existed (seen as "warmed in 0 ms" on the
+  next open, then "cached raw key stale — invalidating" and a wasted 9 s derive). `KeyMaterial.
+  generation(fileId)` (per-file counter ⊕ a `clearAll` epoch) is captured by `KeyOpener.warm` at
+  queue time and `rawKey(…, ifGeneration)` refuses to store when it moved (logged "discarded").
+  Known and left: a cold open that *fails* still queues a warm for the passphrase it tried (a
+  wrong-key derive, caught by verify-first on the next open) — harmless, one derive.
+- **Debug (`.dev` only):** *Break keying (debug)* — pick a notebook → (NOTEBOOK: the real prompt for
+  its current passphrase) → `SoilRekey` to `RekeyProbe.BROKEN_KEY` = `brokenkey1` (10 chars on the
+  Supernote keyboard's first page — the walk types it) with the index scope untouched.
+- **Tests:** 1077 in `:app` (14 new — `KeyFailureTest` incl. the chain order and a cause cycle,
+  `NotebookRecoveryTest` over `Plan`).
+- **Walk (Nomad, Fable by hand + adb; throwaway `20260905_142626`, key confirmed `walkpass1` at
+  Reveal first):** Break keying (GLOBAL, 4.1 s) → open → **Can't open** dialog → Back to library
+  (quiet, library) → open → Try a passphrase → prompt with the recovery body → `wrongpass` ×3 →
+  **"Too many attempts. Try again in 27 s."**, entry row GONE → lifted → `brokenkey1` → **Repair
+  this notebook?** → Repair and open → "Re-keying…" → opened with its content. Then sheet → Change
+  scope → `notebook1` → lock card → Break keying (prompt verified `notebook1`) → open → the ordinary
+  prompt → `brokenkey1` → **opened, no repair** (the front door IS the recovery for NOTEBOOK scope —
+  the dialog cannot be reached there, since the prompt verifies before the open). Sheet → Change
+  scope → `brokenkey1` → plain card → opens prompt-free. Re-walked the GLOBAL leg on the
+  generation-guard build: same result. Nomad library all-GLOBAL under `walkpass1`.
+- **Planner notes for U7:** (1) `docs/encryption.md`'s failure table gets a Recovery row: the
+  notebook screen only, key failures only, once per launch; the quarantine case (a NOTEBOOK row
+  whose passphrase is an old global) is opened by the ordinary prompt and brought back by the
+  sheet's NOTEBOOK → GLOBAL row — recovery's silent global try covers it only when the index says
+  GLOBAL; (2) the standing rule for any new raw-key user is `peekVerified`, never `peekOrLoad`;
+  (3) the debug menu keeps three rekey tools (round-trip, break commit, break keying).

@@ -33,7 +33,9 @@ import com.symmetricalpalmtree.notesproutsn.core.IndexGuard
 import com.symmetricalpalmtree.notesproutsn.core.OpeningOverlay
 import com.symmetricalpalmtree.notesproutsn.core.Slog
 import com.symmetricalpalmtree.notesproutsn.core.SnClipboard
+import com.symmetricalpalmtree.notesproutsn.crypto.KeyFailure
 import com.symmetricalpalmtree.notesproutsn.crypto.KeyResolver
+import com.symmetricalpalmtree.notesproutsn.crypto.NotebookRecovery
 import com.symmetricalpalmtree.notesproutsn.crypto.KeyScope
 import com.symmetricalpalmtree.notesproutsn.crypto.NotebookPassphrasePrompt
 import com.symmetricalpalmtree.notesproutsn.data.clip.ClipEnvelope
@@ -179,6 +181,12 @@ class NotebookActivity : AppCompatActivity() {
      */
     @Volatile
     private var keyScope: KeyScope = KeyScope.GLOBAL
+
+    /** Recovery offered once per notebook launch (arc 26 / U6, og's `openFixAttempted`) — on the
+     *  Intent so a recreate cannot re-offer it; a boolean, never a secret. */
+    private var recoveryAttempted: Boolean
+        get() = intent.getBooleanExtra(EXTRA_RECOVERY_ATTEMPTED, false)
+        set(value) { intent.putExtra(EXTRA_RECOVERY_ATTEMPTED, value) }
 
     /**
      * The document hooks' `alive` gate (arc 19 / M11): flipped immediately before this screen's
@@ -639,6 +647,28 @@ class NotebookActivity : AppCompatActivity() {
             val resolved = keyFor(alive) ?: return   // cancelled prompt: leave quietly
             when (val r = session.open(resolved)) {
                 is NotebookSession.OpenResult.Failed -> {
+                    // The key's fault, once per launch (arc 26 / U6): the recovery dialog — a
+                    // passphrase the person holds must always be enough. A RETRY re-runs this whole
+                    // open (the file may have been re-keyed, or a passphrase parked); the latch
+                    // makes the second pass the last, so a still-failing file never loops.
+                    if (NotebookRecovery.Plan.shouldOffer(r.keyed, KeyFailure.isKeyFailure(r.cause), recoveryAttempted)) {
+                        recoveryAttempted = true
+                        Log.w(TAG, "open failed on the key for $notebookId — offering recovery")
+                        binding.openingOverlay.root.visibility = View.GONE
+                        val outcome = NotebookRecovery.offer(this, notebookId, alive.name, keyScope)
+                        if (isFinishing || closing) return
+                        if (outcome == NotebookRecovery.Outcome.RETRY) {
+                            binding.openingOverlay.root.visibility = View.VISIBLE
+                            openSession()
+                            return
+                        }
+                        // Declined: the dialog already explained, so leave quietly — and never
+                        // restore into a notebook that would not open.
+                        Slog.d(TAG) { "recovery declined — leaving" }
+                        BrowseState(this).lastOpenNotebookId = null
+                        finish()
+                        return
+                    }
                     // A NOTEBOOK-scope open that failed *after* the prompt verified the passphrase
                     // is a real failure, not a locked file — but the reason is a crypto message, so
                     // the words the person reads are ours. Structural reasons keep their own.
@@ -3098,6 +3128,8 @@ class NotebookActivity : AppCompatActivity() {
         /** Host-internal (K4): the follow's target page, overriding the notebook's own `refId`
          *  for this open only. Applied once — see [initialPageId]. */
         const val EXTRA_INITIAL_PAGE_ID = "initialPageId"
+        /** Set on the Intent by the screen itself once recovery has been offered (U6). */
+        private const val EXTRA_RECOVERY_ATTEMPTED = "recoveryAttempted"
 
         /** Outlives the Activity so a close in flight always completes its seal. */
         private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)

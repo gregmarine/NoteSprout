@@ -1,6 +1,7 @@
 package com.symmetricalpalmtree.notesproutsn.crypto
 
 import android.content.Context
+import com.symmetricalpalmtree.notesproutsn.data.soilFile
 
 /**
  * **Which key an open should try** (arc 26 / U4, D3) — pure decision; the prompts are UI.
@@ -38,13 +39,14 @@ object KeyResolver {
         object NoKey : Resolved
     }
 
-    /** The prompt-free answer for [id]'s [scope]. Blocking on a Keystore read for `NOTEBOOK`: IO. */
+    /** The prompt-free answer for [id]'s [scope]. Blocking on a Keystore read + verify for `NOTEBOOK`: IO. */
     fun forOpen(context: Context, id: String, scope: KeyScope): Resolved = decide(
         scope = scope,
         global = PassphraseStore.getGlobalPassphrase(context),
         markerNew = PassphraseStore.getRotationMarker(context)?.newPassphrase,
         unlocked = NotebookUnlocks.has(id),
-        rawKey = if (scope == KeyScope.NOTEBOOK) KeyMaterial.peekOrLoad(context, id) else null,
+        // Verified against the file (U6's audit): a stale key answers NeedsPrompt, never Unlocked.
+        rawKey = if (scope == KeyScope.NOTEBOOK) KeyMaterial.peekVerified(context, id, soilFile(context, id)) else null,
     )
 
     /**

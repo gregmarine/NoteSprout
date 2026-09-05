@@ -167,7 +167,7 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   **Read `DRIVE_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**)
   `gradle.properties` sets `android.nonTransitiveRClass=false` — undoing it breaks every
   `:sn-screen` resource reference from `:app`.
-- **Arc 26 "Keys" is IN PROGRESS (wizard locked 2026-09-05; U1–U5 landed 2026-09-05)** — og-parity
+- **Arc 26 "Keys" is IN PROGRESS (wizard locked 2026-09-05; U1–U6 landed 2026-09-05)** — og-parity
   encryption (`PARITY_BACKLOG.md` item 1): the Encryption screen + library door, rotation, per-notebook
   scope, recovery. **Read the standalone `ENCRYPTION_PLAN.md`, not `RATTA_PLAN.md`, for it** — phases
   U1–U7, no code review, host-only, no ninth point. **U1:** `encryption/EncryptionActivity` behind
@@ -220,7 +220,15 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   toScope`; asked only after a FOREIGN unlock; `setEncryptionState` before `refreshMeta`), and
   Export's host-substituted Keep label for a NOTEBOOK source. `crypto/SetPassphraseDialog` is the one
   set-a-notebook-passphrase dialog. The notebook's own bar has no key rows. Debug *Change key scope*
-  is gone.
+  is gone. **U6 (recovery, 2026-09-05):** `crypto/KeyFailure` (pure classifier — a key failure,
+  never a schema error, earns the offer) + `crypto/NotebookRecovery` (og's "Can't open <name>" →
+  Try a passphrase: the cached global and a rotation's key silently, then the one prompt; a foreign
+  key on a GLOBAL row → "Repair and open" = `ScopeChange.toGlobal`; NOTEBOOK → parked for the
+  reopen). The notebook screen offers it **once per launch** (`EXTRA_RECOVERY_ATTEMPTED`) and a
+  RETRY re-runs the whole open. **Every raw-key user goes through `KeyMaterial.peekVerified`** (hit
+  verified against the file, stale dropped everywhere) — `peekOrLoad` is for "is one cached?" only;
+  `KeyOpener.warm` carries `KeyMaterial.generation` so a derive queued before a rekey cannot store
+  after its invalidate. Debug *Break keying* (`RekeyProbe.BROKEN_KEY`) is the walk's door.
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by

@@ -104,10 +104,12 @@ class NotebookSession(
 
     sealed class OpenResult {
         object Ok : OpenResult()
-        /** [keyed] marks the one failure the *key* could be behind — the open itself threw. The
-         *  caller substitutes its own words there (arc 26 / U4); a structural failure (missing
-         *  file, no pages) keeps [reason], which already reads as an explanation. */
-        class Failed(val reason: String, val keyed: Boolean = false) : OpenResult()
+        /** [keyed] marks the one failure the *key* could be behind — the open itself threw, and
+         *  [cause] is what it threw (arc 26 / U6: the notebook screen runs it through `KeyFailure`
+         *  before offering `NotebookRecovery`). The caller substitutes its own words there (U4); a
+         *  structural failure (missing file, no pages) keeps [reason], which already reads as an
+         *  explanation, and has no cause. */
+        class Failed(val reason: String, val keyed: Boolean = false, val cause: Throwable? = null) : OpenResult()
     }
 
     /**
@@ -128,7 +130,7 @@ class NotebookSession(
             db = SoilDatabase.open(app, notebookId, file, resolved)
         } catch (e: Exception) {
             Log.e(TAG, "open failed for $notebookId", e)
-            return@withContext OpenResult.Failed(e.message ?: "Could not open notebook", keyed = true)
+            return@withContext OpenResult.Failed(e.message ?: "Could not open notebook", keyed = true, cause = e)
         }
         writer = SoilWriter { repo.touch(notebookId) }
         store = StrokeStore(db.dao(), writer)

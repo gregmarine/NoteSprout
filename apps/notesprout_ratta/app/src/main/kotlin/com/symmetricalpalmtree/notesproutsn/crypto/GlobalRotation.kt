@@ -173,7 +173,7 @@ object GlobalRotation {
             globalNotebooks = globalIds.map { id -> id to (rows[id]?.let { maxOf(it.createdAt, it.updatedAt) } ?: 0L) },
             pendingIds = initial.pendingIds.toSet(),
             startedAt = initial.startedAt,
-            rawKeyOpens = { id -> KeyMaterial.peekOrLoad(app, id)?.let { SoilCrypto.verifyRawKey(soilFile(app, id), it) } ?: false },
+            rawKeyOpens = { id -> KeyMaterial.peekVerified(app, id, soilFile(app, id)) != null },
         )
         val stores = extensionStoreFiles(app).mapNotNull { extensionStorePackage(it.name) }
         var marker = initial.augmented(extra, stores)
@@ -273,11 +273,7 @@ object GlobalRotation {
     /** The cheap answer first: a cached raw key that still opens the file means "under the old key"
      *  with no KDF (every rekey invalidates it). Only a cache miss pays the verify. */
     private fun opensUnderOld(app: Context, file: File, fileId: String, old: String): Boolean {
-        val raw = KeyMaterial.peekOrLoad(app, fileId)
-        if (raw != null) {
-            if (SoilCrypto.verifyRawKey(file, raw)) return true
-            KeyMaterial.invalidate(app, fileId) // stale — the V4 rule
-        }
+        if (KeyMaterial.peekVerified(app, fileId, file) != null) return true // stale ones are dropped there — the V4 rule
         return SoilCrypto.verifyPassphrase(file, old)
     }
 

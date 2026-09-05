@@ -33,7 +33,7 @@ import java.io.File
  * notebook screen.
  *
  * When there *is* a WAL, the copy is opened with the file's cached raw key
- * ([KeyMaterial.peekOrLoad] — the notebook id for a `.soil`, [KeyMaterial.INDEX_FILE_ID] for the
+ * ([KeyMaterial.peekVerified] — the notebook id for a `.soil`, [KeyMaterial.INDEX_FILE_ID] for the
  * index, `ExtensionStores.fileIdFor(pkg)` for a store), and only falls back to the session
  * passphrase when no key has been derived on this device yet. Neither ever leaves this process,
  * and neither is logged: the lines here carry byte counts and booleans. A file no key on this
@@ -114,17 +114,11 @@ object SelfContainedSnapshot {
     private class LockedFile : Exception("no key this process holds fits this file")
 
     private fun absorbWal(context: Context, snap: File, fileId: String) {
-        // KeyOpener's recipe, not a bare peek (the V4 walk's finding): a cached key can be STALE
-        // for a file this process has not opened — a store wiped and re-minted since the key was
-        // derived keeps the old key in the Keystore until something opens it through KeyOpener.
-        // A stale key opens as "file is not a database", so verify first, drop a key that does not
-        // fit, and take the passphrase (one KDF) for this copy.
-        val cached = KeyMaterial.peekOrLoad(context, fileId)
-        val rawKey = cached?.takeIf { SoilCrypto.verifyRawKey(snap, it) }
-        if (cached != null && rawKey == null) {
-            Slog.d(TAG) { "cached raw key stale for this file — invalidating" }
-            KeyMaterial.invalidate(context, fileId)
-        }
+        // Never a bare peek (the V4 walk's finding, now KeyMaterial.peekVerified — U6's audit): a
+        // cached key can be STALE for a file this process has not opened, and a stale key opens as
+        // "file is not a database". Verified against the copy, dropped if it does not fit, and the
+        // passphrase (one KDF) taken for this copy.
+        val rawKey = KeyMaterial.peekVerified(context, fileId, snap)
         val db = if (rawKey != null) {
             SoilCrypto.openRawKey(snap, rawKey)
         } else {

@@ -553,6 +553,17 @@
     <!-- Notebook -->
     <string name="notebook_opening">Opening…</string>
     <string name="notebook_open_failed_title">Couldn\'t open notebook</string>
+    <!-- Recovery (arc 26 / U6) — og's wording, "global passphrase" read as "this device's key" -->
+    <string name="notebook_recovery_title">Can\'t open %1$s</string>
+    <string name="notebook_recovery_body">The saved key didn\'t unlock this notebook. This usually means the file was restored from a backup or encrypted with a different passphrase.\n\nIf you know a passphrase for it, you can try it now. The notebook itself is intact.</string>
+    <string name="notebook_recovery_try">Try a passphrase</string>
+    <string name="notebook_recovery_back">Back to library</string>
+    <string name="notebook_recovery_prompt_body">Enter a passphrase to unlock "%1$s".</string>
+    <string name="notebook_recovery_repair_title">Repair this notebook?</string>
+    <string name="notebook_recovery_repair_body">That passphrase worked, but it isn\'t this device\'s key. Re-key this notebook to this device\'s key so it opens normally from now on.\n\nThe notebook\'s contents are not changed.</string>
+    <string name="notebook_recovery_repair_positive">Repair and open</string>
+    <string name="notebook_recovery_repair_failed_title">Repair failed</string>
+    <string name="notebook_recovery_repair_failed_body">The notebook could not be re-keyed. It is unchanged.</string>
     <string name="notebook_open_locked_body">That passphrase was accepted, but this notebook still wouldn\'t open. Nothing was changed.</string>
 
     <!-- Notebook pages -->
