@@ -14,7 +14,11 @@ import com.symmetricalpalmtree.notesproutsn.core.Dialogs
 import com.symmetricalpalmtree.notesproutsn.core.IndexGuard
 import com.symmetricalpalmtree.notesproutsn.core.Slog
 import com.symmetricalpalmtree.notesproutsn.core.TopGuard
+import com.symmetricalpalmtree.notesproutsn.crypto.KeyScope
 import com.symmetricalpalmtree.notesproutsn.crypto.KeySession
+import com.symmetricalpalmtree.notesproutsn.crypto.PassphraseCache
+import com.symmetricalpalmtree.notesproutsn.crypto.ScopeChange
+import com.symmetricalpalmtree.notesproutsn.crypto.SetPassphraseDialog
 import com.symmetricalpalmtree.notesproutsn.data.index.IndexRepository
 import com.symmetricalpalmtree.notesproutsn.data.index.ObjectType
 import com.symmetricalpalmtree.notesproutsn.data.soil.NotebookMeta
@@ -47,6 +51,11 @@ import java.util.UUID
  * that opens straight into the document editor. It is a radio and not a second screen because the
  * choice is one bit and the rest of the screen is identical for both: the paper browser stays live
  * either way, since a text document's pages underneath are still pages.
+ *
+ * **The key is a two-way radio too** (arc 26 / U5, D4): *This device's key*, the default, and *Its
+ * own passphrase* — which asks for one before anything is written, creates the `.soil` under it and
+ * records `NOTEBOOK` scope in both the index row and `notebook_meta`. Cancelling that dialog is a
+ * create that did not happen.
  *
  * **The paper is picked from the template library itself** (arc 13 / G3), not from four radios: the
  * whole [TemplateBrowser] lives under this screen's header, with the same folders, the same
@@ -86,6 +95,13 @@ class NewNotebookActivity : AppCompatActivity() {
      *  handwriting-first app, and a text document is the deliberate exception. It changes only what
      *  the create writes: the paper below is picked, and written, exactly the same way either way. */
     private var textDocument = false
+
+    /** The key the user has chosen (arc 26 / U5, D4). **This device's key is the default** — a
+     *  notebook with its own passphrase asks for it on every open, which is a thing to opt into,
+     *  never to be given by a screen the user was not reading. Like [textDocument] it changes only
+     *  what the create writes: the key the file is made under, the scope in both records, and
+     *  whether a cover is painted at all. */
+    private var ownPassphrase = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -150,12 +166,21 @@ class NewNotebookActivity : AppCompatActivity() {
         binding.typeGroup.setOnCheckedChangeListener { _, checkedId ->
             textDocument = checkedId == R.id.typeText
         }
+
+        // The key choice survives the same death as the type, for the same reason, and is restored
+        // the same way: restore, check, and only THEN listen.
+        ownPassphrase = savedInstanceState?.getBoolean(KEY_OWN_PASSPHRASE, false) ?: false
+        binding.scopeGroup.check(if (ownPassphrase) R.id.scopeOwn else R.id.scopeDevice)
+        binding.scopeGroup.setOnCheckedChangeListener { _, checkedId ->
+            ownPassphrase = checkedId == R.id.scopeOwn
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString(KEY_PICK, pick.encode())
         outState.putBoolean(KEY_TEXT_DOCUMENT, textDocument)
+        outState.putBoolean(KEY_OWN_PASSPHRASE, ownPassphrase)
         if (::browser.isInitialized) browser.saveState(outState)
     }
 
@@ -187,6 +212,7 @@ class NewNotebookActivity : AppCompatActivity() {
         // Read once, here, alongside the paper: everything after this point is the create, and it
         // must be the create the user was looking at when they tapped.
         val asText = textDocument
+        val ownKey = ownPassphrase
         setCreating(true)
 
         lifecycleScope.launch {
@@ -196,6 +222,22 @@ class NewNotebookActivity : AppCompatActivity() {
                 // and a create that silently didn't happen reads as a broken app.
                 Dialogs.problem(this@NewNotebookActivity, R.string.name_problem_title, getString(R.string.new_notebook_duplicate, name))
                 return@launch
+            }
+            // The passphrase is collected BEFORE anything is written (D4): a notebook must never
+            // exist under a key nobody has confirmed, and Cancel here is a create that did not
+            // happen — the form is exactly as it was. The name is settled by now, so the dialog can
+            // name the notebook it is asking about.
+            var typed: String? = null
+            if (ownKey) {
+                typed = SetPassphraseDialog.ask(
+                    this@NewNotebookActivity,
+                    title = getString(R.string.set_passphrase_title, name),
+                    helperText = getString(R.string.set_passphrase_helper),
+                )
+                if (typed == null) {
+                    setCreating(false)
+                    return@launch
+                }
             }
             // The pixels are resolved before the file is touched. A template deleted from another
             // screen while this one was open must stop the create with an explanation, not leave a
@@ -210,7 +252,7 @@ class NewNotebookActivity : AppCompatActivity() {
                 )
                 return@launch
             }
-            val result = runCatching { withContext(Dispatchers.IO) { createNotebook(name, chosen, paper, asText) } }
+            val result = runCatching { withContext(Dispatchers.IO) { createNotebook(name, chosen, paper, asText, typed) } }
             result.onSuccess { id ->
                 // Baking page 1 is an apply, and an apply is the only thing that makes paper
                 // recent (arc 13 / G5). After the create, never before: a notebook that failed to
@@ -259,11 +301,16 @@ class NewNotebookActivity : AppCompatActivity() {
         pick: TemplatePick,
         paper: PaperSource,
         asText: Boolean,
+        typed: String?,
     ): String {
         val notebookId = UUID.randomUUID().toString()
         // The passphrase lives only in process RAM (KeySession) — never an extra, never the index.
         // Absent means this process never went through bootstrap; bounce the way IndexGuard does.
-        val passphrase = KeySession.get() ?: error("no key session")
+        val global = KeySession.get() ?: error("no key session")
+        // og's downgrade rule through the one function that owns it: a passphrase that IS the
+        // device's key makes a GLOBAL notebook, not a notebook-scoped one that never prompts.
+        val scope = if (typed == null) KeyScope.GLOBAL else ScopeChange.scopeFor(typed, global)
+        val passphrase = typed ?: global
         val file = soilFile(this, notebookId)
         val now = System.currentTimeMillis()
 
@@ -316,6 +363,8 @@ class NewNotebookActivity : AppCompatActivity() {
                 appVersionCode = packageManager.getPackageInfo(packageName, 0).longVersionCode.toInt(),
                 // The mirror of the index bit, so the file stays self-describing on import.
                 textDocument = asText,
+                // The mirror of the index column, so a notebook carries its own key model on import.
+                keyScope = scope.column,
             ))
             db.seal(file)
         } catch (e: Exception) {
@@ -327,14 +376,22 @@ class NewNotebookActivity : AppCompatActivity() {
 
         repo.createNotebook(
             notebookId, name, parentFolderId, TemplatePicks.birthKind(pick), pageCount = 1,
-            textDocument = asText, now = now,
+            textDocument = asText, keyScope = scope.column, now = now,
         )
 
         // A text document's cover is its text, so an empty one's cover is an empty page — rendered
         // here, at the create, rather than left to the first close ([TextDocumentCreate] does the
         // same on import, for the same reason): the notebook may not be opened for weeks, and a
         // coverless card among text-document cards reads as a card that failed. Never throws.
-        if (asText) TextCover.render(repo, notebookId, "")
+        //
+        // A NOTEBOOK-scope notebook has no cover anywhere (decision 11): the card is a lock, and
+        // painting one here would put the only picture of its content in the unencrypted index.
+        if (asText && scope == KeyScope.GLOBAL) TextCover.render(repo, notebookId, "")
+
+        // The hand-off for the open that is about to follow (decision 12) — parked after the index
+        // row, taken only by the notebook screen's own open, gone in 60 s either way. Nobody is
+        // asked for the passphrase they typed a moment ago; every open after that asks.
+        if (scope == KeyScope.NOTEBOOK) PassphraseCache.storeOnce(notebookId, passphrase)
         return notebookId
     }
 
@@ -342,6 +399,7 @@ class NewNotebookActivity : AppCompatActivity() {
         private const val TAG = "NewNotebook"
         private const val KEY_PICK = "templatePick"
         private const val KEY_TEXT_DOCUMENT = "textDocument"
+        private const val KEY_OWN_PASSPHRASE = "ownPassphrase"
         const val EXTRA_PARENT_FOLDER_ID = "parentFolderId"
         const val EXTRA_NOTEBOOK_ID = "notebookId"
         const val EXTRA_NOTEBOOK_NAME = "notebookName"

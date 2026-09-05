@@ -284,6 +284,27 @@ object ExportKeying {
         }
     }
 
+    /**
+     * Restamp a finished, cold file's own `notebook_meta` to `encrypted: true` / [keyScope] under
+     * [passphrase] (arc 26 / U5) — the pass-through import's honesty stamp: *Keep this passphrase*
+     * lands a file whose bytes never went through a transform, so nothing restamped it. Best
+     * effort like [restampMeta]; IO; the file is opened and closed here, never left open.
+     */
+    suspend fun restampMetaScope(file: File, passphrase: String, keyScope: String) =
+        withContext(Dispatchers.IO) {
+            val db = try {
+                openArtifact(file, passphrase)
+            } catch (e: Exception) {
+                Log.w(TAG, "scope restamp open skipped: ${e.javaClass.simpleName}")
+                return@withContext
+            }
+            try {
+                restampMeta(db, schema = "main", encrypted = true, keyScope = keyScope)
+            } finally {
+                runCatching { db.close() }
+            }
+        }
+
     /** The pure half of [restampMeta], pinned by test: the same row with only the encryption
      *  fields changed. Null when the row will not parse — restamping is then skipped, never
      *  guessed. */

@@ -45,6 +45,7 @@ import com.symmetricalpalmtree.notesproutsn.extension.ExporterContract
 import com.symmetricalpalmtree.notesproutsn.extension.ExporterInfo
 import com.symmetricalpalmtree.notesproutsn.extension.ExportSpec
 import com.symmetricalpalmtree.notesproutsn.extension.ExtensionRegistry
+import com.symmetricalpalmtree.notesproutsn.extension.OptionDescriptor
 import com.symmetricalpalmtree.notesproutsn.extension.ProviderRef
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -571,16 +572,17 @@ class ExportActivity : AppCompatActivity() {
             if (documentSource && d.id == ExporterContract.OPTION_PAGE_TEMPLATE) continue
             when {
                 ExportOptions.isFixed(d) -> {
+                    val value = values[d.id] ?: d.defaultValue
                     binding.options.addView(panel.caption(d.label))
                     binding.options.addView(
-                        panel.value(ExportOptions.choiceLabel(d, values[d.id] ?: d.defaultValue))
+                        panel.value(optionLabel(d, value, ExportOptions.choiceLabel(d, value)))
                     )
                 }
                 d.kind == ExporterContract.KIND_SINGLE_CHOICE -> {
                     binding.options.addView(panel.caption(d.label))
                     d.choiceIds.forEachIndexed { i, choiceId ->
                         binding.options.addView(
-                            panel.choice(d.choiceLabels[i], values[d.id] == choiceId) {
+                            panel.choice(optionLabel(d, choiceId, d.choiceLabels[i]), values[d.id] == choiceId) {
                                 values[d.id] = choiceId
                                 render()
                             }
@@ -627,6 +629,20 @@ class ExportActivity : AppCompatActivity() {
         binding.plainWarning.visibility =
             if (ExportOptions.showsPlainWarning(info, values)) View.VISIBLE else View.GONE
     }
+
+    /**
+     * The label an option's choice is drawn with — the exporter's own, except for the one place the
+     * host knows better (arc 26 / U5). *Keep encryption* is the extension's wording for "the file
+     * goes out under the key it is under here", and for a `NOTEBOOK`-scope notebook that key is the
+     * notebook's own passphrase, not this device's — so the host says which. The extension is not
+     * touched for it: it declares the choice, the host executes the keying, and the sentence is the
+     * host's to get right.
+     */
+    private fun optionLabel(d: OptionDescriptor, choiceId: String, label: String): String =
+        if (d.id == ExporterContract.OPTION_KEYING &&
+            choiceId == ExporterContract.KEYING_KEEP &&
+            sourceScope == KeyScope.NOTEBOOK
+        ) getString(R.string.export_keying_keep_notebook) else label
 
     /**
      * The Destination row (arc 25 / V3), rebuilt with the rest of the panel.

@@ -259,6 +259,13 @@ no folder would ever look empty again once a card had rendered.
   place and **nothing else**: the index holds no cover for it (`setEncryptionState` nulls the blob,
   the seal never captures one), so the grid never fetches a thumbnail. `CardItem.Notebook.locked`.
   Tapping it opens the notebook screen, which prompts (`NotebookPassphrasePrompt`) on every open.
+  **How a notebook becomes one (arc 26 / U5):** the New Notebook screen's *Key* radio row (*This
+  device's key* default / *Its own passphrase*), the sheet's *Change encryption scope…*, or an
+  import whose foreign passphrase the person chose to keep. The sheet's *Change passphrase…* on a
+  `GLOBAL` notebook redirects to the Encryption screen (global notebooks share the device key); on a
+  `NOTEBOOK` one it prompts the current, asks the new, re-keys. All of it is `crypto/ScopeChange`
+  over `SoilRekey` (`library/ScopeChangeFlow` is the dialogs); the notebook's own bar has no key
+  rows. Full reference at U7: `docs/encryption.md`.
 - **Text-document cover** (arc 19) → `TextCover`'s own render of the document's opening text takes
   this slot instead, never the paper placeholder above (`LibraryCards.isTextDocument(flags)`
   branches before the placeholder is ever reached); a not-yet-rendered or undecodable one falls back

@@ -10,6 +10,9 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import com.symmetricalpalmtree.notesproutsn.R
 import com.symmetricalpalmtree.notesproutsn.core.Dialogs
+import com.symmetricalpalmtree.notesproutsn.crypto.ImportChoice
+import com.symmetricalpalmtree.notesproutsn.crypto.SetPassphraseDialog
+import com.symmetricalpalmtree.notesproutsn.databinding.DialogImportKeyingBinding
 import com.symmetricalpalmtree.notesproutsn.library.NameDialog
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -157,4 +160,53 @@ object ImportDialogs {
             dialog.dismiss()
         }
     }
+
+    /**
+     * **The keying chooser** (arc 26 / U5, decision 3) — asked only for a file a *foreign*
+     * passphrase opened: keep that passphrase (the notebook gets its own), take this device's key,
+     * or set a new notebook passphrase. og's three answers in og's order.
+     *
+     * Three answers do not fit an AlertDialog's button bar, so they are three rows in the body and
+     * Cancel stays the negative button — where every other question here puts it. Dismissal is
+     * backing out, exactly as above: nothing is written, and the import ends with the cache.
+     */
+    suspend fun keying(activity: Activity): ImportChoice.Choice? = suspendCancellableCoroutine { cont ->
+        if (activity.isFinishing || activity.isDestroyed) { cont.resume(null); return@suspendCancellableCoroutine }
+        val view = DialogImportKeyingBinding.inflate(activity.layoutInflater)
+        var answer: ImportChoice.Choice? = null
+        val dialog = Dialogs.style(
+            AlertDialog.Builder(activity)
+                .setTitle(R.string.import_keying_choose_title)
+                .setView(view.root)
+                .setNegativeButton(R.string.cancel, null)
+                .create()
+        )
+        dialog.setOnDismissListener { if (cont.isActive) cont.resume(answer) }
+        cont.invokeOnCancellation { runCatching { dialog.dismiss() } }
+        fun answerWith(choice: ImportChoice.Choice) {
+            answer = choice
+            dialog.dismiss()
+        }
+        view.choiceKeep.setOnClickListener { answerWith(ImportChoice.Choice.KEEP) }
+        view.choiceDevice.setOnClickListener { answerWith(ImportChoice.Choice.DEVICE_KEY) }
+        view.choiceNew.setOnClickListener { answerWith(ImportChoice.Choice.NEW_PASSPHRASE) }
+        dialog.show()
+    }
+
+    /**
+     * The new-passphrase dialog behind *Set a new notebook passphrase* — the app's one
+     * set-a-notebook-passphrase dialog ([SetPassphraseDialog]), titled with the file being imported
+     * and carrying og's sentence about being asked for it on every open. No `current` is passed:
+     * choosing this device's key here is a legal answer, and [ImportChoice] answers it with the
+     * downgrade rule (the notebook stays `GLOBAL`) rather than a refusal.
+     *
+     * Null = the person backed out, which backs the whole import out like every other cancelled
+     * question. The passphrase is returned and nothing else — never logged, never in an Intent.
+     */
+    suspend fun newNotebookPassphrase(activity: Activity, name: String): String? =
+        SetPassphraseDialog.ask(
+            activity,
+            title = activity.getString(R.string.set_passphrase_title, name),
+            helperText = activity.getString(R.string.set_passphrase_helper),
+        )
 }

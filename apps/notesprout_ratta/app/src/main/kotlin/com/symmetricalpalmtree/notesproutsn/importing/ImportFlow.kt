@@ -18,8 +18,11 @@ import com.symmetricalpalmtree.notesproutsn.cloud.CloudBrowserDialog
 import com.symmetricalpalmtree.notesproutsn.core.Dialogs
 import com.symmetricalpalmtree.notesproutsn.core.Slog
 import com.symmetricalpalmtree.notesproutsn.crypto.AttemptLimiter
+import com.symmetricalpalmtree.notesproutsn.crypto.ImportChoice
 import com.symmetricalpalmtree.notesproutsn.crypto.ImportKeying
+import com.symmetricalpalmtree.notesproutsn.crypto.KeyScope
 import com.symmetricalpalmtree.notesproutsn.crypto.KeySession
+import com.symmetricalpalmtree.notesproutsn.crypto.PassphraseCache
 import com.symmetricalpalmtree.notesproutsn.crypto.SoilCrypto
 import com.symmetricalpalmtree.notesproutsn.crypto.SoilFileKind
 import com.symmetricalpalmtree.notesproutsn.data.backup.BackupStore
@@ -73,7 +76,7 @@ import java.util.UUID
  *     providers mislabel a `.soil` routinely); their declared *extensions* are what actually choose
  *     one ([ImporterMatch]).
  *  2. **Deliver into the cache.** `cacheDir/import/` is wiped per import and is the only place
- *     anything happens until step 7 — the Garden and the index cannot be harmed by a failure before
+ *     anything happens until step 8 — the Garden and the index cannot be harmed by a failure before
  *     then, by construction rather than by care.
  *  2a. **Fetch, for a cloud source** (arc 25 / V5). The importer is matched **before** anything is
  *     downloaded — a file no importer accepts must cost no bytes — and the provider then streams
@@ -90,13 +93,22 @@ import java.util.UUID
  *     header; an encrypted file is tried against this device's key **first** (a same-device Keep
  *     export just opens), and only a foreign one raises the passphrase prompt — rate-limited on its
  *     own [AttemptLimiter] bucket, looping in place, never logging what was typed.
- *  4. **Re-key to this device, always** ([ImportKeying]). SN opens files under one key; an import
- *     that kept a foreign one would be a notebook the library could not open tomorrow.
- *  5. **Read the manifest, and trust none of it** ([SafeImportId]). No `notebook` table is a
+ *  4. **Ask which key it lands under, but only when there is a question** (arc 26 / U5,
+ *     decision 3). A plaintext file has nothing to keep and a file this device's key already opened
+ *     is a same-device export coming home: both land under the device key with no question, exactly
+ *     as arc 16 did. A file a **foreign** passphrase opened raises og's chooser — keep that
+ *     passphrase (the notebook gets its own, and is prompted for on every open), take this device's
+ *     key, or set a new notebook passphrase — and [ImportChoice] turns the answer into the
+ *     passphrase the file is keyed to and the scope the index records. Cancelling it backs the
+ *     import out like any other question.
+ *  5. **Key it to that answer** ([ImportKeying.toScope]). SN opens a file under exactly one key,
+ *     and from here on *that* passphrase — never the session's — is the one this pipeline reads
+ *     the file with.
+ *  6. **Read the manifest, and trust none of it** ([SafeImportId]). No `notebook` table is a
  *     rejection; no `notebook_meta` is not — that file imports under the picked name.
- *  6. **Ask the three questions**: id collision, placement, name conflict. Any of them can be
+ *  7. **Ask the three questions**: id collision, placement, name conflict. Any of them can be
  *     cancelled, and cancelling costs nothing but the cache.
- *  7. **Remap, write, register — in that order.** The in-file re-identification runs in the cache
+ *  8. **Remap, write, register — in that order.** The in-file re-identification runs in the cache
  *     (without it a fresh-id import opens empty — the arc-15 / E3 finding); the Garden write is a
  *     staged rename; and the index row lands **last**, so a crash mid-import leaves the library
  *     exactly as it was.
@@ -586,12 +598,22 @@ class ImportFlow(
             return
         }
 
-        // 2 · Probe, unlock, re-key to this device's key. Every accepted import ends up under it.
+        // 2 · Probe, unlock, choose the key, re-key. Every accepted import ends up under a key this
+        //     device can produce: the session's, or the notebook's own passphrase the person just
+        //     typed (arc 26 / U5).
         val global = KeySession.get() ?: throw NotebookImport.ImportProblem(NotebookImport.Problem.NO_KEY)
         val opening = unlock(incoming, global) ?: return
+        // The chooser (arc 26 / U5, decision 3) — only for a file a FOREIGN passphrase opened.
+        // Plaintext has nothing to keep and a same-device export is coming home: both land under
+        // this device's key with no question, exactly as arc 16 did.
+        val outcome = if (ImportChoice.needsChooser(opening, global)) {
+            chooseKeying(opening, global, displayName) ?: return
+        } else {
+            ImportChoice.withoutChooser(global)
+        }
         ImportOverlay.stage(activity, R.string.import_stage_keying)
         val keyed = try {
-            ImportKeying.toGlobal(incoming, opening, global)
+            ImportKeying.toScope(incoming, opening, outcome)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -600,7 +622,7 @@ class ImportFlow(
         }
 
         // 3 · Read what it says about itself, and trust none of it.
-        val manifest = NotebookImport.readManifest(keyed, global)
+        val manifest = NotebookImport.readManifest(keyed, outcome.passphrase)
         val name = ImportNames.notebookName(manifest.meta?.name, displayName)
 
         // 4 · The three questions — decided here, written nowhere: cancelling any of them must
@@ -616,7 +638,7 @@ class ImportFlow(
         ImportOverlay.stage(activity, R.string.import_stage_importing)
         val oldId = manifest.rawFileId
         if (oldId != null && oldId != identity.notebookId) {
-            NotebookImport.remap(keyed, global, oldId, identity.notebookId)
+            NotebookImport.remap(keyed, outcome.passphrase, oldId, identity.notebookId)
         }
         NotebookImport.placeInGarden(activity, keyed, identity.notebookId)
         var parentId = landing.parentId
@@ -654,6 +676,14 @@ class ImportFlow(
         // delays the re-copy until the next edit.
         runCatching { BackupStore().clearStamp(identity.notebookId) }
             .onFailure { Log.w(TAG, "backup stamp clear skipped: ${it.javaClass.simpleName}") }
+        // The chooser's answer, recorded on the row [importNotebookRow] just wrote as `GLOBAL`
+        // (arc 26 / U5) — and **before** the meta refresh below, which sources the scope from this
+        // row (og's meta-refresh-wipe trap). It also nulls the cover, clears both backup stamps and
+        // forgets any process unlock for the id, all of which this import wants.
+        if (outcome.scope == KeyScope.NOTEBOOK) {
+            runCatching { repo.setEncryptionState(identity.notebookId, KeyScope.NOTEBOOK) }
+                .onFailure { Log.w(TAG, "scope stamp skipped: ${it.javaClass.simpleName}") }
+        }
 
         // 6 · Best effort from here: the notebook is in the library either way.
         ImportOverlay.stage(activity, R.string.import_stage_finishing)
@@ -663,11 +693,16 @@ class ImportFlow(
                 notebookId = identity.notebookId,
                 name = naming.name,
                 folderPath = repo.ancestry(parentId),
-                passphrase = global,
+                passphrase = outcome.passphrase,
                 appVersionCode = versionCode(),
                 textDocument = textDocument,
             )
         }.onFailure { Log.w(TAG, "meta refresh skipped: ${it.javaClass.simpleName}") }
+
+        // The hand-off (decision 12): the person typed this passphrase a moment ago, so the first
+        // open must not ask for it again. Single-use, RAM-only, taken by the notebook screen's own
+        // open and expiring with `PassphraseCache.TTL_MS` — every later open prompts.
+        if (outcome.parkForFirstOpen) PassphraseCache.storeOnce(identity.notebookId, outcome.passphrase)
 
         ImportOverlay.hide(activity)
         onImported()
@@ -977,6 +1012,34 @@ class ImportFlow(
             AttemptLimiter.recordFailure(activity, ATTEMPT_BUCKET)
             errorRes = R.string.import_passphrase_wrong
         }
+    }
+
+    // ── Step 3b: the keying chooser (arc 26 / U5, decision 3) ────────────────
+
+    /**
+     * What key the imported notebook ends up under, asked **only** when a foreign passphrase opened
+     * the file: the three answers are og's, and [ImportChoice] decides what each one means — the
+     * downgrade rule (a typed passphrase that *is* this device's key leaves the notebook `GLOBAL`)
+     * included. *Set a new notebook passphrase* collects it here; cancelling either dialog backs the
+     * whole import out, exactly as cancelling any other question does, and nothing is written.
+     *
+     * Neither passphrase is logged, put in a message or kept anywhere but the outcome it returns.
+     */
+    private suspend fun chooseKeying(
+        opening: ImportKeying.Opening, global: String, displayName: String,
+    ): ImportChoice.Outcome? {
+        val choice = ImportDialogs.keying(activity) ?: return null
+        val typed = if (choice == ImportChoice.Choice.NEW_PASSPHRASE) {
+            // The picked file's name: the manifest has not been read yet, and it is what the person
+            // is looking at anyway.
+            ImportDialogs.newNotebookPassphrase(activity, ImportNames.notebookName(null, displayName))
+                ?: return null
+        } else {
+            null
+        }
+        val outcome = ImportChoice.decide(opening, choice, global, typed)
+        Slog.d(TAG) { "keying chosen: $choice → ${outcome.scope}" }
+        return outcome
     }
 
     // ── Step 4: the three questions ──────────────────────────────────────────

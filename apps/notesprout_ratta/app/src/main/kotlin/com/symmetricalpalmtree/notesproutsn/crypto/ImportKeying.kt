@@ -2,7 +2,6 @@ package com.symmetricalpalmtree.notesproutsn.crypto
 
 import android.util.Log
 import com.symmetricalpalmtree.notesproutsn.core.Slog
-import com.symmetricalpalmtree.notesproutsn.data.soil.KEY_SCOPE_GLOBAL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -54,23 +53,40 @@ object ImportKeying {
      * deleting only its own unaccepted output — never the incoming copy.
      */
     suspend fun toGlobal(incoming: File, opening: Opening, globalPassphrase: String): File =
+        toScope(incoming, opening, ImportChoice.Outcome(globalPassphrase, KeyScope.GLOBAL))
+
+    /**
+     * The general form (arc 26 / U5, decision 3): return a file in the import cache that opens
+     * under [outcome]'s passphrase and describes itself as [outcome]'s scope. A file already under
+     * that passphrase passes through — **still integrity-verified, and with the meta restamped
+     * to the outcome's scope** ([ExportKeying.restampMetaScope]), because *Keep this passphrase*
+     * on a foreign export lands a `NOTEBOOK` notebook whose file must say so (the import chooser
+     * keys on the index, the meta mirrors it; a later meta refresh sources scope from the index,
+     * never from this stamp — it is for the file's own honesty on the way out again).
+     */
+    suspend fun toScope(incoming: File, opening: Opening, outcome: ImportChoice.Outcome): File =
         when (opening) {
             is Opening.Encrypted ->
-                if (opening.passphrase == globalPassphrase) acceptPassThrough(incoming, globalPassphrase)
-                else transform(incoming, ExportKeying.sqlLiteral(opening.passphrase), globalPassphrase)
+                if (opening.passphrase == outcome.passphrase) {
+                    acceptPassThrough(incoming, outcome.passphrase).also {
+                        ExportKeying.restampMetaScope(it, outcome.passphrase, outcome.scope.column)
+                    }
+                } else {
+                    transform(incoming, ExportKeying.sqlLiteral(opening.passphrase), outcome)
+                }
             Opening.Plaintext ->
                 // `''` is how a plaintext ATTACH key is spelled.
-                transform(incoming, "''", globalPassphrase)
+                transform(incoming, "''", outcome)
         }
 
     /** Both transform cases are one call into the shared core — only the ATTACH key differs. */
-    private suspend fun transform(incoming: File, attachKeyLiteral: String, globalPassphrase: String): File =
+    private suspend fun transform(incoming: File, attachKeyLiteral: String, outcome: ImportChoice.Outcome): File =
         ExportKeying.exportAndKeyToPrimary(
             out = sibling(incoming),
             sourcePath = incoming.path,
             attachKeyLiteral = attachKeyLiteral,
-            destPassphrase = globalPassphrase,
-            keyScope = KEY_SCOPE_GLOBAL,
+            destPassphrase = outcome.passphrase,
+            keyScope = outcome.scope.column,
             what = "imported",
         )
 
@@ -99,7 +115,7 @@ object ImportKeying {
             } finally {
                 runCatching { db.close() }
             }
-            Slog.d(TAG) { "already under the device key — pass-through accepted (${incoming.length()} bytes)" }
+            Slog.d(TAG) { "already under the destination key — pass-through accepted (${incoming.length()} bytes)" }
             incoming
         }
 

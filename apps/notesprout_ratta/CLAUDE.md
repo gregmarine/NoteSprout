@@ -167,7 +167,7 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   **Read `DRIVE_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**)
   `gradle.properties` sets `android.nonTransitiveRClass=false` — undoing it breaks every
   `:sn-screen` resource reference from `:app`.
-- **Arc 26 "Keys" is IN PROGRESS (wizard locked 2026-09-05; U1–U4 landed 2026-09-05)** — og-parity
+- **Arc 26 "Keys" is IN PROGRESS (wizard locked 2026-09-05; U1–U5 landed 2026-09-05)** — og-parity
   encryption (`PARITY_BACKLOG.md` item 1): the Encryption screen + library door, rotation, per-notebook
   scope, recovery. **Read the standalone `ENCRYPTION_PLAN.md`, not `RATTA_PLAN.md`, for it** — phases
   U1–U7, no code review, host-only, no ninth point. **U1:** `encryption/EncryptionActivity` behind
@@ -210,7 +210,17 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   cleared, unlock forgotten, `updatedAt` untouched) is the only scope writer; the parked hand-off
   (`PassphraseCache`, 60 s TTL) is taken by the notebook screen's open ONLY — every other prompt
   asks regardless; a NOTEBOOK card is
-  a lock (`ic_lock`), never a cover, and the seal never captures one. Debug: *Change key scope*.
+  a lock (`ic_lock`), never a cover, and the seal never captures one. **U5 (the doors, 2026-09-05):**
+  `crypto/ScopeChange` is **the only caller of `SoilRekey` for one notebook** — `toNotebook` /
+  `toGlobal` / `changePassphrase` = rekey → `setEncryptionState` → park, refusing an open file; og's
+  downgrade rule lives in `ScopeChange.scopeFor` (typed == global → GLOBAL) and every door goes
+  through it. Doors: the New Notebook screen's Key radio row, the library sheet's *Change
+  passphrase…* / *Change encryption scope…* (`library/ScopeChangeFlow`; GLOBAL's passphrase row
+  redirects to Encryption), the import chooser (`crypto/ImportChoice` pure table + `ImportKeying.
+  toScope`; asked only after a FOREIGN unlock; `setEncryptionState` before `refreshMeta`), and
+  Export's host-substituted Keep label for a NOTEBOOK source. `crypto/SetPassphraseDialog` is the one
+  set-a-notebook-passphrase dialog. The notebook's own bar has no key rows. Debug *Change key scope*
+  is gone.
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by

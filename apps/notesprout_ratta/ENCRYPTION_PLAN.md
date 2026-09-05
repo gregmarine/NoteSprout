@@ -6,7 +6,7 @@ the root `CLAUDE.md` and `apps/notesprout_ratta/CLAUDE.md`. **Do not load `RATTA
 this arc** unless a standing trap needs checking; its protocol and traps are summarized at the end
 so this file is enough. `DRIVE_PLAN.md` is the shape this file copies.
 
-**Status:** wizard locked 2026-09-05 · U1 ✅ (2026-09-05) · U2 ✅ (2026-09-05) · U3 ✅ (2026-09-05) · U4 ✅ (2026-09-05) · U5 ⬜ · U6 ⬜ · U7 ⬜
+**Status:** wizard locked 2026-09-05 · U1 ✅ (2026-09-05) · U2 ✅ (2026-09-05) · U3 ✅ (2026-09-05) · U4 ✅ (2026-09-05) · U5 ✅ (2026-09-05) · U6 ⬜ · U7 ⬜
 
 ---
 
@@ -288,7 +288,7 @@ Encryption screen, once U1 lands — the debug item is gone) so no walk can lock
   file with a leftover WAL and no cached raw key falls into the existing "refused this run,
   counted failed, retried next run" outcome — no new status-line wording.
 
-### U5 ⬜ — Notebook scope: the doors
+### U5 ✅ — Notebook scope: the doors (2026-09-05)
 - New Notebook scope choice; library sheet Change passphrase / Change encryption scope (both
   rekey paths over `SoilRekey`, stamps cleared, cover rules); the import chooser (decision 3,
   `ImportFlow` + `ImportKeying.toScope`); Export's Keep label + scope restamp; the U4 debug item
@@ -299,9 +299,9 @@ Encryption screen, once U1 lands — the debug item is gone) so no walk can lock
   branches over one foreign-key export made on the Manta or by U2's debug rekey) and the
   create-with-passphrase flow; Fable by hand for scope round-trips (GLOBAL → NOTEBOOK → GLOBAL,
   cover gone then back on next seal).
-- **Questions at phase start:** (1) New Notebook: radio row vs a checkbox "Own passphrase" —
-  default radio (the type radio's shape). (2) whether the scope rows also appear on the notebook's
-  own bar (og has `btnLock` for plaintext only — SN has no plaintext, so default **no**).
+- **Questions at phase start (answered 2026-09-05):** (1) New Notebook → **radio row** (the type
+  radio's shape): *This device's key* (default) / *Its own passphrase*. (2) scope rows on the
+  notebook's own bar → **no** — the library long-press sheet is the only door.
 
 ### U6 ⬜ — Recovery + the raw-path audit
 - `NotebookRecovery` per D5; `NotebookSession`'s key-failure classification + once-per-launch
@@ -570,3 +570,58 @@ Encryption screen, once U1 lands — the debug item is gone) so no walk can lock
   three export renderers take `resolved` — a new export path must thread it too; (5) a NOTEBOOK
   notebook's `.soil` export carries `keyScope = NOTEBOOK` in its meta, which is what the import
   chooser keys on.
+
+### U5 — Outcome (2026-09-05)
+- **Phase-start answers:** New Notebook scope = a **radio row** under the type row (*This device's
+  key* default / *Its own passphrase*); the notebook's own bar carries **no** key rows — the library
+  long-press sheet is the only door.
+- **Built (`crypto/`, Fable):** `ScopeChange` — the D4 core the debug item was: `toNotebook` /
+  `toGlobal` / `changePassphrase` = `SoilRekey.rekeyInPlace` → `setEncryptionState` →
+  `PassphraseCache.storeOnce` (NOTEBOOK only), refusing an open file (`OpenInProcess`); pure
+  `scopeFor(typed, global)` (og's downgrade rule — typed == global → GLOBAL, nothing parked) and
+  `route(Row, KeyScope)` (the sheet's four routes). `ImportChoice` — the chooser's pure outcome table
+  (`needsChooser` only for a foreign key; `Keep` → NOTEBOOK via `scopeFor`, `DEVICE_KEY` → GLOBAL,
+  `NEW_PASSPHRASE` → NOTEBOOK via `scopeFor`); `ImportKeying.toScope(incoming, opening, outcome)`
+  (the general form of `toGlobal` — a pass-through is still integrity-checked and now restamps the
+  meta's scope via `ExportKeying.restampMetaScope`). `SetPassphraseDialog` — THE one set-a-notebook-
+  passphrase dialog (new + confirm, `PassphraseRules` inline, per-caller helper + same-as-current
+  sentence, IME never hidden), shared by the New Notebook screen, the sheet and the import chooser.
+- **Doors (Opus, two lanes):** New Notebook `scopeGroup` (state survives recreate; the dialog is raised
+  after the name check, before any write; the file is created under the typed key, meta + index row
+  carry the scope, `TextCover` skipped for NOTEBOOK, parked for the first open) · library sheet
+  *Change passphrase…* / *Change encryption scope…* (`library/ScopeChangeFlow`: redirect dialog with
+  **Open Encryption** for GLOBAL; prompt → set → "Re-keying…" → toast → `refresh()`; confirm dialogs
+  name the notebook; failures = one sentence, class name logged) · import chooser
+  (`ImportDialogs.keying` — three stacked buttons + Cancel, `dialog_import_keying.xml`; after the
+  foreign unlock, before the three questions; `setEncryptionState(NOTEBOOK)` **before** `refreshMeta`,
+  park before `onImported`) · Export's Keep row reads **"Keep encrypted (this notebook's passphrase)"**
+  for a NOTEBOOK source — a host-side label substitution (`optionLabel`), `:ext-soil` untouched.
+  Debug *Change key scope (debug)* removed. 32 strings.
+- **Tests:** 1063 in `:app` (10 new — `ScopeChangeTest`, `ImportChoiceTest` incl. both downgrade
+  cases and the host-bug throws).
+- **Walk (Nomad, Fable by hand + adb; throwaway `20260905_142626`):** sheet shows both rows → Change
+  passphrase on GLOBAL → redirect dialog → Change scope → confirm → set `notebook1` (on-screen
+  keyboard) → ~5 s re-key → **lock card** → Change passphrase → prompt verified `notebook1` → new =
+  `notebook1` refused inline ("already in force") → `notebook1notebook2` → re-keyed → tap card →
+  **opened silently** on the parked value → back → Change scope → confirm → prompt → re-keyed to
+  GLOBAL → plain card, no cover → opened prompt-free → back → **cover painted by the seal**. New
+  Notebook: Key radio row measured beside the Type row → *Its own passphrase* → Create → dialog →
+  `newnb1234` → notebook opened straight in → library shows a lock → reopen **prompts**. Export on it
+  → prompt → **"Keep encrypted (this notebook's passphrase)"** → Google Drive → exported. Import from
+  Drive (the cloud browser is adb-drivable, unlike SAF) → foreign prompt → **chooser** → *Keep* →
+  pass-through (`KEEP → NOTEBOOK`) → Keep both → lands as a **lock card** → opens silently; again →
+  *Use this device's key* → transform (`DEVICE_KEY → GLOBAL`) → plain card. All three walk notebooks
+  deleted; the Nomad library is all-GLOBAL again under `walkpass1`.
+- **Not walked (user checklist):** *Set a new notebook passphrase* on import (same pipeline, tested);
+  a SAF ("This device") import of a foreign-key file; a text-document notebook created with its own
+  passphrase.
+- **Traps found:** `adb shell input keyevent 67` (backspace) is swallowed by the Supernote IME like
+  `input text` — a walk cannot clear a field, only append. The one notebook prompt's body still
+  says "Enter it to open the notebook" when the sheet asks for the current passphrase — og-parity
+  wording, left as is.
+- **Planner notes for U6:** (1) `ScopeChange.toGlobal` IS *Repair and open*'s re-key when the index
+  says GLOBAL and a typed key works — recovery calls it, never `SoilRekey` directly; (2) a quarantined
+  notebook (U3) is a NOTEBOOK-scope row whose "own" passphrase is an old global — the sheet's
+  NOTEBOOK → GLOBAL row already brings it back once the person knows that key, which is the manual
+  half of recovery; (3) `ImportKeying`'s pass-through log line now says "destination key".
+

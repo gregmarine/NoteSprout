@@ -405,9 +405,10 @@ object NotebookImport {
                     cover = null,
                     // From the index row, never from `existing` (arc 26 / U4) — the index is the
                     // authority and the meta field mirrors it, the same rule `textDocument` keeps.
-                    // An import lands `GLOBAL` today, so this changes nothing yet; it is what stops
-                    // a later meta refresh from silently telling a re-keyed file it is `GLOBAL`
-                    // again (og's meta-refresh-wipe trap).
+                    // Since arc 26 / U5 an import can land `NOTEBOOK` (the chooser's *Keep this
+                    // passphrase* / *Set a new notebook passphrase*), so the caller stamps the row
+                    // BEFORE this runs — reading it here is what stops a meta refresh from telling
+                    // a re-keyed file it is `GLOBAL` again (og's meta-refresh-wipe trap).
                     keyScope = IndexRepository().get(notebookId)?.keyScope ?: KEY_SCOPE_GLOBAL,
                     folderPath = folderPath,
                     appVersionCode = appVersionCode,

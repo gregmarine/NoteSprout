@@ -759,4 +759,44 @@
     <string name="calendar_truncated_title">Not everything came back</string>
     <string name="calendar_paste_failed_body">The ink from the calendar could not be written to this page. Nothing was changed — it is still on the calendar.</string>
     <string name="calendar_truncated_body">The calendar page had more ink than one transfer can carry. The first %1$d strokes were pasted; the rest are still on the calendar.</string>
+
+    <!-- Arc 26 / U5 — the doors onto notebook scope. The New Notebook screen's key radio, the one
+         set-passphrase dialog and its verdicts, and the library sheet's two rows. -->
+    <string name="new_notebook_scope_label">Key</string>
+    <string name="new_notebook_scope_device">This device\'s key</string>
+    <string name="new_notebook_scope_own">Its own passphrase</string>
+
+    <string name="set_passphrase_title">Passphrase for %1$s</string>
+    <string name="set_passphrase_helper">You will be prompted for this passphrase every time you open this notebook.</string>
+    <string name="set_passphrase_set">Set</string>
+    <string name="passphrase_rule_too_short">At least %1$d characters.</string>
+    <string name="passphrase_rule_mismatch">The two entries do not match.</string>
+    <string name="passphrase_rule_same">That is the passphrase already in force.</string>
+    <string name="passphrase_rule_same_global">That is this device\'s key.</string>
+
+    <string name="action_change_passphrase">Change passphrase…</string>
+    <string name="action_change_scope">Change encryption scope…</string>
+    <string name="change_passphrase_title">Change passphrase</string>
+    <string name="change_passphrase_global_body">Global notebooks share this device\'s key. To change it, use Encryption.</string>
+    <string name="change_passphrase_open_encryption">Open Encryption</string>
+    <string name="change_key_progress">Re-keying…</string>
+    <string name="change_passphrase_done_toast">Passphrase changed.</string>
+    <string name="change_scope_title">Change encryption scope</string>
+    <string name="change_scope_to_notebook_body">"%1$s" will be re-keyed to its own passphrase. You will be prompted for it every time you open this notebook.</string>
+    <string name="change_scope_to_notebook_confirm">Use its own passphrase</string>
+    <string name="change_scope_to_notebook_done">Now uses its own passphrase.</string>
+    <string name="change_scope_to_global_body">"%1$s" will be re-keyed to this device\'s key. You will need its current passphrase.</string>
+    <string name="change_scope_to_global_confirm">Use this device\'s key</string>
+    <string name="change_scope_to_global_done">Now uses this device\'s key.</string>
+    <string name="change_key_no_session">No key in session.</string>
+    <string name="change_key_failed_body">The notebook could not be re-keyed. Nothing was changed.</string>
+
+    <!-- Arc 26 / U5, decision 3 — the import keying chooser (a foreign passphrase only) and the
+         Export screen's Keep label for a notebook that carries its own passphrase. -->
+    <string name="import_keying_choose_title">Import encrypted notebook</string>
+    <string name="import_keying_choose_body">This notebook was unlocked with a different passphrase.</string>
+    <string name="import_keying_keep">Keep this passphrase</string>
+    <string name="import_keying_device">Use this device\'s key</string>
+    <string name="import_keying_new">Set a new notebook passphrase</string>
+    <string name="export_keying_keep_notebook">Keep encrypted (this notebook\'s passphrase)</string>
 </resources>

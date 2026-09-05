@@ -766,6 +766,20 @@ class LibraryActivity : AppCompatActivity() {
         if (canTag && !isFolder) {
             sheet.addAction(R.drawable.ic_tag, getString(R.string.action_tags)) { showTags(s) }
         }
+        // The key rows (arc 26 / U5, D4) — notebooks only (a folder holds no file and no key), and
+        // both are always there whatever the scope: what each one *does* is the scope's answer
+        // ([ScopeChange.route]), so a `GLOBAL` notebook's Change passphrase… is a redirect to the
+        // Encryption screen rather than a row that vanished. The scope comes from the card the
+        // sheet was raised on — the listing already read it, so no row asks the index again.
+        (item as? CardItem.Notebook)?.let { nb ->
+            val scope = if (nb.locked) KeyScope.NOTEBOOK else KeyScope.GLOBAL
+            sheet.addAction(R.drawable.ic_lock, getString(R.string.action_change_passphrase)) {
+                startScopeChange { it.changePassphrase(s.id, s.name, scope) }
+            }
+            sheet.addAction(R.drawable.ic_lock, getString(R.string.action_change_scope)) {
+                startScopeChange { it.changeScope(s.id, s.name, scope) }
+            }
+        }
         // Exclude from backup (arc 17 / K2) — notebooks only, and always there: it needs no
         // extension and no destination. The state comes from the listing's own `flags`, not a
         // fresh read, and the label carries it (the Pin/Unpin pattern) so the row never moves.
@@ -796,6 +810,24 @@ class LibraryActivity : AppCompatActivity() {
                 targetLabel = s.name,
                 mode = TagShowing.MODE_BROWSE,
             ),
+        )
+    }
+
+    /**
+     * A key row's whole flow ([ScopeChangeFlow], arc 26 / U5) under the library's one launch latch:
+     * the re-key is seconds long with a dialog over it, and a second tap in that time — on a card,
+     * on `+`, on the row again — must do nothing at all. The latch drops when the flow ends
+     * (cancelled, failed or done), and only a change that actually landed rebuilds the grid: the
+     * card is a lock now, or a cover has gone.
+     */
+    private fun startScopeChange(start: (ScopeChangeFlow) -> Unit) {
+        if (launching) return
+        launching = true
+        start(
+            ScopeChangeFlow(this) { changed ->
+                launching = false
+                if (changed) lifecycleScope.launch { refresh() }
+            }
         )
     }
 
