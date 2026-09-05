@@ -612,9 +612,9 @@ Encryption screen, once U1 lands — the debug item is gone) so no walk can lock
   pass-through (`KEEP → NOTEBOOK`) → Keep both → lands as a **lock card** → opens silently; again →
   *Use this device's key* → transform (`DEVICE_KEY → GLOBAL`) → plain card. All three walk notebooks
   deleted; the Nomad library is all-GLOBAL again under `walkpass1`.
-- **Not walked (user checklist):** *Set a new notebook passphrase* on import (same pipeline, tested);
-  a SAF ("This device") import of a foreign-key file; a text-document notebook created with its own
-  passphrase.
+- **User checklist (both PASS, 2026-09-05):** a SAF ("This device") import of a foreign-key file
+  with *Set a new notebook passphrase*; a text-document notebook created with its own passphrase
+  (opens into the editor).
 - **Traps found:** `adb shell input keyevent 67` (backspace) is swallowed by the Supernote IME like
   `input text` — a walk cannot clear a field, only append. The one notebook prompt's body still
   says "Enter it to open the notebook" when the sheet asks for the current passphrase — og-parity
