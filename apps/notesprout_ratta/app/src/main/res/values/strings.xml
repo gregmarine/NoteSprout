@@ -820,8 +820,10 @@
     <string name="restore_from_folder">From a folder…</string>
     <string name="restore_from_cloud">From the cloud…</string>
     <string name="restore_folder_caption">Backups in</string>
-    <string name="restore_choose_another">Choose another folder…</string>
+    <string name="restore_choose_another">Choose another source…</string>
     <string name="restore_reading">Reading folder…</string>
+    <string name="restore_reading_cloud">Reading the cloud…</string>
+    <string name="restore_cloud_source_label">Backups in %1$s</string>
     <string name="restore_row_detail">%1$s · %2$s · %3$s</string>
     <string name="restore_notebooks_one">1 notebook</string>
     <string name="restore_notebooks_many">%1$d notebooks</string>
@@ -832,6 +834,7 @@
 
     <string name="restore_progress_title">Restoring</string>
     <string name="restore_progress_copying">Copying %1$d of %2$d…</string>
+    <string name="restore_progress_downloading">Downloading %1$d of %2$d…</string>
     <string name="restore_progress_checking">Checking…</string>
     <string name="restore_progress_unlocking">Unlocking…</string>
     <string name="restore_progress_installing">Installing…</string>
@@ -866,6 +869,14 @@
     <string name="restore_problem_listing_body">That folder could not be read. Nothing has been changed — try again, or choose another folder.</string>
     <string name="restore_problem_not_backup_title">No backup here</string>
     <string name="restore_problem_not_backup_body">A backup is a folder holding notesprout.db, or a folder whose subfolders hold one. Nothing here is one — choose the folder your backups were written to.</string>
+    <string name="restore_problem_cloud_not_connected_title">Not connected</string>
+    <string name="restore_problem_cloud_not_connected_body">No account is connected to %1$s. Connect one on the Backup screen, then restore. Nothing has been changed.</string>
+    <string name="restore_problem_cloud_network_title">Couldn\'t reach %1$s</string>
+    <string name="restore_problem_cloud_network_body">%1$s could not be reached, so nothing was restored. Your library is untouched. Try again.</string>
+    <string name="restore_problem_cloud_unanswered_title">%1$s didn\'t answer</string>
+    <string name="restore_problem_cloud_unanswered_body">%1$s did not answer, so nothing was restored. Your library is untouched.</string>
+    <string name="restore_problem_cloud_gone_title">Cloud storage unavailable</string>
+    <string name="restore_problem_cloud_gone_body">%1$s is no longer available on this device, so nothing was restored. Your library is untouched.</string>
     <string name="restore_problem_fetch_title">Couldn\'t copy the backup</string>
     <string name="restore_problem_fetch_body">%1$s could not be copied out of the backup, so nothing was restored. Your library is untouched.</string>
     <string name="restore_problem_invalid_title">Backup isn\'t complete</string>

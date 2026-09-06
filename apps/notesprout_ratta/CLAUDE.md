@@ -252,7 +252,14 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   *Replace your library?* → one progress dialog → the key prompt under `RESTORE_KEY` → four endings
   (Committed / RolledBack / **Interrupted** — the index landed but the key step threw / Refused),
   all dialogs; the Backup screen's *Restore from a backup…* row; the first real restore walked on
-  the Nomad against a rotation-made foreign backup), L4 (cloud source) next** — whole-library restore,
+  the Nomad against a rotation-made foreign backup), **L4 landed 2026-09-05**
+  (`restore/CloudRestoreSource` over `CloudClient.list`/`.download` — `Backups/<folder>` rows whose
+  handle is the folder **name**, re-listed at fetch, **no `-wal` ever fetched**, downloads into
+  `.part` under `CloudTimeouts.downloadBudgetMs` (the read-side rate twin), the four cloud
+  `RestoreProblem`s mapped as `CloudBackupLeg` maps them; the Restore screen's *From the cloud…* row
+  GONE while no provider is installed; walked on the Nomad — a mid-fetch wifi cut refused with
+  nothing touched, then a full cloud restore with a renamed device folder proved decision 3 on the
+  cloud leg), L5 (failure injection on the Nomad) next** — whole-library restore,
   `PARITY_BACKLOG.md` item 2. **Read the standalone `RESTORE_PLAN.md`, not `RATTA_PLAN.md`, for any
   work on it**: phases L1–L6, host-only, no point, no API bump, version stays `0.1.0-ratta`, and
   **no `/code-review` in the arc** (L5 is a failure-injection pass instead). The four decisions that

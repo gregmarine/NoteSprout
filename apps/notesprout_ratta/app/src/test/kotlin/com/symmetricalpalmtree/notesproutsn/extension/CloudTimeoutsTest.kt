@@ -5,8 +5,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The upload budget (arc 25 / V2) — the one number on the cloud seam a caller must compute rather
- * than read, and therefore the one worth a table.
+ * The two computed budgets on the cloud seam — the numbers a caller must work out rather than read,
+ * and therefore the ones worth a table: the upload rate (arc 25 / V2) and its read-side twin
+ * (arc 27 / L4), which a whole-library restore scales by what the listing said.
  */
 class CloudTimeoutsTest {
 
@@ -58,6 +59,48 @@ class CloudTimeoutsTest {
         var bytes = 0L
         while (bytes <= 200 * mib) {
             val budget = CloudTimeouts.uploadBudgetMs(bytes)
+            assertTrue("budget shrank at $bytes B", budget >= previous)
+            previous = budget
+            bytes += mib
+        }
+    }
+
+    // ── The download rate (arc 27 / L4) ──────────────────────────────────────
+
+    @Test
+    fun `anything up to one slice gets the flat download budget`() {
+        assertEquals(CloudTimeouts.DOWNLOAD_MS, CloudTimeouts.downloadBudgetMs(1))
+        assertEquals(CloudTimeouts.DOWNLOAD_MS, CloudTimeouts.downloadBudgetMs(5 * mib))
+        assertEquals(CloudTimeouts.DOWNLOAD_MS, CloudTimeouts.downloadBudgetMs(20 * mib))
+    }
+
+    @Test
+    fun `an empty file gets the flat download budget`() {
+        assertEquals(CloudTimeouts.DOWNLOAD_MS, CloudTimeouts.downloadBudgetMs(0))
+    }
+
+    @Test
+    fun `one byte over a slice is charged two`() {
+        assertEquals(2 * CloudTimeouts.DOWNLOAD_MS, CloudTimeouts.downloadBudgetMs(20 * mib + 1))
+    }
+
+    @Test
+    fun `an exact multiple of the slice is charged no extra`() {
+        assertEquals(5 * CloudTimeouts.DOWNLOAD_MS, CloudTimeouts.downloadBudgetMs(100 * mib))
+    }
+
+    @Test
+    fun `a nonsense byte count is charged the flat budget, not an exception`() {
+        assertEquals(CloudTimeouts.DOWNLOAD_MS, CloudTimeouts.downloadBudgetMs(-1))
+        assertEquals(CloudTimeouts.DOWNLOAD_MS, CloudTimeouts.downloadBudgetMs(Long.MIN_VALUE))
+    }
+
+    @Test
+    fun `the download budget never decreases as the file grows`() {
+        var previous = 0L
+        var bytes = 0L
+        while (bytes <= 200 * mib) {
+            val budget = CloudTimeouts.downloadBudgetMs(bytes)
             assertTrue("budget shrank at $bytes B", budget >= previous)
             previous = budget
             bytes += mib

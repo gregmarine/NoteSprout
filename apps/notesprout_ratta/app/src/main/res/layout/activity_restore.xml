@@ -6,9 +6,9 @@
      inkBlack rule, then the body in a ScrollView. There is no top-bar action here — the action is
      a row in the list, and the confirmation before it is a dialog.
 
-     Nothing is ever disabled: the cloud row (L4) is GONE until there is a source behind it, which
-     is the Backup screen's Cloud-section rule — on e-ink a disabled control is invisible and reads
-     as broken. -->
+     Nothing is ever disabled: the cloud row is GONE unless a trusted cloud provider is installed,
+     which is the Backup screen's Cloud-section rule — on e-ink a disabled control is invisible and
+     reads as broken. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"
@@ -66,7 +66,8 @@
             android:paddingBottom="16dp">
 
             <!-- State 1: where to restore from. Two rows and no more — the pick itself is the
-                 platform's folder picker, and the cloud row is L4's. -->
+                 platform's folder picker, and the cloud row (arc 27 / L4) reads the same
+                 `Backups/<device>/` folders a cloud backup run writes. -->
             <LinearLayout
                 android:id="@+id/sourcesPane"
                 android:layout_width="match_parent"
@@ -88,8 +89,9 @@
                     android:layout_marginTop="16dp"
                     android:text="@string/restore_from_folder" />
 
-                <!-- TODO (arc 27 / L4): the cloud source. GONE — never disabled — until
-                     CloudRestoreSource exists and a trusted provider is installed. -->
+                <!-- The cloud source (arc 27 / L4). GONE — never disabled — while no trusted
+                     cloud provider is installed; the screen re-runs discovery on every resume,
+                     because a package can be disabled or replaced under a standing screen. -->
                 <androidx.appcompat.widget.AppCompatButton
                     android:id="@+id/btnFromCloud"
                     style="@style/Widget.Notesprout.OutlinedButton"
@@ -100,8 +102,9 @@
                     android:visibility="gone" />
             </LinearLayout>
 
-            <!-- State 2: the backups the picked folder holds. The caption names the folder by its
-                 display path, never by its URI. -->
+            <!-- State 2: the backups the chosen source holds. The caption names a local folder by
+                 its display path, never by its URI; the cloud source names its provider instead and
+                 carries its own "Backups in" wording, so the caption goes GONE for it. -->
             <LinearLayout
                 android:id="@+id/listPane"
                 android:layout_width="match_parent"
@@ -110,6 +113,7 @@
                 android:visibility="gone">
 
                 <TextView
+                    android:id="@+id/listCaption"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/restore_folder_caption"

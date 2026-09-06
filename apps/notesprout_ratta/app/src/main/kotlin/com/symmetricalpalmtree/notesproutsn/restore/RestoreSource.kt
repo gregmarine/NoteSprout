@@ -17,8 +17,21 @@ sealed class RestoreProblem {
      *  package name — safe to log, unlike the URI it came from. */
     data class FetchFailed(val fileName: String) : RestoreProblem()
 
-    // L4 adds the cloud kinds here (NOT_CONNECTED / NETWORK / no-answer / CLOUD_GONE, mapping
-    // exactly as CloudBackupLeg's do).
+    // The four cloud kinds (arc 27 / L4), mapping **exactly** as `CloudBackupLeg.problemFor` does
+    // — one table for both directions of the same seam, so a person reading "didn't answer" on the
+    // Restore screen is being told the same thing a backup run would have told them.
+
+    /** No account is connected to the provider (or its token was revoked out from under it). */
+    object CloudNotConnected : RestoreProblem()
+
+    /** The provider could not reach its service. Nothing was read; trying again is safe. */
+    object CloudNetwork : RestoreProblem()
+
+    /** The provider did not answer at all — nothing is known, so nothing is claimed. */
+    object CloudUnanswered : RestoreProblem()
+
+    /** The provider is no longer installed on this device (discovery no longer finds it). */
+    object CloudGone : RestoreProblem()
 }
 
 /** What [RestoreSource.listBackups] answers. */

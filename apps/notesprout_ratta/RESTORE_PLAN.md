@@ -7,7 +7,7 @@ unless a standing trap needs checking; its protocol and traps are summarized at 
 file is enough. `ENCRYPTION_PLAN.md` and `DRIVE_PLAN.md` are the shapes this file copies.
 
 **Status:** wizard locked 2026-09-05 · Fable review folded in 2026-09-05 (R1–R7, § Review
-amendments) · L1 ✅ · L2 ✅ · L3 ✅ · L4 ⬜ · L5 ⬜ · L6 ⬜
+amendments) · L1 ✅ · L2 ✅ · L3 ✅ · L4 ✅ · L5 ⬜ · L6 ⬜
 
 **Phase letters:** every letter A–Z is spoken for in `RATTA_PLAN.md` except **H** and **L**. This
 arc takes **L**; H stays free.
@@ -347,7 +347,7 @@ Restore screen (the cloud row in the layout, `GONE` until L4) · one non-cancela
 with a per-file counter during staging · the report names the stores separately · version stays
 `0.1.0-ratta`.**
 
-### ⬜ L4 — the cloud source and its walk
+### ✅ L4 — the cloud source and its walk
 
 - `restore/CloudRestoreSource` (D6) — `Backups/` enumeration, per-folder listing, `download` into
   staging, the four typed failures.
@@ -359,7 +359,11 @@ with a per-file counter during staging · the report names the stores separately
 
 **Questions to resolve at phase start:** the download timeout budget (reuse
 `CloudTimeouts.uploadBudgetMs(length)` or a read-side twin) · whether a cloud restore refuses
-outright below some free-space margin before it starts downloading.
+outright below some free-space margin before it starts downloading. **Answered 2026-09-05: a
+read-side twin, `CloudTimeouts.downloadBudgetMs(bytes)` — 120 s flat to 20 MiB, then 120 s per
+20 MiB slice rounded up, pure + JVM-tested (the flat `DOWNLOAD_MS` stays for Import) · the same
+gate as the local leg — L2's preflight already refuses on listing bytes + 64 MB before the first
+download, no cloud-only margin · version stays `0.1.0-ratta`.**
 
 ### ⬜ L5 — hardening: failure injection on the Nomad
 
@@ -638,3 +642,67 @@ a notebook opened with no prompt. **The Nomad dev library is back under `walkpas
 **Tests:** 1151 (unchanged — the screen's only pure logic is exhaustive `when`s over resource ids).
 No new files over 800 lines. Version `0.1.0-ratta`.
 
+
+### L4 — Outcome (2026-09-05, Opus build, Fable read + the cloud walk by hand)
+
+**Landed — the cloud source, the second row, and the first restore from the cloud on the Nomad.**
+`restore/CloudRestoreSource` (212 lines, D6) over `CloudClient.list` / `.download` only:
+`list(["Backups"])` → device folders (folders only, by name — pure `CloudRestoreRules.deviceFolders`)
+→ one `list` per folder → `RestoreManifest.plan(…, CLOUD)` → a row whose **handle is the folder
+NAME** (the fetch re-lists `Backups/<name>` by path, the L1 rule; an entry id would go stale on a
+re-created folder and buy nothing). `fetchInto` re-lists, re-plans under `CLOUD` (**no `-wal` is ever
+fetched** — R3), downloads each item into a `.part` through a `ParcelFileDescriptor` the client owns
+and closes, under `CloudTimeouts.downloadBudgetMs(item.size)` (the phase-start answer: `DOWNLOAD_MS`
+flat to 20 MiB, then 120 s per 20 MiB slice rounded up; `CloudClient.download` gained an optional
+`budgetMs`, Import untouched), and refuses the whole fetch on the first file where the provider's
+count, the landed length and the listing's size disagree. The four failures map exactly as
+`CloudBackupLeg.problemFor` (`RestoreProblem.CloudNotConnected / CloudNetwork / CloudUnanswered /
+CloudGone`; `CloudGone` only when discovery no longer finds the provider). One subfolder that will
+not list is skipped like the SAF source's unreadable subfolder; the two typed refusals end the
+enumeration; **nothing found + something failed reports the failure, never "No backup here"**.
+`RestoreStaging.writeStagedVia(target, expected) { part -> Long }` is `writeStaged`'s fd-shaped twin
+(a negative return carries a typed failure out without a throw). The screen: `btnFromCloud` shown by
+`ExtensionRegistry.cloud` discovery on create **and** resume (GONE, never disabled); *Choose another
+source…* returns to the two-row sources pane; *Downloading n of m…* for the cloud leg; four new
+problem dialogs naming the provider. No cloud-only free-space margin (the phase-start answer — L2's
+preflight already gates on listing bytes + 64 MB before the first download).
+
+**The walk (Nomad, by hand — every tap Fable's, no SAF pick needed):** device folder renamed
+`waltest` → **`waltest4`** (config-only; the 10:49 PM cloud backup in `Backups/waltest` stays, and
+its config now names a folder foreign to this device) → Restore → *From the cloud…* listed **two**
+backups in 4.1 s (three `list`s: `Supernote-Nomad-4a4bd938` 42 · 20 MB · Sep 4, and `waltest` 46 ·
+23 MB · Sep 5 10:49 PM) → **mid-fetch disconnect first**, under the current key: Replace `waltest` →
+`svc wifi disable` at *Downloading 9 of 55* → within 0.8 s *"Couldn't reach NSE · Cloud Storage Dev —
+… nothing was restored. Your library is untouched. Try again."*; on disk no `restore_staging/`, no
+`restore_replaced/` → wifi back → `GlobalRotation` `walkpass1` → `walkpass2` (see the finding below;
+committed 44 re-keyed + 1 quarantined after a hand recovery) → Restore → cloud → `waltest` → Replace
+→ 55 files downloaded at ≈0.7 s each (**no `-wal` staged — 55 mains, 0 sidecars**) → cached
+`walkpass2` refused silently → the prompt → `walkpass1` → *Installing…* → **"Restore complete —
+Restored 46 notebooks and 8 extension stores from waltest."** → on disk: index installed, 54 files in
+`Garden/`, no aside, no staging → Restart → **the library** (log: `destination re-applied after
+restore (tree=true, cloud=true)`) → the Backup screen: folder `Documents/Notesprout-Dev`, **device
+folder `waltest4` — this device's, not the backup's `waltest`** (decision 3 on the cloud leg, the
+walk's whole point), account still connected, both lines *Never backed up* → *Back up now*: 46
+copied + 8 stores on **both** legs, 110 units, the cloud into the new `Backups/waltest4`. **The Nomad
+dev library is under `walkpass1`, device folder `waltest4`.**
+
+**Walk finding for L5 (a real one, not the restore's fault):** the rotation before the restore
+**stopped** — `ext.drive.dev.db` (the pre-rename cloud store, a dead package) and
+`93d69482-….soil` opened under **neither** key. Both had come back from the **L3 local restore**:
+the local backup folder held `93d69482` dated **Aug 29** (a stale copy under a key two rotations
+gone — the writer never replaces a file the work list skips), and the 10:26 PM backup had reported
+**7 stores of 8**, so one stale store copy stayed too. **A restore installs exactly what the folder
+holds, and validate can only say "encrypted", never "under the proven key"** — proving every file
+would be one platform KDF each (≈4 s/file on the Nomad, ~3 min for this library). Recorded for L5's
+decision (skip-and-name orphans · an optional post-proof audit · at least a doc line that a backup
+folder is an accretion). Hand recovery used: app stopped, the dead store moved to
+`/sdcard/Download/nsn-aside/` (never deleted), Resume → the rotation finished; the cloud restore
+brought the store back and it was moved aside again after the walk. **Other findings:** the Restore
+screen's caption names the extension label (*NSE · Cloud Storage Dev*) where the Backup screen says
+*Google Drive* — a `status()` would cost a bind, a `providerName` reuse would not; the
+`ext.drive.dev.db` leftover should be cleaned from the dev library for good (debug chore, with the
+`probe.*.db` pair from L3's list).
+
+**Tests:** 24 new (`CloudRestoreRulesTest` 10, `CloudTimeoutsTest` +6, `RestoreStagingTest` +7,
+`RestoreManifestTest` +1) — 1151 → **1175**, 0 failures. `RestoreActivity` 677 lines (under the
+threshold, no extraction). Version `0.1.0-ratta`.

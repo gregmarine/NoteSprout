@@ -202,6 +202,26 @@ class RestoreManifestTest {
         assertEquals(6, names(entries, RestoreLeg.LOCAL).size)
     }
 
+    @Test
+    fun `a dropped cloud wal is neither counted nor weighed`() {
+        val entries = listOf(
+            file("notesprout.db", size = 100L),
+            file("notesprout.db-wal", size = 4_000L),
+            file("$uuidA.soil", size = 20L),
+            file("$uuidA.soil-wal", size = 8_000L),
+            file("$store.db", size = 7L),
+            file("$store.db-wal", size = 900L),
+        )
+        val cloud = RestoreManifest.plan(entries, RestoreLeg.CLOUD)!!
+        assertEquals(1, cloud.notebookCount)
+        assertEquals(1, cloud.storeCount)
+        // 127, not 13 027 — the free-space gate must not pay for bytes the fetch will never take.
+        assertEquals(127L, cloud.totalBytes)
+
+        val local = RestoreManifest.plan(entries, RestoreLeg.LOCAL)!!
+        assertEquals(13_027L, local.totalBytes)
+    }
+
     // ── Order, paths and the counts the chooser shows ────────────────────────
 
     @Test

@@ -114,6 +114,10 @@ object CloudTimeouts {
      *  ≈ 5.4 MB/s (3 863 ms) and the fsync. Kept **flat** rather than a rate: the host knows the
      *  size from the listing, but V5's imports are single `.soil` files, and 120 s covers 100 MiB at
      *  a fifth of wifi speed. If a measured import ever needs more, make it a rate like upload.
+     *
+     * **Arc 27 / L4 made a rate of it — [downloadBudgetMs] — without moving this number.** A restore
+     *  pulls a whole library, so its largest file can be far past what one flat budget covers; an
+     *  import still reads a single `.soil` and still passes this row straight through.
      */
     const val DOWNLOAD_MS: Long = 120_000L
 
@@ -154,5 +158,34 @@ object CloudTimeouts {
         if (bytes <= UPLOAD_SMALL_LIMIT_BYTES) return UPLOAD_SMALL_MS
         val slices = (bytes + UPLOAD_LARGE_UNIT_BYTES - 1) / UPLOAD_LARGE_UNIT_BYTES
         return UPLOAD_LARGE_MS * slices
+    }
+
+    /**
+     * The budget for one `download` of [bytes] — [uploadBudgetMs]'s read-side twin (arc 27 / L4,
+     * the phase-start answer), for the one caller that pulls a **whole library** rather than a
+     * single file.
+     *
+     * [DOWNLOAD_MS] flat at or below one [UPLOAD_LARGE_UNIT_BYTES] slice, and [DOWNLOAD_MS] per
+     * slice above it, **rounded up** — a 21 MiB file is charged two, because the second slice is
+     * real bytes over a real link whatever it carries. There is no small/large split on this side:
+     * a download is one metadata fetch and one stream whatever its size, so the whole curve is the
+     * one rate.
+     *
+     * **Measured (Nomad, arc 25 / V2):** 4 343 ms for 20 MiB — one metadata GET (198 ms) then the
+     *  stream at ≈ 5.4 MB/s. The rate here is ~27× that measurement per slice, which is the same
+     *  margin [UPLOAD_LARGE_MS] carries: a link twenty-odd times slower than home wifi still lands
+     *  a slice inside it, and a restore that is going to fail should fail on the bytes rather than
+     *  on the clock.
+     *
+     * A byte count below zero cannot describe a file and is charged the flat budget rather than
+     * throwing — the same reading as [uploadBudgetMs]: this function decides how long to wait, and
+     * a caller's bad number is refused by the argument checks, not here.
+     *
+     * Pure, so the table is JVM-tested rather than reasoned about.
+     */
+    fun downloadBudgetMs(bytes: Long): Long {
+        if (bytes <= UPLOAD_LARGE_UNIT_BYTES) return DOWNLOAD_MS
+        val slices = (bytes + UPLOAD_LARGE_UNIT_BYTES - 1) / UPLOAD_LARGE_UNIT_BYTES
+        return DOWNLOAD_MS * slices
     }
 }

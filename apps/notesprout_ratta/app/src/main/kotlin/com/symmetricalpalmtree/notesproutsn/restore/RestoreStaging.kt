@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.StatFs
 import android.util.Log
 import com.symmetricalpalmtree.notesproutsn.data.backup.BackupPredicates
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
@@ -115,6 +116,62 @@ object RestoreStaging {
                 return false
             }
             return true
+        } catch (e: Exception) {
+            Log.w(TAG, "staged write failed", e)
+            part.delete()
+            return false
+        }
+    }
+
+    /**
+     * [writeStaged]'s twin for a source that will not hand over an [OutputStream] (arc 27 / L4):
+     * the cloud leg's `download` takes a **file descriptor** the provider streams into itself, so
+     * there is no stream here for a caller to fill.
+     *
+     * The contract is deliberately identical to [writeStaged]'s, one word at a time: a `.part`
+     * sibling is prepared and any stale one removed, [fill] is handed **that file** and answers how
+     * many bytes it believes were written (a negative for "it failed", which is how a caller
+     * reports its own typed failure without throwing), the count is checked against [expectedSize]
+     * *and* against what the part actually weighs, and only then does the part take the real name.
+     * The one difference is the fsync: the provider fsyncs the descriptor before it answers, so
+     * there is no `fd` on this side to sync.
+     *
+     * False for any failure, the part deleted on every failing path, and **nothing here throws**
+     * except a cancellation, which is always passed on: the fetch turns a false into
+     * `RestoreProblem.FetchFailed` and abandons the whole attempt.
+     */
+    suspend fun writeStagedVia(
+        target: File,
+        expectedSize: Long,
+        fill: suspend (part: File) -> Long,
+    ): Boolean {
+        val part = File(target.path + BackupPredicates.PART_SUFFIX)
+        try {
+            target.parentFile?.mkdirs()
+            if (part.exists()) part.delete()
+            val written = fill(part)
+            val landed = part.length()
+            if (written < 0L) {
+                part.delete()
+                return false
+            }
+            if (expectedSize >= 0L && (written != expectedSize || landed != expectedSize)) {
+                Log.w(TAG, "short staged write ($written written, $landed landed, $expectedSize expected)")
+                part.delete()
+                return false
+            }
+            if (target.exists() && !target.delete()) {
+                part.delete()
+                return false
+            }
+            if (!part.renameTo(target)) {
+                part.delete()
+                return false
+            }
+            return true
+        } catch (e: CancellationException) {
+            part.delete()
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "staged write failed", e)
             part.delete()

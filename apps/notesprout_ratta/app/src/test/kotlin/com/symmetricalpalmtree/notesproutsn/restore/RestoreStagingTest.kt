@@ -1,5 +1,6 @@
 package com.symmetricalpalmtree.notesproutsn.restore
 
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -171,6 +172,115 @@ class RestoreStagingTest {
 
         assertTrue(RestoreStaging.writeStaged(target, 3L, writer("new".toByteArray())))
         assertEquals("new", target.readText())
+    }
+
+    // ── writeStagedVia (arc 27 / L4) ─────────────────────────────────────────
+
+    @Test
+    fun `a filled part lands under the real name and leaves no part`() = runBlocking {
+        val dir = RestoreStaging.reset(root)
+        val target = File(dir, "Garden/a.soil")
+        var handed: File? = null
+
+        val ok = RestoreStaging.writeStagedVia(target, 5L) { part ->
+            handed = part
+            part.writeText("hello")
+            5L
+        }
+
+        assertTrue(ok)
+        assertEquals("hello", target.readText())
+        assertFalse(File(target.path + ".part").exists())
+        // The caller was handed the `.part` sibling, never the real name — a dropped fill can
+        // never leave a truncated file under a name the commit would install.
+        assertEquals(File(target.path + ".part").path, handed?.path)
+    }
+
+    @Test
+    fun `a short fill leaves neither the target nor the part`() = runBlocking {
+        val dir = RestoreStaging.reset(root)
+        val target = File(dir, "Garden/a.soil")
+
+        val ok = RestoreStaging.writeStagedVia(target, 99L) { part ->
+            part.writeText("short")
+            5L
+        }
+
+        assertFalse(ok)
+        assertFalse(target.exists())
+        assertFalse(File(target.path + ".part").exists())
+    }
+
+    @Test
+    fun `a lying byte count is caught even when the part is the expected length`() = runBlocking {
+        val dir = RestoreStaging.reset(root)
+        val target = File(dir, "Garden/a.soil")
+
+        // The provider said it wrote 2 bytes; 5 landed. Three accounts must agree.
+        val ok = RestoreStaging.writeStagedVia(target, 5L) { part ->
+            part.writeText("hello")
+            2L
+        }
+
+        assertFalse(ok)
+        assertFalse(target.exists())
+        assertFalse(File(target.path + ".part").exists())
+    }
+
+    @Test
+    fun `a fill that reports a failure leaves nothing behind`() = runBlocking {
+        val dir = RestoreStaging.reset(root)
+        val target = File(dir, "Garden/a.soil")
+
+        val ok = RestoreStaging.writeStagedVia(target, 5L) { part ->
+            part.writeText("hello")
+            -1L
+        }
+
+        assertFalse(ok)
+        assertFalse(target.exists())
+        assertFalse(File(target.path + ".part").exists())
+    }
+
+    @Test
+    fun `a fill that throws is a false, never a throw of its own`() = runBlocking {
+        val dir = RestoreStaging.reset(root)
+        val target = File(dir, "Garden/a.soil")
+
+        val ok = RestoreStaging.writeStagedVia(target, 5L) { throw IOException("the link died") }
+
+        assertFalse(ok)
+        assertFalse(target.exists())
+        assertFalse(File(target.path + ".part").exists())
+    }
+
+    @Test
+    fun `a stale part from a killed attempt is replaced, not appended to`() = runBlocking {
+        val dir = RestoreStaging.reset(root)
+        val target = File(dir, "Garden/a.soil")
+        File(dir, "Garden").mkdirs()
+        File(target.path + ".part").writeText("leftover from a killed run")
+
+        val ok = RestoreStaging.writeStagedVia(target, 5L) { part ->
+            assertEquals(0L, part.length())
+            part.writeText("hello")
+            5L
+        }
+
+        assertTrue(ok)
+        assertEquals("hello", target.readText())
+    }
+
+    @Test
+    fun `writeStagedVia creates the parent directory it needs`() = runBlocking {
+        val dir = RestoreStaging.dir(root)
+        val target = File(dir, "Garden/a.soil")
+        assertFalse(dir.exists())
+
+        val ok = RestoreStaging.writeStagedVia(target, 1L) { part -> part.writeText("x"); 1L }
+
+        assertTrue(ok)
+        assertEquals("x", target.readText())
     }
 
     // ── fits ─────────────────────────────────────────────────────────────────

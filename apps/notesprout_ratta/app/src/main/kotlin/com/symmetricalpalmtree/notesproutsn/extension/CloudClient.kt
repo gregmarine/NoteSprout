@@ -219,6 +219,11 @@ object CloudClient {
      * Stream the file [entryId] into [destination] (truncated first, fsynced by the provider) and
      * answer the bytes written. **[destination] is closed here** whatever happens.
      *
+     * [budgetMs] defaults to the flat [CloudTimeouts.DOWNLOAD_MS], which is what an import wants —
+     * one `.soil` of a size 120 s covers comfortably. A caller pulling a whole library passes
+     * [CloudTimeouts.downloadBudgetMs] of the size the listing gave, because there the largest file
+     * has no ceiling (arc 27 / L4).
+     *
      * @throws CloudNotConnectedException no account is connected — offer Connect.
      * @throws CloudNetworkException the provider could not reach its service; nothing was read.
      * @throws ExtensionCallException the arguments, the store, the bind, the call or the reply failed.
@@ -228,11 +233,12 @@ object CloudClient {
         ref: ProviderRef,
         entryId: String,
         destination: ParcelFileDescriptor,
+        budgetMs: Long = CloudTimeouts.DOWNLOAD_MS,
     ): Long {
         try {
             CloudArgs.requireEntryId(entryId)
             val t0 = System.currentTimeMillis()
-            val bytes = call(context, ref, "download", CloudTimeouts.DOWNLOAD_MS) { iface, store ->
+            val bytes = call(context, ref, "download", budgetMs) { iface, store ->
                 CloudArgs.checkDownloaded(iface.download(store, entryId, destination))
             }
             Slog.d(TAG) { "download: $bytes B in ${System.currentTimeMillis() - t0} ms" }

@@ -27,6 +27,8 @@ import com.symmetricalpalmtree.notesproutsn.core.TopGuard
 import com.symmetricalpalmtree.notesproutsn.crypto.AttemptLimiter
 import com.symmetricalpalmtree.notesproutsn.databinding.ActivityRestoreBinding
 import com.symmetricalpalmtree.notesproutsn.databinding.DialogNotebookPassphraseBinding
+import com.symmetricalpalmtree.notesproutsn.extension.ExtensionRegistry
+import com.symmetricalpalmtree.notesproutsn.extension.ProviderRef
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -45,15 +47,19 @@ import kotlin.coroutines.resume
  * The screen owns no policy: [RestoreEngine] decides everything and never throws, and this screen
  * decides only what the person is told. Two states in one layout:
  *
- *  - **Sources.** Two rows — a folder on this device (the platform picker), and L4's cloud row,
- *    which is **GONE** until it has a source behind it. Never disabled: on e-ink that is invisible.
+ *  - **Sources.** Two rows — a folder on this device (the platform picker), and the cloud
+ *    (arc 27 / L4), which is **GONE** while no trusted cloud provider is installed. Never
+ *    disabled: on e-ink that is invisible. Discovery is re-run on every resume, because a package
+ *    can be disabled or replaced under a standing screen.
  *  - **The backups found.** One tappable row per backup, naming it, its notebook count, its size
  *    and when its index was last written — the derived rule "enough to tell two backups apart
- *    without opening either".
+ *    without opening either". *Choose another source…* comes back here, to the sources, rather
+ *    than reopening the picker: either source may be the one that was wanted next.
  *
  * The grant on the picked tree is **never persisted** (decision 3: a restore never *sets* a
  * destination — persisting the tree would be exactly that). It lives for this showing and no
- * longer, which is why the source is a field and not a stored URI.
+ * longer, which is why the source is a field and not a stored URI. The cloud source is the same
+ * kind of thing: a [ProviderRef] found by discovery, held for the showing, never stored.
  *
  * The run is one non-cancelable progress dialog through the engine's five doors —
  * `preflight` → `stage` → `validate` → `proveCached` (else the key prompt) → `commit` — and every
@@ -80,6 +86,10 @@ class RestoreActivity : AppCompatActivity() {
 
     /** What the last listing found, in the order the source gave them. */
     private var backups: List<RestoreBackup> = emptyList()
+
+    /** The installed cloud provider, or null when there is none — the cloud row's whole condition.
+     *  Re-found on every resume; held for the showing and never stored. */
+    private var cloudRef: ProviderRef? = null
 
     /** The busy dialog while one is up — the folder listing's, then the run's. Non-cancelable:
      *  neither is something to half-leave, and the engine has no cancel to offer. */
@@ -112,8 +122,28 @@ class RestoreActivity : AppCompatActivity() {
         binding.btnBack.setOnClickListener { finish() }
         TooltipCompat.setTooltipText(binding.btnBack, binding.btnBack.contentDescription)
         binding.btnFromFolder.setOnClickListener { onPickFolderTap() }
-        binding.btnChooseAnother.setOnClickListener { onPickFolderTap() }
-        // btnFromCloud has no listener and stays GONE until L4 gives it a source.
+        binding.btnFromCloud.setOnClickListener { onCloudTap() }
+        binding.btnChooseAnother.setOnClickListener { onChooseAnotherTap() }
+        discoverCloud()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (IndexGuard.bounced(this)) return
+        // A package can be disabled or replaced under a standing screen — the Backup screen's own
+        // rule, and the reason discovery is not a one-shot in onCreate.
+        discoverCloud()
+    }
+
+    /** Discovery is a `PackageManager` query: off Main, and the row is **GONE**, never disabled. */
+    private fun discoverCloud() {
+        lifecycleScope.launch {
+            val ref = ExtensionRegistry.cloud(this@RestoreActivity)
+            if (isFinishing || isDestroyed) return@launch
+            cloudRef = ref
+            binding.btnFromCloud.visibility = if (ref != null) View.VISIBLE else View.GONE
+            Slog.d(TAG) { "cloud source available=${ref != null}" }
+        }
     }
 
     override fun onDestroy() {
@@ -137,6 +167,58 @@ class RestoreActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * *Choose another source…* — back to the sources pane, not straight into the folder picker: the
+     * source that is wanted next may be the other one. Nothing is remembered from the listing that
+     * was showing.
+     */
+    private fun onChooseAnotherTap() {
+        if (running.get()) { Slog.d(TAG) { "choose-another tap ignored: a restore is going" }; return }
+        source = null
+        backups = emptyList()
+        binding.rows.removeAllViews()
+        binding.listPane.visibility = View.GONE
+        binding.sourcesPane.visibility = View.VISIBLE
+    }
+
+    // ── Choosing the cloud ───────────────────────────────────────────────────
+
+    private fun onCloudTap() {
+        if (running.get()) { Slog.d(TAG) { "cloud tap ignored: a restore is going" }; return }
+        val ref = cloudRef ?: run { discoverCloud(); return }
+        lifecycleScope.launch { adoptCloud(ref) }
+    }
+
+    /**
+     * List the device folders under `Backups/` and show them. One `list` for the folder plus one
+     * per device folder — a `list` costs most of a second on this seam, so this is the whole cost
+     * of the enumeration.
+     */
+    private suspend fun adoptCloud(ref: ProviderRef) {
+        val picked = CloudRestoreSource(applicationContext, ref)
+        showProgress(getString(R.string.restore_reading_cloud))
+        val result = picked.listBackups()
+        hideProgress()
+        if (isFinishing || isDestroyed) return
+        when (result) {
+            is ListResult.Failed -> sourceProblem(result.problem)
+            is ListResult.Backups -> {
+                source = picked
+                backups = result.backups
+                // The label carries its own "Backups in", so the pane's caption goes.
+                binding.listCaption.visibility = View.GONE
+                binding.folderPath.text = getString(R.string.restore_cloud_source_label, providerName())
+                Slog.d(TAG) { "listed ${backups.size} cloud backup(s)" }
+                renderList()
+            }
+        }
+    }
+
+    /** The extension's label — the only name the host has for the provider without asking it, and
+     *  the same one the Backup screen falls back to. Never an account label. */
+    private fun providerName(): String =
+        cloudRef?.label?.toString() ?: getString(R.string.cloud_caption)
+
     /** List what the picked tree holds (one level deep — D1's `dev/` rule) and show it. */
     private suspend fun adoptFolder(uri: Uri) {
         val picked = SafRestoreSource(contentResolver, uri)
@@ -149,6 +231,7 @@ class RestoreActivity : AppCompatActivity() {
             is ListResult.Backups -> {
                 source = picked
                 backups = result.backups
+                binding.listCaption.visibility = View.VISIBLE
                 binding.folderPath.text = folderLabel(uri)
                 Slog.d(TAG) { "listed ${backups.size} backup(s)" }
                 renderList()
@@ -253,10 +336,15 @@ class RestoreActivity : AppCompatActivity() {
 
         RestoreEngine.preflight(this, backup)?.let { hideProgress(); problemDialog(it); return }
 
+        // "Copying" is honest for a folder on this device and wrong for a link that can be slow;
+        // the cloud leg says "Downloading" so a long wait reads as what it is.
+        val copyLine =
+            if (src is CloudRestoreSource) R.string.restore_progress_downloading
+            else R.string.restore_progress_copying
         val manifest = when (
             val staged = RestoreEngine.stage(this, src, backup) { done, total ->
                 // The progress callback arrives on the engine's IO thread.
-                runOnUiThread { setProgress(getString(R.string.restore_progress_copying, done, total)) }
+                runOnUiThread { setProgress(getString(copyLine, done, total)) }
             }
         ) {
             is RestoreEngine.StageResult.Failed -> { hideProgress(); problemDialog(staged.problem); return }
@@ -550,7 +638,35 @@ class RestoreActivity : AppCompatActivity() {
                 R.string.restore_problem_fetch_title,
                 getString(R.string.restore_problem_fetch_body, problem.fileName),
             )
+
+            // The four cloud kinds, worded the way the Backup screen words the same four — a
+            // person is being told the same thing about the same seam, in both directions.
+            RestoreProblem.CloudNotConnected -> cloudProblem(
+                R.string.restore_problem_cloud_not_connected_title,
+                R.string.restore_problem_cloud_not_connected_body,
+            )
+
+            RestoreProblem.CloudNetwork -> cloudProblem(
+                R.string.restore_problem_cloud_network_title,
+                R.string.restore_problem_cloud_network_body,
+            )
+
+            RestoreProblem.CloudUnanswered -> cloudProblem(
+                R.string.restore_problem_cloud_unanswered_title,
+                R.string.restore_problem_cloud_unanswered_body,
+            )
+
+            RestoreProblem.CloudGone -> cloudProblem(
+                R.string.restore_problem_cloud_gone_title,
+                R.string.restore_problem_cloud_gone_body,
+            )
         }
+    }
+
+    /** A cloud refusal names its provider in both the title and the body — the Backup screen's
+     *  `cloud_problem_*` shape, where `%1$s` is always the provider and never the account. */
+    private fun cloudProblem(title: Int, body: Int) {
+        Dialogs.problem(this, getString(title, providerName()), getString(body, providerName()))
     }
 
     companion object {
