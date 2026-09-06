@@ -511,8 +511,8 @@ and an `AskUserQuestion` never share one turn — explain, wait, then ask.
   text (heading + wrapped paragraph), all six shapes (star at 37°), and the sticky icon render in
   D8 order under the existing link; the page survives close → reopen; **the eight-button Insert
   bar fits in ONE row on the Nomad** (~940 of 1404 px at `toolbar_button_size`) — D4's two-row
-  wrap is not needed there. "Both Sends hide" is by construction (`MIXED`) and is on the H2 hand
-  checklist with a real selection.
+  wrap is not needed there. "Both Sends hide" confirmed by the user by hand (2026-09-06): a lasso over a sample text /
+  shape offers neither Pad nor Calendar.
 - **Tests:** `:app` 1194 → **1337** (+143), every module green.
 - **Planner calls recorded:** star outline = alternating outer/inner vertices from the top, inner
   ratio 0.5 (og's skip pattern not copied); arrow arms = `min(0.3·width, 48 px)` at ±150°; a
