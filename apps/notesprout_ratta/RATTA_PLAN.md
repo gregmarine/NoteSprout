@@ -100,7 +100,7 @@ host untouched**: two in-process screens and five tables inside `:ext-calendar`;
   process-local `inkOwner` guard covers the chain; the editor's surface releases before every
   `finish()`). Still API 7; nothing crossed the seam).
   Full table: app `CLAUDE.md` + `docs/extensions.md`.
-- **g-paper pin: 0.1.23** in `sn-screen/build.gradle.kts` — `gpaper-core` + `gpaper-ratta`
+- **g-paper pin: 0.1.27** (arc 28 / H3 2026-09-06; 0.1.23 through arc 27) in `sn-screen/build.gradle.kts` — `gpaper-core` + `gpaper-ratta`
   only. No Onyx, no jetifier, no pickFirsts, no `tools:replace`.
 - **SEVEN extension points** (each was its own user decision — the SEVENTH, `ACTION_CALENDAR`,
   granted 2026-09-01, landed at arc 23 / Y1; **no EIGHTH without another**;

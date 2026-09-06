@@ -7,7 +7,7 @@ whole at every phase start, together with the root `CLAUDE.md` and `apps/notespr
 traps are summarized at the end so this file is enough. `RESTORE_PLAN.md`, `ENCRYPTION_PLAN.md` and
 `DRIVE_PLAN.md` are the shapes this file copies.
 
-**Status: H2 ✅ landed 2026-09-06 — H3 ⬜ next.** H1 ✅ · H2 ✅ · H3 ⬜ · H4 ⬜ · H5 ⬜ · H6 ⬜ ·
+**Status: H3 ✅ landed 2026-09-06 — H4 ⬜ next.** H1 ✅ · H2 ✅ · H3 ✅ · H4 ⬜ · H5 ⬜ · H6 ⬜ ·
 H7 ⬜. When the arc closes, `docs/objects.md` is the reference.
 
 **Phase letter:** **H** — the last free letter in `RATTA_PLAN.md`'s A–Z (L went to arc 27). After
@@ -76,7 +76,7 @@ question, as always).
 | 5 | Text object creation | **Both paths.** (a) The lasso bar gains **Text** beside **H**: recognize the ink through the extension recognizer and replace the strokes with one text row — **recognition failure creates nothing** (the heading rule; og's unrecognized-ink fallback state is deliberately absent). (b) The Insert sub-bar's **Text** inserts an empty text object at page centre and opens the edit dialog at once; Cancel or blank Save on that first dialog **removes it** (nothing blank ever exists); Save lands it selected. |
 | 6 | Text edit dialog | **A plain markdown box, no format bar.** One multi-line `AppCompatEditText` holding raw Markdown source, Save / Cancel, blank Save = delete (`HeadingEditDialog`'s shape). The object renders on-page through `:markdown` (`MarkdownRenderer` → `MarkdownDraw`) at **24 sp**, black, multi-line, wrapping at a width capped by the page (D1). A stylus tap on a lone selected text object opens it (the heading gesture). |
 | 7 | Shape types | **Six:** `RECTANGLE`, `ELLIPSE`, `TRIANGLE`, `ARROW`, `LINE`, `STAR`. Square and circle are rectangle / ellipse with the aspect lock — **not** types. og's diamond, trapezoid, pentagon, hexagon and arch are not built (backlog, a fresh decision each). |
-| 8 | Shape sizing / editing | **Transform mode in g-paper.** An engine-owned overlay — oriented dashed box, **8 resize handles** (corners + edge midpoints), a **rotate knob** above top-centre, aspect lock, rotation snap within 5° of 0/90/180/270, minimum size 24 dp — entered by the host from the lasso bar's **Transform** on a lone shape, reported back with before/after geometry. A new g-paper version, pinned per the protocol (SN pins 0.1.23; g-paper is at 0.1.24 — H3 lands on 0.1.25). Live handles are drawn by the engine, so the EPD sees them. |
+| 8 | Shape sizing / editing | **Transform mode in g-paper.** An engine-owned overlay — oriented dashed box, **8 resize handles** (corners + edge midpoints), a **rotate knob** above top-centre, aspect lock, rotation snap within 5° of 0/90/180/270, minimum size 24 dp — entered by the host from the lasso bar's **Transform** on a lone shape, reported back with before/after geometry. A new g-paper version, pinned per the protocol (SN pinned 0.1.23; g-paper was at 0.1.24 when this was written — **H3 landed on 0.1.27**, Paintsprout having taken 0.1.25/0.1.26 for raster pages the same day). Live handles are drawn by the engine, so the EPD sees them. |
 | 9 | Parity depth | **Full in-notebook parity, no extension transfers.** All three kinds: lasso select / move / delete, eraser + scribble-erase **whole-object**, undo/redo, Copy / Cut / Paste within and across notebooks (a sticky's children travel with it, fresh ids), cross-notebook page copy, Contents untouched. **Send to Scratch Pad / Calendar stay ink-only** — both buttons hide when the selection holds a sticky, text or shape (the way the Pad button hides for non-ink today). `:ext-ink`'s `InkWire` is not widened. |
 | 10 | Toolbar | **One `Insert` button opening a sub-bar** (the H1–H6 recipe): Sticky · Text · Rectangle · Ellipse · Triangle · Line · Arrow · Star. One slot on the top bar, after the lasso, **measured against the Nomad first**. |
 | 11 | Phases / review | **Seven, H1–H7, this standalone `OBJECTS_PLAN.md`.** `/code-review high` on the arc range in **H6** (with the PDF endnotes) and its fixes; **H7 is docs-and-freeze with no code review.** |
@@ -271,21 +271,33 @@ per link its wrapped headings/texts/shapes/strokes; sticky icons; loose strokes)
 re-records only on `notifyContentChanged` / the engine's data-in calls; one Main block = one EPD
 frame; renderer content is set **before** `loadStrokes` on a page load (the K1 ordering).
 
-### D9 — g-paper transform mode (H3, Fable, `~/git/g-paper` 0.1.25)
+### D9 — g-paper transform mode (H3, Fable, `~/git/g-paper` **0.1.27**)
 
 Engine-owned, host-agnostic — it knows nothing about shapes:
 
 - `PaperView.beginTransform(contentId, box: OrientedBox, aspectLocked: Boolean, minSizePx)` /
-  `endTransform()`; `PaperListener.onTransformChanged(contentId, box)` per committed step and
-  `onTransformEnded(contentId, before, after)`; `OrientedBox(cx, cy, w, h, rotationDeg)`.
+  `endTransform()` / `setTransformAspectLocked(locked)` / `transformingContentId` / `transformBox`;
+  `PaperListener.onTransformChanged(contentId, box)` **live** (throttled to the lasso cadence
+  during a drag, once more at the lift — the host updates its working copy only; the engine
+  repaints through `drawObject`) and `onTransformEnded(contentId, before, after)` **exactly once
+  per mode on every exit, the host's `endTransform` included** — the one persistence + undo +
+  chrome-teardown point; `OrientedBox(cx, cy, w, h, rotationDeg)` (clockwise, `[0, 360)`).
+  `beginTransform` requires `Tool.LASSO` (a no-op otherwise — `armLassoForLanding()` first) and
+  dismisses the selection **without** `onSelectionDismissed`; nothing is selected after an exit
+  (the host `setSelection`s the shape back under the lasso).
 - Overlay: dashed 1 dp box drawn **oriented**, 8 handles (10 dp, 22 dp touch), rotate knob 36 dp
   above top-centre, `round(density)` px hairlines on integer edges (the hairline trap). Grab
   classification at down: BODY / ROTATE / handle / NONE (outside = end). Resize anchors the
   opposite handle, clamps to `minSizePx`, honours the lock; rotate snaps within 5° of the four
   cardinals. The overlay lives on the selection layer; the live shape is repainted by the host's
   renderer on each `onTransformChanged` (`drawObject` at the new box — the live-drag pair).
-- Exits: `endTransform` from the host (Done on the bar), a tap outside, a tool change, any data-in
-  call. `isPenActive` semantics unchanged; `releaseRender` gated as today.
+- Exits: `endTransform` from the host (Done on the bar), a contact outside the grab region (it
+  then proceeds as an ordinary lasso contact and never reports `onPaperTapped`), a tool change,
+  any data-in call (`loadPageRaster` and `setSelection` included — 0.1.25's raster calls are
+  data-in too), an erase contact. `isPenActive` semantics unchanged; `releaseRender` gated as today.
+- **Ratta needs no engine change**: the mode rides the shared lasso entries
+  (`selectionBoxContains` answers for the grab region, so the law-3 hover suppress covers a handle
+  drag; a transform contact counts as a selection drag for the firmware suppress).
 - Pinned in `sn-screen/build.gradle.kts`; **the engine commit lands with the host commit** (a pin at
   an uncommitted engine is a tree a fresh clone cannot resolve). Demo app in g-paper gets a
   transform button so the overlay is checked on the Nomad before SN consumes it.
@@ -335,7 +347,7 @@ stays after H1 (default: removed in H7).
 **Questions to resolve at phase start:** app version · dialog title wording ("Text") · whether
 Cancel on a *re*-edit of an existing object is offered as a button or Back only.
 
-### ⬜ H3 — g-paper transform mode (Fable; g-paper 0.1.25)
+### ✅ H3 — g-paper transform mode (Fable; g-paper 0.1.27)
 
 D9 as written, in `~/git/g-paper`: `OrientedBox`, `beginTransform` / `endTransform`, the two
 listener callbacks, the overlay, the demo button. JVM tests for the pure geometry (grab
@@ -344,7 +356,7 @@ classification, anchored resize, lock, snap, min-size clamp). `publishToMavenLoc
 host calls nothing new yet). Nomad: the g-paper demo's transform overlay walked by hand (handles
 visible on the EPD, rotate knob, snap, tap-outside exit).
 
-**Questions to resolve at phase start:** app version · g-paper version number (default 0.1.25) ·
+**Questions to resolve at phase start:** app version · g-paper version number (default 0.1.25 — became 0.1.27) ·
 whether the rotate knob is offered for `LINE`/`ARROW` only or every type (default: every type).
 
 ### ⬜ H4 — Shapes on the page (Opus code on a Fable brief · Fable review · walk by hand)
@@ -561,3 +573,39 @@ and an `AskUserQuestion` never share one turn — explain, wait, then ask.
 - **Open for H4:** the ink-selection bar is now ten buttons with Pad · Calendar · Tag installed —
   it fits one row on the Nomad; H4's Transform button lands on the SHAPE row only, not this one.
 
+### H3 — Outcome (2026-09-06)
+
+- **Phase-start answers:** version stays `0.1.0-ratta`; g-paper **0.1.27** (Paintsprout Onyx had
+  taken 0.1.25 raster pages and 0.1.26 pixel eraser the same day — both opt-in behind
+  `pageMode`, a no-op for SN); the rotate knob is offered for **every** type.
+- **g-paper review before coding:** the two Paintsprout phases touched `CanvasPaperView`'s
+  data-in and erase paths and the Onyx module only; the Ratta module was untouched between
+  0.1.23 and 0.1.27. Re-pinning pulls in 0.1.24 (pencil hairline, Onyx) as well — nothing SN
+  calls changed shape. Two additions to D9 fell out: `loadPageRaster` / `setSelection` are
+  transform exits, and the Ratta law-3 hover suppress keys on `selectionBoxContains`, so the
+  grab region had to answer there (it does — no Ratta change).
+- **Landed in g-paper (commit `921cd9b`, Phase 15 in its `PLAN.md`):** `model/OrientedBox` ·
+  `geometry/TransformGeometry` + `TransformGrab` (pure, `TransformGeometryTest` 19) ·
+  `PaperView.beginTransform / endTransform / setTransformAspectLocked / transformingContentId /
+  transformBox` · `PaperListener.onTransformChanged` (live) + `onTransformEnded` (once, every
+  exit) · `canvas/TransformOverlay` (10 dp axis-aligned handles, 14 dp knob on a 36 dp stem,
+  `round(density)` px outlines on integer edges) · the mode rides the shared lasso entries, so
+  **neither device module changed** · demo **Xform** / **Lock** · `docs/api.md`,
+  `docs/host-responsibilities.md`, `CLAUDE.md`. g-paper core suite 193 green.
+- **SN:** `sn-screen/build.gradle.kts` pinned 0.1.23 → **0.1.27** (both artifacts); the host
+  calls nothing new; `:app` **1369** green (unchanged), `:sn-screen` 69.
+- **Nomad (by hand, the user, 2026-09-06):** all eight demo items pass — handles legible, pen
+  handle-drag with no firmware trail, free + locked corner, knob snap at the cardinals, body
+  move, pen tap-outside, finger drag + finger tap-outside, tool-change exit. **One finding, host
+  side:** the demo's finger handler kept consuming finger events in transform mode (it yielded
+  only while a selection was active), so a finger tap outside moved the object instead of
+  ending the mode. Fixed in the demo; the rule is now in g-paper's `host-responsibilities.md`
+  and binds H4: **`NotebookActivity`'s finger gates must yield while
+  `paper.transformingContentId != null`, exactly as while a selection is active.**
+- **Binding for H4 (the host contract as built):** arm the lasso before `beginTransform`
+  (`armLassoForLanding()` — the mode is a no-op under a pen tool); `onTransformChanged` updates
+  the `ShapeRenderer` working copy only (the engine repaints via `drawObject`); persist +
+  `Action.ShapeTransformed(before, after)` + bar teardown happen in `onTransformEnded` **only**,
+  which also fires for the bar's own Done; nothing is selected afterwards, so Done re-`setSelection`s
+  the shape with `ShapeGeometry.aabb`; `setTransformAspectLocked` is the bar's toggle; a
+  rotated shape's lasso hit stays the AABB (D3).

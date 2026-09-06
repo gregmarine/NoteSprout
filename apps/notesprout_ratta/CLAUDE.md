@@ -294,7 +294,7 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   the cloud extension store is restored like any other (the host never reaches into `:ext-cloud`'s
   tables), and every restore walk is driven by hand on the Nomad against a backup made foreign by
   `GlobalRotation` — never the Manta.
-- **Arc 28 "Objects" is IN PROGRESS (wizard locked 2026-09-06; H1 ✅ landed 2026-09-06 — the substrate: three row types, mappers, stores, renderers in D8 order, undo kinds, clipboard arms, the Insert bar shell; **H2 ✅ landed 2026-09-06 — text objects end to end: `TextEditDialog`, `TextFlow` (insert / convert / edit), `SelectionMode.TEXT`, the lasso bar's Text, `armLassoForLanding` shared with the transfer pastes**; H3 ⬜ next)** — sticky notes, on-page
+- **Arc 28 "Objects" is IN PROGRESS (wizard locked 2026-09-06; H1 ✅ landed 2026-09-06 — the substrate: three row types, mappers, stores, renderers in D8 order, undo kinds, clipboard arms, the Insert bar shell; **H2 ✅ landed 2026-09-06 — text objects end to end: `TextEditDialog`, `TextFlow` (insert / convert / edit), `SelectionMode.TEXT`, the lasso bar's Text, `armLassoForLanding` shared with the transfer pastes**; **H3 ✅ landed 2026-09-06 — g-paper transform mode (handles + rotate knob + aspect lock + 5° snap, g-paper 0.1.27, SN re-pinned 0.1.23 → 0.1.27, no host behaviour change)**; H4 ⬜ next)** — sticky notes, on-page
   Markdown text objects and six hand-placed shapes (`PARITY_BACKLOG.md` item 3), all **core** on the
   arc-3 heading pattern: three additive row types on the universal table (no `SOIL_VERSION` bump),
   a host `StickyEditorActivity` (the second second-paper-surface in one process, writing through the
@@ -502,7 +502,7 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   never repaired by deletion.
 - **`IndexGuard.ready(this)` first thing in every index-touching `onCreate`**;
   `BootstrapActivity` is the only index opener and is `noHistory`.
-- **g-paper 0.1.23, `gpaper-core` + `gpaper-ratta` only** (mavenLocal). No `gpaper-onyx`,
+- **g-paper 0.1.27 (since arc 28 / H3, 2026-09-06 — transform mode; 0.1.23 before), `gpaper-core` + `gpaper-ratta` only** (mavenLocal). No `gpaper-onyx`,
   no BOOX repo, no jetifier, no jniLibs pickFirsts, no `tools:replace` label. Engine gaps
   are fixed in `~/git/g-paper` (bump version, `publishToMavenLocal`, re-pin) — never
   worked around in the host.
