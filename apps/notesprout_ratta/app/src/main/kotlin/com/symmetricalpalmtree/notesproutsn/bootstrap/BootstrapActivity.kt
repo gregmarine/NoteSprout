@@ -24,6 +24,8 @@ import com.symmetricalpalmtree.notesproutsn.crypto.SoilRekey
 import com.symmetricalpalmtree.notesproutsn.data.index.SnIndex
 import com.symmetricalpalmtree.notesproutsn.encryption.EncryptionActivity
 import com.symmetricalpalmtree.notesproutsn.library.LibraryActivity
+import com.symmetricalpalmtree.notesproutsn.restore.RestoreDestination
+import com.symmetricalpalmtree.notesproutsn.restore.RestoreEngine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -84,9 +86,17 @@ class BootstrapActivity : AppCompatActivity() {
     }
 
     private suspend fun boot() {
+        // Arc 27 / L2 (D5): a restore killed mid-commit is settled FIRST — before `ensureReady`
+        // could read a missing index as a fresh install, and before `recoverGarden` could judge
+        // rekey leftovers over a half-swapped Garden. Two stats on the ordinary launch.
+        RestoreEngine.recoverInterrupted(this)
         when (SnIndex.ensureReady(this)) {
             SnIndex.PrepareOutcome.READY,
             SnIndex.PrepareOutcome.FIRST_LAUNCH -> {
+                // Arc 27 / L2 (D4): the first open after a restore's relaunch puts THIS device's
+                // backup destination back over the restored row and clears the park. One `contains`
+                // on the ordinary launch.
+                RestoreDestination.applyParked(this)
                 // Arc 26 / U2: finish any rekey commit a kill interrupted — `X.rekey.tmp` /
                 // `X.old.bak` beside a Garden file — before the library can list it. The cached
                 // global is the trusted key; a file it does not open is left exactly where it is.

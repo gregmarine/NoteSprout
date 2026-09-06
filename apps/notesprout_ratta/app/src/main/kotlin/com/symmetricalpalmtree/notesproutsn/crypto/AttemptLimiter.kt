@@ -13,6 +13,9 @@ object AttemptLimiter {
 
     const val GLOBAL_KEY = "GLOBAL"
 
+    /** Arc 27 / L2 — the restore's key prompt (decision 6) counts against its own bucket. */
+    const val RESTORE_KEY = "RESTORE"
+
     private const val PREFIX_FAILURES = "attempt_failures_"
     private const val PREFIX_LOCKOUT = "attempt_lockout_"
 

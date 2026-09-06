@@ -13,6 +13,7 @@ import com.symmetricalpalmtree.notesproutsn.crypto.AttemptLimiter
 import com.symmetricalpalmtree.notesproutsn.crypto.GlobalKey
 import com.symmetricalpalmtree.notesproutsn.crypto.PassphraseStore
 import com.symmetricalpalmtree.notesproutsn.data.index.SnIndex
+import com.symmetricalpalmtree.notesproutsn.restore.RestoreDestination
 import com.symmetricalpalmtree.notesproutsn.databinding.ActivityUnlockBinding
 import com.symmetricalpalmtree.notesproutsn.library.LibraryActivity
 import kotlinx.coroutines.launch
@@ -87,6 +88,10 @@ class UnlockActivity : AppCompatActivity() {
                 AttemptLimiter.recordSuccess(this@UnlockActivity)
                 // The user just typed the key — they have it; don't show the reveal screen again.
                 PassphraseStore.setRecoveryKeyAcknowledged(this@UnlockActivity)
+                // Arc 27 / L2 (D4): a restore's relaunch is meant to land in the library, not here
+                // — but a kill between its index install and its key step does land here, and the
+                // parked destination must still go back on the first successful open.
+                RestoreDestination.applyParked(this@UnlockActivity)
                 // The library — or the Encryption screen's resume banner if a rotation was in
                 // flight when the key left this device (arc 26 / U3).
                 BootstrapActivity.forwardAfterOpen(this@UnlockActivity, thenBackup = false)

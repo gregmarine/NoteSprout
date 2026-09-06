@@ -7,7 +7,7 @@ unless a standing trap needs checking; its protocol and traps are summarized at 
 file is enough. `ENCRYPTION_PLAN.md` and `DRIVE_PLAN.md` are the shapes this file copies.
 
 **Status:** wizard locked 2026-09-05 · Fable review folded in 2026-09-05 (R1–R7, § Review
-amendments) · L1 ✅ · L2 ⬜ · L3 ⬜ · L4 ⬜ · L5 ⬜ · L6 ⬜
+amendments) · L1 ✅ · L2 ✅ · L3 ⬜ · L4 ⬜ · L5 ⬜ · L6 ⬜
 
 **Phase letters:** every letter A–Z is spoken for in `RATTA_PLAN.md` except **H** and **L**. This
 arc takes **L**; H stays free.
@@ -298,7 +298,7 @@ this phase.**
 free with the one listing — so L3 can show "N notebooks · 412 MB" and the pre-flight gates free
 space before fetching, D2/R1.)*
 
-### ⬜ L2 — the commit engine
+### ✅ L2 — the commit engine
 
 The dangerous half, and the one Fable writes.
 
@@ -317,7 +317,9 @@ The dangerous half, and the one Fable writes.
 a `.soil` that fails its probe fails the whole restore (og) or is skipped-and-named (the backup
 engine's "copy it as the bytes it is" instinct points the other way; **default: fail**, because a
 restore installs a library and a bad notebook in it is a library that lies) · where the parked
-destination blob lives if not `SecurePrefs`. *(Settled by the review, not to be re-asked: staging
+destination blob lives if not `SecurePrefs`. **Answered 2026-09-05: 64 MB stays · fail the whole
+restore · `SecurePrefs` (the `sn_secure` file, key `restore_pending_destination`) · version stays
+`0.1.0-ratta`.** *(Settled by the review, not to be re-asked: staging
 on the library volume + rename-only commit (R1); session cleared before the swap (R2); rollback
 relaunches rather than reopening (R4); per-item recovery (R5); typed-then-normalized prompt (R6);
 acknowledgement set unconditionally (R7).)*
@@ -486,3 +488,69 @@ name the wrong folder. Fable's read fixed one thing: the `Context` overloads bui
 **Tests:** 35 new (`RestoreManifestTest` 21, `RestoreStagingTest` 14) — 1077 → **1112**, 0 failures.
 No device walk (nothing to see on a device yet); L3's walk exercises this code end to end.
 Version `0.1.0-ratta` (confirmed at phase start).
+
+### L2 — Outcome (2026-09-05, Fable build)
+
+**Landed — the commit engine, the recovery plan, the destination carry-over; nothing in the app
+calls `commit` yet (that is L3's screen).** New in `restore/`:
+
+- **`RestoreEngine`** (D3) — five doors the screen walks in order, each catching at its top and
+  answering a `Problem`, never throwing: `preflight` (rotation marker → `RotationPending`; any
+  claimed `.soil` → `NotebookHeld` via the new `SoilOpenFiles.anyOpen()`; listing bytes + 64 MB
+  headroom vs `StatFs` → `NotEnoughSpace(shortfall)`, pure `spaceProblem`), `stage` (resets staging,
+  hands the source its fetch, discards on failure), `validate` (pure `validationProblem` over a
+  probe: every `INDEX`/`SOIL`/`STORE` must exist, weigh what the listing said, and probe
+  **`Encrypted`** — `Plaintext` refused too, SN has no plaintext mode; WAL items present, never
+  probed; the first bad file is named, in manifest order — **fail whole, the phase-start answer**),
+  `proveCached` (this device's cached global against the *staged* index via
+  `SoilCrypto.verifyPassphrase`, one platform KDF, silent) / `proveTyped` (as typed, then
+  `GlobalKey.normalize`d only when that differs — R6 — recording success/failure in the new
+  `AttemptLimiter.RESTORE_KEY` bucket; the screen checks the lockout before prompting), and
+  `commit` (whole under `NonCancellable` on IO): step 0 re-checks the staged set for a tear (the
+  index exempt from the size rule — the proof opened it and SQLite's close checkpoints its WAL
+  into it), the marker/held rules re-checked at the last moment, this device's destination read from
+  `BackupStore` and parked (`ParkFailed` refuses), the headroom re-measured, then
+  `KeySession.clear()` **before** `ExtensionStores.closeAll()` + `SnIndex.closeForRotation()` (R2),
+  then the swap by `RealRekeyFs.rename` only — (a) live index + every sidecar → `restore_replaced/`,
+  (b) live `Garden/` → aside, (c) staged `Garden/` → live, (d) staged index `-wal` beside the live
+  name (a `-shm` deleted, never moved), (e) staged index → live **last**, a directory fsync after
+  each group — then key state (`setGlobalPassphrase(proven)`, `setRecoveryKeyAcknowledged`
+  unconditionally — R7, `KeyMaterial.clearAll`, `KeySession.set`, `NotebookUnlocks.clear`,
+  `PassphraseCache.clear`, `clearRotationMarker`), then the aside and staging discarded (decision
+  5). **A rename failing at any of a–e runs D5's plan in-process** (the aside back, the staged
+  Garden deleted when both exist), un-parks, puts the old passphrase back in the session and answers
+  `RolledBack(SwapFailed(step))`; a refusal after the park un-parks too, so a park never outlives
+  the restore that wrote it. The caller relaunches on every `Outcome` (R4).
+- **`RestoreRecovery`** (D5 / R5) — pure `plan(State(liveIndex, asideIndex, liveGarden, asideGarden,
+  asideSidecars))` → ordered `DeleteAside` / `DeleteStaging` / `DeleteLiveGarden` / `RenameBack(name)`.
+  Live index present → the commit finished, delete the aside and staging. Live absent + aside
+  present → delete the live Garden only when **both** exist (it is the staged one from 8c), then
+  rename back Garden, the sidecars, and the index **last**. Neither → only a stray staging dir; an
+  aside Garden with no index (impossible by the commit's order) is left for a person, never deleted.
+  `RestoreEngine.recoverInterrupted` executes it — **the first line of `BootstrapActivity.boot()`**,
+  ahead of `ensureReady` and so of `recoverGarden`; two `exists` stats on the ordinary launch. The
+  same executor is the in-process rollback.
+- **`RestoreDestination`** (D4) — pure `merge(restored, parked)`: this device's `treeUri` /
+  `cloudEnabled` / `cloudDeviceFolder` (or null/false when it had none — **always**, a restore never
+  sets a destination), both stamp maps and all six last-run figures cleared, everything else the
+  restored value; idempotent. The park is one `kotlinx` JSON blob in `SecurePrefs` (`sn_secure`,
+  `restore_pending_destination`, written with `commit()`); `applyParked` — write the merge first,
+  clear the park second — runs in Bootstrap right after READY/FIRST_LAUNCH and **also in
+  `UnlockActivity`'s success path**, for the one kill (after 8e, before the key step) whose relaunch
+  lands at Unlock instead of the library.
+- `SnIndex.closeForRotation`'s contract widened to "rotation or restore" (doc), `IndexGuard`'s note
+  names both closers, `AttemptLimiter.RESTORE_KEY`, `SoilOpenFiles.anyOpen()`.
+
+**Tests:** 39 new (`RestoreRecoveryTest` 14 — every case the five renames can leave, plus four
+invariants over all 48 states incl. idempotency through a file-system model; `RestoreDestinationTest`
+8; `RestoreEngineTest` 17 — both gates and the validation rule over a real temp staging dir) —
+1112 → **1151**, 0 failures. Files: `RestoreEngine` 430 lines, `RestoreRecovery` 91,
+`RestoreDestination` 124. Debug build installed on the Nomad for a cold-launch check of the two new
+Bootstrap lines (no restore performed — nothing calls `commit` yet). Version `0.1.0-ratta`.
+
+**Read-back notes for L3:** the screen's order is preflight → stage → validate → `proveCached`,
+else loop `AttemptLimiter.check(RESTORE_KEY)` → prompt → `proveTyped` until a key opens or the person
+gives up (`Problem.NoKey`) → `commit` → report → `relaunchIntent(thenBackup = false)` +
+`finishAffinity()` on **every** `Outcome`. Discard staging (`RestoreStaging.discard`) when the loop
+is abandoned before `commit` — the engine only discards on its own refusals. The proven passphrase
+lives in the screen's memory between the proof and `commit`, never in a Bundle.

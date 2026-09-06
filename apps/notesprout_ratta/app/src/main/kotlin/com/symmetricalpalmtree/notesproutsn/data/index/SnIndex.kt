@@ -30,9 +30,10 @@ import kotlinx.coroutines.withContext
  * the answer is no (a task Android rebuilt after a background process kill lands there).
  * **Nothing closes it in ordinary life** — it opens once per process and stays open — which is
  * what makes a single `onCreate` check sufficient. The one exception is [closeForRotation]
- * (arc 26 / U2): the global rotation must re-key the index file, which cannot happen under a live
- * Room connection; after it the Encryption screen touches nothing but dialogs and the only way out
- * is a relaunch through Bootstrap (`IndexGuard` bounces every other screen).
+ * (arc 26 / U2, widened arc 27 / L2): the global rotation must re-key the index file and a
+ * restore must rename it aside, neither of which can happen under a live Room connection; after
+ * it the calling screen touches nothing but dialogs and the only way out is a relaunch through
+ * Bootstrap (`IndexGuard` bounces every other screen).
  *
  * Open state machine (probe the file header, never open to find out):
  *  - `Invalid` + no file (or zero bytes) → mint (or reuse) the global key → create encrypted →
@@ -155,9 +156,10 @@ object SnIndex {
 
     /**
      * Arc 26 / U2 — the one door that closes the index: checkpoint, close, forget the instance.
-     * For the global rotation only, which must re-key the file and cannot while Room holds it.
-     * Every other screen is behind `IndexGuard` and bounces to Bootstrap from here on; the caller
-     * exits through a relaunch and never calls [dao] again. Idempotent; never throws. IO.
+     * **For a rotation or a restore only** — the rotation must re-key the file, the restore
+     * (arc 27 / L2, `RestoreEngine.commit`) must rename it aside, and neither can while Room holds
+     * it. Every other screen is behind `IndexGuard` and bounces to Bootstrap from here on; the
+     * caller exits through a relaunch and never calls [dao] again. Idempotent; never throws. IO.
      */
     suspend fun closeForRotation() = withContext(Dispatchers.IO) {
         prepareMutex.withLock {

@@ -20,8 +20,11 @@ import java.util.WeakHashMap
  * ```
  * if (!IndexGuard.ready(this)) return
  * ```
- * `onCreate` precedes every index touch, and nothing ever closes the index, so a screen past that
- * point cannot later find it shut. Finishing inside `onCreate` skips `onStart`/`onResume` — but
+ * `onCreate` precedes every index touch, and nothing closes the index in ordinary life, so a screen
+ * past that point cannot later find it shut. The two things that do close it —
+ * `SnIndex.closeForRotation`, for a global rotation (arc 26) or a whole-library restore (arc 27)
+ * — both end in `BootstrapActivity.relaunchIntent`, so every other screen is rebuilt behind this
+ * guard afterwards. Finishing inside `onCreate` skips `onStart`/`onResume` — but
  * `onDestroy` still runs, so a screen that tears down `lateinit` state there must open with
  * `if (IndexGuard.bounced(this)) { super.onDestroy(); return }`.
  */

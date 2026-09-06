@@ -241,7 +241,14 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   touches, `PARITY_BACKLOG.md` item 1 closed — no code. Nomad library left all-GLOBAL under a typed
   passphrase (the value is in the memory file, never in a doc).
 - **Arc 27 "Restore" is IN PROGRESS — L1 landed 2026-09-05 (`restore/` read side: manifest, staging,
-  `SafRestoreSource` + `data/backup/SafBackupReader`; no UI, no engine), L2 next** — whole-library restore,
+  `SafRestoreSource` + `data/backup/SafBackupReader`), L2 landed 2026-09-05 (`restore/RestoreEngine`
+  — preflight / stage / validate / proveCached / proveTyped / commit, the rename-only swap with the
+  installed index as the marker and an in-process rollback; pure `RestoreRecovery.plan` executed by
+  `RestoreEngine.recoverInterrupted` as **the first line of `BootstrapActivity.boot()`**; pure
+  `RestoreDestination.merge` + the `SecurePrefs` park applied by Bootstrap and Unlock on the first
+  open after the relaunch; `SnIndex.closeForRotation` now serves "rotation or restore";
+  `AttemptLimiter.RESTORE_KEY`; `SoilOpenFiles.anyOpen()`; **nothing calls `commit` yet — no UI**),
+  L3 next** — whole-library restore,
   `PARITY_BACKLOG.md` item 2. **Read the standalone `RESTORE_PLAN.md`, not `RATTA_PLAN.md`, for any
   work on it**: phases L1–L6, host-only, no point, no API bump, version stays `0.1.0-ratta`, and
   **no `/code-review` in the arc** (L5 is a failure-injection pass instead). The four decisions that

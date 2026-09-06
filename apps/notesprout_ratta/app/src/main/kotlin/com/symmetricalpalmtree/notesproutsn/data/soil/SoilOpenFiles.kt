@@ -46,6 +46,11 @@ object SoilOpenFiles {
     @Synchronized
     fun isOpen(file: File): Boolean = key(file) in open
 
+    /** True while any `.soil` at all is claimed in this process — the restore's pre-flight
+     *  (arc 27 / L2): a library is never swapped under a live writer, whichever file it is. */
+    @Synchronized
+    fun anyOpen(): Boolean = open.isNotEmpty()
+
     /** How many claims stand on [file] right now (0 when free). */
     @Synchronized
     fun openCount(file: File): Int = open[key(file)] ?: 0
