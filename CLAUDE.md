@@ -157,7 +157,11 @@ skill (`.claude/skills/device-build-install/SKILL.md`) — invoked automatically
   FROZEN (L1–L6 landed 2026-09-05/06)**: the reference is `apps/notesprout_ratta/docs/restore.md`;
   for any work on it read the standalone `apps/notesprout_ratta/RESTORE_PLAN.md` (not
   `RATTA_PLAN.md`) — host-only, no code review in the arc, no ninth point. **Arcs 1–27 are all
-  complete and frozen.** **No NINTH extension point
+  complete and frozen.** **Arc 28 "Objects" (sticky notes, text objects, six hand-placed shapes —
+  PARITY_BACKLOG item 3) is IN PROGRESS: wizard locked 2026-09-06, H1 ⬜ next; read the standalone
+  `apps/notesprout_ratta/OBJECTS_PLAN.md` (not `RATTA_PLAN.md`) for any work on it** — core on the
+  heading pattern, a g-paper transform mode, a host sticky editor, PDF endnotes; no ninth point.
+  **No NINTH extension point
   and no other arc without another user decision. Read `apps/notesprout_ratta/RATTA_PLAN.md`
   first for ANY other work there** — it holds the working protocol, model recipe, standing
   traps, and the per-arc ledger of still-binding decisions. Subsystem detail:

@@ -294,6 +294,14 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   the cloud extension store is restored like any other (the host never reaches into `:ext-cloud`'s
   tables), and every restore walk is driven by hand on the Nomad against a backup made foreign by
   `GlobalRotation` — never the Manta.
+- **Arc 28 "Objects" is IN PROGRESS (wizard locked 2026-09-06; H1 ⬜ next)** — sticky notes, on-page
+  Markdown text objects and six hand-placed shapes (`PARITY_BACKLOG.md` item 3), all **core** on the
+  arc-3 heading pattern: three additive row types on the universal table (no `SOIL_VERSION` bump),
+  a host `StickyEditorActivity` (the second second-paper-surface in one process, writing through the
+  notebook's `SoilWriter`), a g-paper **transform mode** (H3, engine-owned handles + rotate), and PDF
+  endnotes over a backward-readable `PageBundle` v2. No ninth point, no `API_VERSION` bump, no line
+  objects, no shape recognizer. **Read the standalone `OBJECTS_PLAN.md`, not `RATTA_PLAN.md`, for
+  any work on it**; when it closes, `docs/objects.md` is the reference.
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by
