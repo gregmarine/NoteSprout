@@ -259,7 +259,7 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   `RestoreProblem`s mapped as `CloudBackupLeg` maps them; the Restore screen's *From the cloud…* row
   GONE while no provider is installed; walked on the Nomad — a mid-fetch wifi cut refused with
   nothing touched, then a full cloud restore with a renamed device folder proved decision 3 on the
-  cloud leg), **L5 🧪 2026-09-06** (`restore/RestoreFaults` — one armed fault per commit behind the
+  cloud leg), **L5 ✅ 2026-09-06** (`restore/RestoreFaults` — one armed fault per commit behind the
   debug menu's *Break a restore*, nine faults over six seams, inert in release; the **orphan
   prune** `RestoreEngine.pruneOrphans` — after the key is proven, a staged `.soil` the staged index
   has no alive row for, and a staged store that is not encrypted SQLite or does not open under the
@@ -267,8 +267,7 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   key covers the index only; recovery clears an obstruction on a rename-back target and any index
   sidecar the new index left at the live name; a disk that fills mid-fetch is named as the disk;
   every kill seam, the rollback, the torn set, the mid-swap store call, both disk-full shapes, the
-  lockout and the foreign-key restore walked on the Nomad — two hand-gated items open in the plan's
-  ledger), L6 (docs + freeze) next** — whole-library restore,
+  lockout and the foreign-key restore walked on the Nomad), L6 (docs + freeze) next** — whole-library restore,
   `PARITY_BACKLOG.md` item 2. **Read the standalone `RESTORE_PLAN.md`, not `RATTA_PLAN.md`, for any
   work on it**: phases L1–L6, host-only, no point, no API bump, version stays `0.1.0-ratta`, and
   **no `/code-review` in the arc** (L5 is a failure-injection pass instead). The four decisions that

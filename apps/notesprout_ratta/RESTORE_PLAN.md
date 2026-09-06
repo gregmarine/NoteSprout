@@ -7,7 +7,7 @@ unless a standing trap needs checking; its protocol and traps are summarized at 
 file is enough. `ENCRYPTION_PLAN.md` and `DRIVE_PLAN.md` are the shapes this file copies.
 
 **Status:** wizard locked 2026-09-05 · Fable review folded in 2026-09-05 (R1–R7, § Review
-amendments) · L1 ✅ · L2 ✅ · L3 ✅ · L4 ✅ · L5 🧪 (code + Nomad injections done 2026-09-06; the salted-folder walk passed; ONE item open — the stale cloud `-wal`, see the ledger) · L6 ⬜
+amendments) · L1 ✅ · L2 ✅ · L3 ✅ · L4 ✅ · L5 ✅ (2026-09-06) · L6 ⬜
 
 **Phase letters:** every letter A–Z is spoken for in `RATTA_PLAN.md` except **H** and **L**. This
 arc takes **L**; H stays free.
@@ -365,7 +365,7 @@ read-side twin, `CloudTimeouts.downloadBudgetMs(bytes)` — 120 s flat to 20 MiB
 gate as the local leg — L2's preflight already refuses on listing bytes + 64 MB before the first
 download, no cloud-only margin · version stays `0.1.0-ratta`.**
 
-### 🧪 L5 — hardening: failure injection on the Nomad
+### ✅ L5 — hardening: failure injection on the Nomad
 
 **No `/code-review` in this arc** (decision 8). Instead, break it on purpose and fix what falls out.
 A debug-menu `RestoreProbe` is the door, in the `RekeyProbe` shape. At minimum:
@@ -719,7 +719,7 @@ screen's caption names the extension label (*NSE · Cloud Storage Dev*) where th
 threshold, no extraction). Version `0.1.0-ratta`.
 
 
-### L5 — Outcome (2026-09-06, Fable build + every injection by hand on the Nomad; 🧪 two items open)
+### L5 — Outcome (2026-09-06, Fable build + every injection by hand on the Nomad; closed by the user the same day)
 
 **Landed — the fault seam, the orphan prune, and four fixes the injections forced.**
 `restore/RestoreFaults` (main source, inert unless `BuildConfig.DEBUG` and a fault is armed): nine
@@ -781,7 +781,11 @@ after the self-test cleanup… which never deletes them either. Harmless.**
 `NOTEBOOK`-scope row, so it restores — the rule is the index, not the file's age), committed,
 none of the salted names in `Garden/` afterwards. Item 1 below is ✅.
 
-**🧪 Open — needs a hand (cannot be driven from adb):**
+**The stale cloud `-wal` item (2 below) was NOT walked — the user closed L5 without it
+(2026-09-06): the rule is pinned on the JVM (`CloudRestoreRulesTest`, `RestoreManifestTest`) and
+the L4 walk fetched 55 mains and 0 sidecars.**
+
+**Hand-gated items (kept for the record):**
 1. ✅ **The salted local folder + orphans.** `Documents/Notesprout-Dev/dev/` is salted now: the
    plaintext og `575aca61-….soil` moved back in from `stale/`, plus `….soil.part`, `.soil.old`,
    `.soil.rekey.tmp`, `.soil.old.bak`, a lone `….soil-wal`, `notesprout.db-shm`, a plaintext
