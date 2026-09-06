@@ -659,8 +659,21 @@ sidecar (arc 25's law), and there is no new status-line wording for the case.
   same ground without a heal-after-throw factory.
 - A cloud-leg skip wording for a locked notebook with no key — U4's phase-start answer found no
   new wording was needed.
-- Everything else tracked in `PARITY_BACKLOG.md` — item 1 (this arc) is now done; item 2 (restore)
-  is separate and untouched here.
+- Everything else tracked in `PARITY_BACKLOG.md` — item 1 (this arc) is done; **item 2 (restore)
+  landed as arc 27 (2026-09-06), [`docs/restore.md`](restore.md).** Its key handling, for the
+  record here: the *staged* index is proved openable **before** any commit — the cached global
+  silently through `SoilCrypto.verifyPassphrase`, then a prompt (as typed, then `GlobalKey.normalize`d,
+  "passphrase or recovery key") under the `AttemptLimiter.RESTORE_KEY` bucket; the proven passphrase
+  becomes the global at commit with the acknowledgement set unconditionally, `KeyMaterial` /
+  `NotebookUnlocks` / `PassphraseCache` cleared and **the rotation marker cleared** (the library it
+  described is gone). **A restore is refused while a marker stands** (the marker names files the
+  restore would delete — in practice unreachable, since a killed rotation relaunches into this
+  screen's Resume). `KeySession.clear()` runs **before** the index closes so a store call during the
+  swap meets `SoilLockedException` rather than minting a store. `SnIndex.closeForRotation` serves
+  "rotation or restore" since then, and `RestoreEngine.recoverInterrupted` runs **before**
+  `recoverGarden` in Bootstrap. A store under neither key that reaches a rotation by any other route
+  still **stops** it (reproduced twice in arc 27; hand recovery = app stopped, store moved aside,
+  Resume) — the arc-26 follow-up candidate is skip-and-name for stores, as notebooks are quarantined.
 
 ## Tests
 

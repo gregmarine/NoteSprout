@@ -1049,7 +1049,15 @@ the user's call). Everything the entry predicted was deleted: `TagCodec`, `Compa
 `ScratchPageCodec`, `PageFullException` and the pad's 4 MiB page ceiling; the editor's line codecs.
 **This entry is closed.**
 
-## Notesprout SN — arc 21 "Tags" W5 (2026-09-01): a restore screen
+## Notesprout SN — arc 21 "Tags" W5 (2026-09-01): a restore screen — ✅ CLOSED by arc 27 "Restore" (2026-09-06)
+
+**Closed.** Arc 27 built the whole-library restore this entry deferred — index, notebooks and stores
+from either leg, replace-all behind the Backup screen's *Restore from a backup…* row; the aside-swap
+ordering, "replace all" against a moved-on library (it replaces, no merge, no undo) and the
+cross-device key (the staged index is proved openable under a key the user supplies **before**
+anything live is touched) are all answered in `apps/notesprout_ratta/RESTORE_PLAN.md` § Decisions,
+and the reference is `apps/notesprout_ratta/docs/restore.md`. The manual copy-back stays documented
+as the way to recover ONE store without replacing the library. The original entry follows.
 
 **W5 put every extension store into the backup set; it did not add a way to put one back.** The
 user's phase-start call: W5 ships backup only, the manual copy-back is documented

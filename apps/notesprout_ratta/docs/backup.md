@@ -22,19 +22,27 @@ leg is unchanged code, and the two legs share only the run's shape. See
 [The cloud leg](#the-cloud-leg-arc-25--v4) below and [`docs/cloud.md`](cloud.md) for the seam
 itself.
 
-**Backup only — no restore.** A single notebook is already recoverable through arc 16's Import
-(every backup file is a self-describing `.soil` with `notebook_meta`); whole-library restore is its
-own future arc. og's `docs/backup.md` + `NotebookCompactor` were the reading references — no code
-copied.
+**Backup only at arc 17; restore landed in arc 27 (2026-09-06).** A single notebook is
+recoverable through arc 16's Import (every backup file is a self-describing `.soil` with
+`notebook_meta`); **the whole library — index, notebooks and extension stores — comes back through
+the Backup screen's *Restore from a backup…* row, from either leg**. That is its own feature with its
+own reference, [`docs/restore.md`](restore.md): replace-all with a rename-only aside-swap, the staged
+index proved openable before anything live is touched, orphans in the folder skipped and named, and
+**this device's backup destination never rewritten by a restore** (the `backup` row's `treeUri` /
+`cloudEnabled` / `cloudDeviceFolder` are parked before the swap and re-applied after it; both stamp
+maps cleared). This doc stays the write side. og's `docs/backup.md` + `NotebookCompactor` were the
+reading references — no code copied.
 
 **Arc 21 / W5 grew the set: every extension store is backed up too** — see
-[Extension stores](#extension-stores-arc-21--w5) below. Same rule, still no restore.
+[Extension stores](#extension-stores-arc-21--w5) below. Same rule; a store is restored with the rest
+since arc 27.
 
 **Status: arc 17 complete** — K1 compaction (`73d6490`) · K2 backup (`7fb0aa2`, user checklist
 passed) · K3 review (high, 10/10 findings fixed — the destination-integrity cluster the headline),
 this doc. **Grown by arc 21 / W5** (extension stores). **Grown by arc 25 "Drive" / V4** (the cloud
 leg — `Backups/<device folder>/`, its own stamp map, `SelfContainedSnapshot`; 2329 JVM tests, user
-checklist passed 2026-09-04).
+checklist passed 2026-09-04). **Read side added by arc 27 "Restore"** (`data/backup/SafBackupReader`,
+the writer's hand-rolled `DocumentsContract` twin; the *Restore from a backup…* row; `docs/restore.md`).
 
 ---
 
@@ -235,8 +243,11 @@ the user has.
 - **Its own sentence in the dialog** (the user's W5 call): "N extension stores copied." Folding them
   into "N copied" would make a number the user can check against the library stop matching it.
 
-**Getting a store back — still no restore screen.** There is no restore path in the app for a store
-(as there is none for the library). A store is recovered by hand, with the app closed: copy
+**Getting a store back.** Since arc 27 a store comes back with the whole library through the Restore
+screen ([`docs/restore.md`](restore.md)) — a staged store that is not encrypted SQLite or does not
+open under the proven key is left out and named, never installed. There is still no per-store door;
+the hand copy-back below remains the way to recover ONE store without replacing the library, with
+the app closed: copy
 `<pkg>.db` from the backup folder into `Garden/`, and its `-wal` beside it **if the backup has one**
 (a backup with a `-wal` is incomplete without it, and a `-wal` left over from an older copy corrupts
 the newer one — take both or neither, never one). Any `-shm` is rebuilt on open and is never copied.
@@ -245,7 +256,7 @@ will not open, and the app reports corruption rather than deleting it (never-del
 A store copied back from an old enough backup to still carry the arc-11 key/value shape is wiped on
 its first open after the restore like any other legacy store (format 1 → tables, logged as a row
 count), leaving the backup file itself untouched.
-A restore screen for the whole library, stores included, is in the monorepo `BACKLOG.md`.
+The whole-library restore screen is arc 27 — [`docs/restore.md`](restore.md).
 
 ---
 
@@ -446,12 +457,11 @@ Full model, rotation, scope, recovery and the failure table: [`docs/encryption.m
 
 ## What this arc deliberately did not do
 
-- **No restore** (arc 16's Import recovers a single notebook; whole-library restore is a future arc,
-  and arc 21 / W5 confirmed the same answer for extension stores — the manual copy-back is
-  documented above and a restore screen is in `BACKLOG.md`). Arc 25 / V4 confirms the identical
-  answer for the cloud leg: uploading is the whole of it, there is no restore-from-cloud path, and
-  a backup `.soil` picked up by hand from Drive is recoverable the same way any other export is —
-  through arc 16's ordinary Import. - **No automatic runs**, no scheduler.
+- **No restore in this arc** — arc 16's Import recovered a single notebook, arc 21 / W5 gave the
+  same answer for extension stores, and arc 25 / V4 for the cloud leg. **Closed by arc 27 "Restore"
+  (2026-09-06)**: both legs, replace-all, [`docs/restore.md`](restore.md). The manual copy-back
+  above is now only the way to recover one store without replacing the library.
+- **No automatic runs**, no scheduler.
   - **No per-device subfolder for the local (SAF) leg** (og's LOCAL shape; only debug's `dev/`
   split) — the cloud leg's own `Backups/<device folder>/` is arc 25 / V4's addition and does not
   change the local leg's flat shape. - **Drive landed** (arc 25 "Drive," V4, 2026-09-04) as the

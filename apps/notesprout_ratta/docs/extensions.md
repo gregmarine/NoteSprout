@@ -831,10 +831,17 @@ any other** — the `StoreFormat` ladder runs on `user_version` and `sqlite_mast
 file arrived, so a copied-back arc-11 `.db` is indistinguishable from one that was simply never
 upgraded, and gets the identical `WIPE` decision, logged the identical way.
 
-There is still **no restore this arc** — the manual copy-back (`<pkg>.db` plus its `-wal` if the
-backup has one, `-shm` never, app closed, ciphertext keyed to the device that wrote it) is
-documented in [`docs/backup.md`](backup.md), and a whole-library restore screen is a `BACKLOG.md`
-item, the same answer arc 17 gave for the library itself.
+There was **no restore in this arc**; **arc 27 "Restore" (2026-09-06) closed it** — stores travel
+with the whole-library swap ([`docs/restore.md`](restore.md)): every staged `Garden/<pkg>.db` is
+test-opened under the proven key after the index is, and one that is not encrypted SQLite or does
+not open under that key is **left out and named**, never installed (a store has no other key, and
+installing one is what stopped two rotations during the arc). The host still reads no extension
+table for it and special-cases no package — `:ext-cloud`'s restored `account` rows come back as
+content, shared refresh token and all. During the swap window the session is cleared **before** the
+index closes, so an extension calling its store then meets `SoilLockedException` instead of
+`ExtensionStores.open` minting an empty store the install would collide with (walked). The manual
+copy-back in [`docs/backup.md`](backup.md) remains the way to recover ONE store without replacing
+the library.
 
 ### Encryption (arc 26)
 

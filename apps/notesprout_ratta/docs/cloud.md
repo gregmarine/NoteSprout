@@ -17,7 +17,7 @@ reference for the feature it left behind. **Do not load `RATTA_PLAN.md` for this
 | 1 | Eighth point granted. Module `:ext-drive`, label `NSE · Google Drive` — **amended by decision 15**: the module is `:ext-cloud` and the label `NSE · Cloud Storage`. |
 | 2 | Generic cloud storage — `ACTION_CLOUD_STORAGE` + `ACTION_CLOUD_STORAGE_SCREEN`. |
 | 3 | **The extension owns all of OAuth** — client id/secret compiled only into the extension APK, refresh token in the extension store. The host sees status and file ops only. |
-| 4 | Consumers this arc: export destination, backup destination, import source. **No whole-library restore.** |
+| 4 | Consumers this arc: export destination, backup destination, import source. **No whole-library restore** — added by arc 27 (2026-09-06) as a fourth consumer, `restore/CloudRestoreSource` over the unchanged `list` + `download`; see [`docs/restore.md`](restore.md). |
 | 5 | Drive tree is SN's **own root** (`Notesprout SN` / `Notesprout SN Dev`), never og's trees. |
 | 6 | **No other extension is aware of the cloud** — no presence extra, no host-side cloud stub. |
 | 7 | The cloud picker is **host-drawn** (`CloudBrowserDialog`), not the provider's own UI. |
@@ -667,9 +667,21 @@ import ever needs it · the source answer is not remembered across screens eithe
 
 ## Not built / future (recorded, no user decision to build them)
 
-- **No whole-library restore** through the cloud point — decision 4. The one "restore a notebook"
-  path this arc has is picking a backed-up `.soil` from `Backups/` through the import source, which
-  runs the ordinary import pipeline (id-collision Replace/Keep both), not a library restore.
+- **Whole-library restore through the cloud point — built by arc 27 "Restore" (2026-09-06), not
+  this arc.** `restore/CloudRestoreSource` lists `Backups/` (folders only, the handle is the folder
+  NAME, re-listed at fetch), downloads each main into a staging `.part` under the read-side rate
+  twin `CloudTimeouts.downloadBudgetMs` (`CloudClient.download` gained an optional `budgetMs`;
+  Import stays on the flat `DOWNLOAD_MS`), and **never fetches a `-wal`** — `SelfContainedSnapshot`
+  makes every cloud main complete, so a sidecar there is a failed stale-delete and pairing it with a
+  fresh main is the corruption V4's guard exists to prevent. The four failures map exactly as
+  `CloudBackupLeg.problemFor`. **Two consequences to know:** the extension reports a full disk as
+  `NETWORK` (the restore re-measures and names the disk); and the restored `:ext-cloud` store carries
+  the source device's refresh token — the device comes up connected, and **Disconnect on the restored
+  device revokes with the provider and breaks the source device's cloud backups** (restore decision
+  4: the host never reaches into the `account` table; documented, not fixed). A restore also never
+  installs the backup's `cloudDeviceFolder` — this device's is kept or a fresh one minted.
+  Reference: [`docs/restore.md`](restore.md). The per-notebook path — a backed-up `.soil` picked
+  from `Backups/` through the import source — is unchanged.
 - **No provider chooser.** `ExtensionRegistry.cloud()` takes the first discovered provider and logs
   a warning about any others; a second real provider needs this decision made.
 - **No remembered destination/source.** Export's Destination row and Import's source question both

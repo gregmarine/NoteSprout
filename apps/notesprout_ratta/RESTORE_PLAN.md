@@ -6,8 +6,10 @@ cross-session memory for the arc: read it whole at every phase start, together w
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `ENCRYPTION_PLAN.md` and `DRIVE_PLAN.md` are the shapes this file copies.
 
-**Status:** wizard locked 2026-09-05 · Fable review folded in 2026-09-05 (R1–R7, § Review
-amendments) · L1 ✅ · L2 ✅ · L3 ✅ · L4 ✅ · L5 ✅ (2026-09-06) · L6 ⬜
+**Status: ARC COMPLETE + FROZEN 2026-09-06.** Wizard locked 2026-09-05 · Fable review folded in
+2026-09-05 (R1–R7, § Review amendments) · L1 ✅ · L2 ✅ · L3 ✅ · L4 ✅ · L5 ✅ (2026-09-06) · L6 ✅
+(2026-09-06). **The reference is `docs/restore.md`.** No further phase; any change to restore is a
+new user decision.
 
 **Phase letters:** every letter A–Z is spoken for in `RATTA_PLAN.md` except **H** and **L**. This
 arc takes **L**; H stays free.
@@ -402,7 +404,7 @@ encrypted SQLite or does not open under the proven key is dropped the same way (
 other key — installing it is what stopped the L4 and L5 rotations). Validate before the key now
 covers the index only; the notebooks are validated after the prune.
 
-### ⬜ L6 — docs + freeze
+### ✅ L6 — docs + freeze
 
 **No code.** `docs/restore.md` written whole (the model, the manifest rules, the commit order, the
 destination rule and *why*, the failure table, the measured Nomad numbers, the design calls, the
@@ -811,3 +813,24 @@ must say a restore installs what the index names and the proven key opens, never
 **Tests:** 19 new in `RestoreEngineTest` (validate-by-kind 3, orphan rule 5, recovery executor over
 real files 6, fetch-failure rule 4, staged bytes 1) — 1175 → **1194** per variant, 0 failures.
 `RestoreEngine` 622 lines, `RestoreActivity` 711, `DebugMenu` 579. Version `0.1.0-ratta`.
+
+### L6 — Outcome (2026-09-06, Fable, docs only — no code, no tests changed)
+
+**Landed — `docs/restore.md` written whole** (the model and its one rule — *a restore installs what
+the index names and the proven key opens, never "the folder"*; the manifest rules for both legs;
+staging on the library volume; the commit's numbered order with the two halves and four outcomes;
+the key proof; the orphan prune; the destination rule with the user's incident and the merge table;
+per-item recovery with the two L5 fixes; both sources; the screen's seven steps; the failure table;
+the measured Nomad numbers; the design calls R1–R7 and the ones outside the wizard; the traps
+including the rotation-stops-on-a-store follow-up; the debug fault seam; not-built; the test table).
+**Pointer sections:** `docs/backup.md` (its four "no restore" passages replaced — the doc is the
+write side, the read side is `SafBackupReader` + `docs/restore.md`; the hand copy-back stays as the
+one-store door), `docs/cloud.md` (decision 4's row amended; the "no whole-library restore" future
+item replaced with the cloud source, the no-`-wal` rule, ENOSPC-as-`NETWORK`, and the shared-token
+consequence), `docs/encryption.md` (restore's key handling, the marker refusal, `closeForRotation`'s
+widened contract, recovery order, and the store-stops-a-rotation follow-up), `docs/import.md`
+(restore is not an import), `docs/extensions.md` (stores travel with the swap, the R2 window).
+`PARITY_BACKLOG.md` item 2 → **DONE**; monorepo `BACKLOG.md` W5 "a restore screen" → **CLOSED**;
+`RATTA_PLAN.md` header; both `CLAUDE.md`s. **Arc 27 is COMPLETE + FROZEN.** Tests unchanged at
+**1194** per variant; version `0.1.0-ratta`. The Nomad dev library stays under `walkpass1`, device
+folder `waltest4`.

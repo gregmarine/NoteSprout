@@ -1,6 +1,6 @@
 # PARITY_BACKLOG.md — the og-parity work still wanted in Notesprout SN (branch `ratta`)
 
-**What this file is.** Arcs 1–26 are complete and frozen (arc 26 closed item 1 below). On 2026-09-05 the user asked for a gap
+**What this file is.** Arcs 1–27 are complete and frozen (arc 26 closed item 1 below, arc 27 item 2). On 2026-09-05 the user asked for a gap
 review of `apps/notesprout_android` (og Notesprout) against `apps/notesprout_ratta` (Notesprout SN)
 before declaring the ratta effort a success. That review found more gaps than the user wants to
 close; **this file holds the seven he chose**, in the order he named them.
@@ -16,9 +16,9 @@ written here is *what* and *why*, plus the user's own directives and the traps a
 binds every item here.
 
 **Status:** item 1 **DONE** (arc 26 "Keys", U1–U7 landed 2026-09-05, complete + frozen; the
-reference is `docs/encryption.md`, the plan and ledger `ENCRYPTION_PLAN.md`). Item 2 **PLANNED** — arc 27
-"Restore", wizard locked 2026-09-05, phases L1–L6 in the standalone `RESTORE_PLAN.md`; no code yet.
-Items 3–7 not started. No ordering has been decided — the numbering below is the order the user listed
+reference is `docs/encryption.md`, the plan and ledger `ENCRYPTION_PLAN.md`). Item 2 **DONE** (arc 27
+"Restore", L1–L6 landed 2026-09-05/06, complete + frozen; the reference is `docs/restore.md`, the plan
+and ledger `RESTORE_PLAN.md`). Items 3–7 not started. No ordering has been decided — the numbering below is the order the user listed
 them in, not a priority.
 
 ---
@@ -70,13 +70,16 @@ probably not). Reference: og `docs/encryption.md`, `crypto/*`, `EncryptionSettin
 
 ---
 
-## 2. Restore — 🔄 PLANNED (arc 27 "Restore", wizard locked 2026-09-05)
+## 2. Restore — ✅ DONE (arc 27 "Restore", L1–L6 landed 2026-09-05/06)
 
-**The plan is `RESTORE_PLAN.md`** — read that, not this section, for the arc. Phases L1–L6, both
-legs (local SAF **and** cloud), replace-all, no undo, the staged index proved openable before any
-commit, and the backup destination treated as device-local state that a restore never rewrites —
-the user's directive below, made whole as decision 3. No code review in the arc; L5 is a failure-injection
-pass. The text that follows is the gap review as it stood before the wizard, kept for the record.
+**The reference is `docs/restore.md`; the plan and ledger `RESTORE_PLAN.md`** — read those, not this
+section. What landed: both legs (local SAF **and** cloud), replace-all with a rename-only aside-swap
+and the installed index as the commit marker, no undo, the staged index proved openable before any
+commit (cached global silently, then a prompt under `AttemptLimiter("RESTORE")`), orphans in the
+folder skipped and named, and **the backup destination treated as device-local state that a restore
+never rewrites** — the user's directive below, made whole as decision 3 and walked on both legs. No
+code review in the arc; L5 was a failure-injection pass (nine faults, every one walked on the
+Nomad). The text that follows is the gap review as it stood before the wizard, kept for the record.
 
 **User's call:** "Need restore for sure."
 

@@ -67,7 +67,8 @@ editor, recurrence, the handwriting-or-text note, and the grid glyphs) ·
 Drive` owning OAuth and the only `INTERNET` in the app, the Drive tree under its own root, the
 Backup screen's Cloud section and the inline Connect offer, the host-drawn browser, the three
 consumers — export destination, backup leg, import source — the measured `CloudTimeouts` table
-and the failure table; **no restore**, no extension is aware of the cloud) ·
+and the failure table; no extension is aware of the cloud; arc 27 added the restore source as a
+fourth consumer, documented in `docs/restore.md`) ·
 `docs/encryption.md` (arc 26 "Keys": **encryption as a feature** — the key model (one global
 recovery key or typed passphrase, per-notebook passphrases, derived raw keys), the Encryption screen
 behind the library's lock button (Reveal / Change passphrase / Forget), `SoilRekey` as the only
@@ -75,6 +76,13 @@ key-changer on disk and its interrupted-commit recovery, the journaled `GlobalRo
 three resume paths and quarantine, `KeyScope` + the pure `KeyResolver` + the one
 `NotebookPassphrasePrompt` and the open-site table, the four scope doors over `ScopeChange`, the
 import chooser, `NotebookRecovery`, the failure table, the measured Nomad numbers and the traps) ·
+`docs/restore.md` (arc 27 "Restore": **whole-library restore as a feature** — the one rule (a
+restore installs what the backup's index names and the proven key opens, never "the folder"), the
+manifest rules for both legs, staging on the library volume, the rename-only commit with the
+installed index as the marker and its four outcomes, the key proof before any commit, the orphan
+prune, **the destination rule** (this device's backup destination is parked and re-applied; the
+backup's is always discarded), per-item interrupted-commit recovery, both sources, the screen, the
+failure table, the measured Nomad numbers, the fault seam and the traps) ·
 `docs/sn-screen.md` (arc 11 / J1: the shared `:sn-screen` paper-screen library — what may live
 there, what may not depend on it, and the `nonTransitiveRClass` flag that holds it together).
 
@@ -240,7 +248,9 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   **U7 (docs + freeze, 2026-09-05):** `docs/encryption.md` written, pointers in the eight docs it
   touches, `PARITY_BACKLOG.md` item 1 closed — no code. Nomad library left all-GLOBAL under a typed
   passphrase (the value is in the memory file, never in a doc).
-- **Arc 27 "Restore" is IN PROGRESS — L1 landed 2026-09-05 (`restore/` read side: manifest, staging,
+- **Arc 27 "Restore" is COMPLETE + FROZEN (L1–L6 landed 2026-09-05/06; `docs/restore.md` is the
+  reference; read the standalone `RESTORE_PLAN.md`, not `RATTA_PLAN.md`, for any work on it).**
+  What landed, phase by phase — L1 landed 2026-09-05 (`restore/` read side: manifest, staging,
   `SafRestoreSource` + `data/backup/SafBackupReader`), L2 landed 2026-09-05 (`restore/RestoreEngine`
   — preflight / stage / validate / proveCached / proveTyped / commit, the rename-only swap with the
   installed index as the marker and an in-process rollback; pure `RestoreRecovery.plan` executed by
@@ -267,10 +277,10 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   key covers the index only; recovery clears an obstruction on a rename-back target and any index
   sidecar the new index left at the live name; a disk that fills mid-fetch is named as the disk;
   every kill seam, the rollback, the torn set, the mid-swap store call, both disk-full shapes, the
-  lockout and the foreign-key restore walked on the Nomad), L6 (docs + freeze) next** — whole-library restore,
-  `PARITY_BACKLOG.md` item 2. **Read the standalone `RESTORE_PLAN.md`, not `RATTA_PLAN.md`, for any
-  work on it**: phases L1–L6, host-only, no point, no API bump, version stays `0.1.0-ratta`, and
-  **no `/code-review` in the arc** (L5 is a failure-injection pass instead). The four decisions that
+  lockout and the foreign-key restore walked on the Nomad), **L6 ✅ 2026-09-06** (docs + freeze, no
+  code) — whole-library restore, `PARITY_BACKLOG.md` item 2, now DONE. Phases L1–L6, host-only, no
+  point, no API bump, version stays `0.1.0-ratta`, 1194 `:app` tests, and **no `/code-review` in the
+  arc** (L5 was a failure-injection pass instead). The four decisions that
   bind everything else: **both legs** (local SAF and cloud — `ICloudStorage` already has `list` +
   `download`, so no contract change); **replace all** with the aside-swap and the installed index as
   the commit marker, no undo once it commits; **the staged index must open under a key the user can

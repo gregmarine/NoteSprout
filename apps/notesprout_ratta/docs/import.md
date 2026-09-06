@@ -463,7 +463,10 @@ matched **before** the download and then streams the already-downloaded file —
 through an importer" stays literally true, at the cost of one local copy · no extension filtering
 in the browser, ever — a non-importable pick gets the existing dialog rather than being hidden ·
 picking a backup `.soil` out of `Backups/` runs the ordinary notebook pipeline, id collision and
-all — the arc's one "restore a notebook" path, and deliberately not a whole-library restore ·
+all — the arc's one "restore a notebook" path, and deliberately not a whole-library restore (that
+is arc 27's `RestoreActivity`, [`docs/restore.md`](restore.md): a restore is **not an import** — it
+never runs this pipeline, never re-keys, never asks placement or collision; it replaces the library
+whole under the backup's own proven key) ·
 `CloudTimeouts.DOWNLOAD_MS` stays flat 120 s rather than scaling with size, so a very large file
 over a slow link reads as `UNANSWERED` with nothing imported (the cache is wiped either way); a rate
 like the upload budget's is a future call if a measurement ever needs it · **the source answer is
