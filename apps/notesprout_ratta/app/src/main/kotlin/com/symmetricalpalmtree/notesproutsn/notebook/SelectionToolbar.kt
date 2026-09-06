@@ -16,17 +16,22 @@ import com.symmetricalpalmtree.notesproutsn.R
  * What the lasso caught, as far as the toolbar is concerned — the screen classifies, the bar only
  * renders the classification.
  *
- * [STROKES] ink alone (convertible) · [HEADING] exactly one heading and nothing else (re-levelable,
- * so its current level is the selected button) · [LINK] exactly one link and nothing else (the only
- * mode that offers Edit / Unlink) · [MIXED] ink plus headings, or more than one heading — no single
- * sensible level to write, but still wrappable · [MIXED_WITH_LINK] a selection containing a link
- * alongside anything else.
+ * [STROKES] ink alone (convertible — to a heading, or since arc 28 / H2 to a text object) ·
+ * [HEADING] exactly one heading and nothing else (re-levelable, so its current level is the
+ * selected button) · [TEXT] exactly one text object and nothing else (arc 28 / H2 — no button of
+ * its own: a stylus tap inside the box opens its dialog, which is why the mode exists at all) ·
+ * [LINK] exactly one link and nothing else (the only mode that offers Edit / Unlink) · [MIXED] ink
+ * plus headings, more than one heading, or one of the arc-28 kinds that has no lone mode yet — no
+ * single sensible level to write, but still wrappable · [MIXED_WITH_LINK] a selection containing a
+ * link alongside anything else.
  *
  * The two link-bearing modes are what enforces the arc-6 **no-nesting** rule: Link is offered on
  * every link-free selection and on none that already holds one (K1 locked decision — a link never
  * wraps a link).
+ *
+ * Which selection is which mode is [SelectionModes]'s, not this file's.
  */
-enum class SelectionMode { STROKES, HEADING, LINK, MIXED, MIXED_WITH_LINK }
+enum class SelectionMode { STROKES, HEADING, TEXT, LINK, MIXED, MIXED_WITH_LINK }
 
 /**
  * The selection's context toolbar: a small bordered bar that floats over the paper for as long as a
@@ -41,7 +46,10 @@ enum class SelectionMode { STROKES, HEADING, LINK, MIXED, MIXED_WITH_LINK }
  * **Main bar**, in order: **Snap** (always — arc 9; it is the one button that acts on the *next*
  * drag rather than on this selection, and it shows its state with the same selected border the top
  * bar's armed tool wears) · **Copy** and **Cut** (always — arc 8) · **H** (a level is only writable
- * on ink or on one heading) · **Link** (any link-free selection — K1) · **Edit** and **Unlink** (a
+ * on ink or on one heading) · **Text** (arc 28 / H2 — ink only, and directly
+ * after H because it is the *same* act with a different result: both read the lassoed handwriting
+ * and replace it with words, one as a title and one as a paragraph) · **Link** (any link-free
+ * selection — K1) · **Edit** and **Unlink** (a
  * lone link, the only selection with one payload to act on) · **Pad** (arc 11 / J5 — the narrowest
  * of them all: only on a pure-ink selection, and only while a trusted scratch-pad extension is
  * installed. `WireStroke` is the whole of what the contract carries, so the moment the selection
@@ -89,6 +97,8 @@ class SelectionToolbar(
     private val onEditLink: () -> Unit,
     /** Unwrap the selected link, keeping its content on the page. */
     private val onUnlink: () -> Unit,
+    /** Turn this ink selection into a text object (arc 28 / H2) — H's neighbour and its twin. */
+    private val onTextConvert: () -> Unit = {},
     /** Put this selection on the clipboard (arc 8) — `cut = true` deletes it afterwards. */
     private val onCopy: (cut: Boolean) -> Unit,
     /** Whether snap-to-guide is armed (arc 9) — read on every [show] and after every toggle, so
@@ -116,6 +126,7 @@ class SelectionToolbar(
     private val density = root.resources.displayMetrics.density
 
     private val headingButton: AppCompatImageButton
+    private val textButton: AppCompatImageButton
     private val linkButton: AppCompatImageButton
     private val editButton: AppCompatImageButton
     private val unlinkButton: AppCompatImageButton
@@ -159,6 +170,14 @@ class SelectionToolbar(
             toggleLevels()
         }
         bar.addView(headingButton)
+
+        // H's twin, and the same reach: only ink can be read. A lone text object is already words,
+        // and a mixed selection has no one answer — both of which fall out of the STROKES gate.
+        textButton = button(R.drawable.ic_text_recognition, ctx.getString(R.string.text_convert_action)) {
+            releaseRender()
+            onTextConvert()
+        }
+        bar.addView(textButton)
 
         linkButton = button(R.drawable.ic_link, ctx.getString(R.string.link_action)) {
             releaseRender()
@@ -233,8 +252,10 @@ class SelectionToolbar(
     fun show(bounds: Bounds, mode: SelectionMode, currentLevel: Int?) {
         val band = band() ?: return
         val levelable = mode == SelectionMode.STROKES || mode == SelectionMode.HEADING
-        val wrappable = levelable || mode == SelectionMode.MIXED
+        val wrappable = levelable || mode == SelectionMode.MIXED || mode == SelectionMode.TEXT
         headingButton.visibility = if (levelable) View.VISIBLE else View.GONE
+        // Ink alone: a conversion consumes the strokes, so there has to be nothing else in the set.
+        textButton.visibility = if (mode == SelectionMode.STROKES) View.VISIBLE else View.GONE
         linkButton.visibility = if (wrappable) View.VISIBLE else View.GONE
         val lone = if (mode == SelectionMode.LINK) View.VISIBLE else View.GONE
         editButton.visibility = lone

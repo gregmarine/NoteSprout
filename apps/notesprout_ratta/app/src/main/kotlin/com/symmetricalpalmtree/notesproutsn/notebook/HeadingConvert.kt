@@ -39,11 +39,14 @@ import java.lang.ref.WeakReference
  * **Nothing recognized is ever logged** — counts and durations only. This object also touches no
  * store: it hands the caller a title and the caller decides what a heading is.
  *
- * That last sentence is why arc 21 / W3's **ink→tag** takes this flow whole rather than growing a
- * near-copy of it: the question "read this one writing area and give me back a single line" is the
- * same question, and the only difference is what the caller does with the answer. The name stays
+ * That last sentence is why arc 21 / W3's **ink→tag** and arc 28 / H2's **ink→text** take this flow
+ * whole rather than growing near-copies of it: the question "read this one writing area and give me
+ * back its words" is the same question for all three, and the only difference is what the caller
+ * does with the answer. The one thing the third caller needed was a flag — [run]'s `multiLine`, the
+ * choice between collapsing the recognizer's line breaks and keeping them — because a heading and a
+ * tag are one line by definition and a text object is allowed to be a paragraph. The name stays
  * `HeadingConvert` because a heading is still where the flow came from — but nothing in it knows or
- * cares that a heading is what follows.
+ * cares which of heading, tag or text is what follows.
  */
 object HeadingConvert {
 
@@ -72,6 +75,11 @@ object HeadingConvert {
      * with the line's box, and Paper's H action passes the selection bounds); a page-sized area
      * under a one-line title collapses recognition to fragments.
      *
+     * [multiLine] is the text object's mode (arc 28 / H2): the recognizer's line breaks are kept
+     * ([TextLines.normalize]) instead of collapsed to spaces. It changes nothing else — including
+     * the failure path, where a result that is blank after tidying is still a failure the user
+     * hears about and the ink is still left exactly as it was.
+     *
      * Exactly one of [onRecognized] (a non-blank single-line title) and [onGaveUp] runs, on Main —
      * [onGaveUp] covering every path after which no heading will exist: no extension, consent
      * declined, download failed or cancelled, the call failed, or nothing was recognized.
@@ -81,6 +89,7 @@ object HeadingConvert {
         strokes: List<Stroke>,
         areaWidth: Float,
         areaHeight: Float,
+        multiLine: Boolean = false,
         onRecognized: (String) -> Unit,
         onGaveUp: () -> Unit = {},
     ) {
@@ -108,21 +117,23 @@ object HeadingConvert {
             RecognizerReadiness.ensureReady(
                 activity, client,
                 onReady = {
-                    try { recognize(activity, client, ink, areaWidth, areaHeight, onRecognized, onGaveUp) }
-                    finally { release() }
+                    try {
+                        recognize(activity, client, ink, areaWidth, areaHeight, multiLine, onRecognized, onGaveUp)
+                    } finally { release() }
                 },
                 onGaveUp = { release(); onGaveUp() },
             )
         }
     }
 
-    /** The READY path: the "Recognizing…" box, the call off Main, then a title or a problem dialog. */
+    /** The READY path: the "Recognizing…" box, the call off Main, then the words or a problem dialog. */
     private suspend fun recognize(
         activity: AppCompatActivity,
         client: RecognizerClient,
         ink: List<InkStroke>,
         areaWidth: Float,
         areaHeight: Float,
+        multiLine: Boolean,
         onRecognized: (String) -> Unit,
         onGaveUp: () -> Unit,
     ) {
@@ -133,13 +144,14 @@ object HeadingConvert {
             // One writing area, no page context: the extension must not segment a heading into lines.
             val raw = client.recognizeInk(ink, areaWidth, areaHeight, "")
             val ms = System.currentTimeMillis() - t0
-            val title = oneLine(raw)
+            val title = if (multiLine) TextLines.normalize(raw) else oneLine(raw)
             Slog.d(TAG) { "converted ${ink.size} strokes → ${title.length} chars in $ms ms" }
             // Down before anything else goes on screen — the box is never behind a dialog.
             RecognizingOverlay.hide(activity)
             if (activity.isFinishing || activity.isDestroyed) { onGaveUp(); return }
             if (title.isEmpty()) {
-                // The ink is untouched: there is simply no heading to make out of it.
+                // The ink is untouched: there is simply nothing to make out of it. The message says
+                // exactly that, which is why all three callers can share it.
                 Dialogs.problem(activity, R.string.recognize_problem_title, R.string.heading_nothing_recognized)
                 onGaveUp()
             } else {
@@ -166,6 +178,6 @@ object HeadingConvert {
         }
     }
 
-    /** A heading is one line: every run of whitespace becomes a single space, then trim. */
+    /** A heading (or a tag) is one line: every run of whitespace becomes a single space, then trim. */
     private fun oneLine(text: String): String = text.replace(WHITESPACE, " ").trim()
 }

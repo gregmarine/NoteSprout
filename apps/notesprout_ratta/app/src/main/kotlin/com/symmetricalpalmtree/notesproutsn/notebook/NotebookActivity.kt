@@ -136,6 +136,27 @@ class NotebookActivity : AppCompatActivity() {
     private lateinit var tagsPopup: TagsPopup
     /** The Insert button's sub-bar (arc 28 / H1) — Sticky, Text and the six shapes. */
     private lateinit var insertBar: InsertBar
+
+    /** Insert, convert and edit for text objects (arc 28 / H2) — out of this file, on the
+     *  [LinkPickFlow] pattern, because H1's ledger asked the per-kind flows to stop landing here.
+     *  The selection state and the working copies stay private: the flow reaches them only through
+     *  the few verbs [TextFlow.Host] names. `strokesIn` filters the *mirror*, never the selection's
+     *  Set — a LinkedHashMap filled by load then by commit preserves **writing order**, which the
+     *  recognizer reads as the writing itself. */
+    private val textFlow = TextFlow(this, object : TextFlow.Host {
+        override val alive: Boolean get() = opened && !closing
+        override val session: NotebookSession get() = this@NotebookActivity.session
+        override val pageId: String get() = displayedPageId
+        override val objects: PageObjects get() = pageObjects
+        override val paper: PaperView get() = this@NotebookActivity.paper
+        override fun strokesIn(ids: Set<String>) = liveStrokes.values.filter { it.id in ids }
+        override fun dropLiveStrokes(ids: List<String>) { ids.forEach { liveStrokes.remove(it) } }
+        override fun record(action: Action) = undo.record(action)
+        override fun selectAsText(text: PageText) = this@NotebookActivity.selectAsText(text)
+        override fun armLassoForLanding() = this@NotebookActivity.armLassoForLanding()
+        override fun armPendingSelection(select: () -> Unit) { pendingSelection = select }
+        override fun drainPendingSelection() { pendingSelection?.let { pendingSelection = null; it() } }
+    })
     private val repo by lazy { IndexRepository() }
 
     /** The global clipboard's one index row (arc 7) — the payload, read and written only here. */
@@ -426,6 +447,9 @@ class NotebookActivity : AppCompatActivity() {
             onLink = { beginLinkPick() },
             onEditLink = { beginLinkEdit() },
             onUnlink = { unlinkSelection() },
+            // Resolved at tap time, never captured: the selection can move, die or change kind
+            // between the bar going up and a button landing.
+            onTextConvert = { currentSelection?.let { textFlow.convert(it) } },
             onCopy = { cut -> doObjectCopy(cut) },
             isSnapOn = { paper.snapToGuides },
             onToggleSnap = { toggleSnap() },
@@ -613,24 +637,28 @@ class NotebookActivity : AppCompatActivity() {
         TooltipCompat.setTooltipText(binding.btnTags, binding.btnTags.contentDescription)
 
         // Insert (arc 28 / H1, D4) — the sub-bar and the button that opens it. Every one of the
-        // eight buttons is GONE until its own phase offers it (J4), so at H1 the bar opens empty
-        // and the button itself is a **debug-only** control: a control that does nothing does not
-        // exist in a release build, and the only reason it exists here is so the top row's width
-        // can be measured on the Nomad before H2/H4/H5 fill the bar.
+        // eight buttons is GONE until its own phase offers it (J4): a control that does nothing
+        // does not exist. H2 gave one of them — Text — something to do in every build, which is
+        // what took the debug gate off the button itself.
         insertBar = InsertBar(
             root = binding.root,
             bar = binding.insertBar,
             anchor = binding.btnInsert,
             bandBottom = { chromeBand()?.last },
-            releaseRender = { if (!paper.isPenActive) paper.releaseRender() },
-            // H1 offers nothing, so nothing can fire this. The phases wire their own arms in.
-            onInsert = { hideInsertBar() },
+            // Ungated, like the tags popup's and the selection bar's: a pick here opens a dialog
+            // (Text) or lands a selection, and the pen that tapped it is still hovering — an
+            // idle-gated release would hold the frame until the pen left the glass (the R3 panel
+            // lesson). H1 gated it because nothing on the bar could fire.
+            releaseRender = { paper.releaseRender() },
+            // Insert is a command, not a tool: the armed tool is untouched and what lands, lands
+            // selected (D4). The other seven are debug-only offers until H4 and H5 wire them.
+            onInsert = { kind -> hideInsertBar(); if (kind == InsertBar.Kind.TEXT) textFlow.insertAtCentre() },
         )
-        binding.btnInsert.visibility = if (BuildConfig.DEBUG) View.VISIBLE else View.GONE
-        // Debug only, and only in H1: every button is shown so the EIGHT-button bar's width can
-        // be measured against the Nomad (D4's "wrap to two rows?" question). A tap does nothing
-        // but close the bar. H2/H4/H5 replace this with their real offers; release never sees it.
-        if (BuildConfig.DEBUG) InsertBar.Kind.entries.forEach { insertBar.offer(it, true) }
+        // Text in every build; the remaining seven stay debug-only so the EIGHT-button bar's width
+        // can still be measured against the Nomad (D4) and so release sees only what works.
+        InsertBar.Kind.entries.forEach {
+            insertBar.offer(it, it == InsertBar.Kind.TEXT || BuildConfig.DEBUG)
+        }
         binding.btnInsert.setOnClickListener {
             if (!opened || closing) return@setOnClickListener
             if (insertBar.isShowing) hideInsertBar() else showInsertBar()
@@ -1161,18 +1189,30 @@ class NotebookActivity : AppCompatActivity() {
             showSelectionToolbar(selection)
         }
         /**
-         * A sub-threshold tap inside the selection box: on a selected heading it opens the edit
-         * dialog (the one tap-to-edit path). The engine already palm-gated and escrowed the tap.
+         * A sub-threshold tap inside the selection box: on a selected heading — or, since arc 28 /
+         * H2, on a lone selected text object — it opens that object's edit dialog (the one
+         * tap-to-edit path). The engine already palm-gated and escrowed the tap, and the callback
+         * is pen-only. A heading is looked for anywhere in the set (a mixed selection can hold
+         * one); a text opens only when it is the *whole* selection ([SelectionMode.TEXT]), because
+         * a tap inside a mixed box is not a request to edit one of the things in it.
          */
         override fun onSelectionTapped(x: Float, y: Float) {
             if (!opened) return
             val sel = currentSelection ?: return
             val h = sel.contentIds.asSequence().mapNotNull { liveHeadings[it] }
-                .firstOrNull { it.bounds.contains(x, y) } ?: return
+                .firstOrNull { it.bounds.contains(x, y) }
             // Ungated for the SelectionToolbar-button reason: the tap has to show its result and
             // the dialog repaints over the page; there is no live stroke at a tap's pen-up.
+            if (h != null) {
+                paper.releaseRender()
+                HeadingEditDialog.show(this@NotebookActivity, h) { raw -> applyHeadingEdit(h.id, raw) }
+                return
+            }
+            if (sel.strokeIds.isNotEmpty() || sel.contentIds.size != 1) return
+            val t = pageObjects.texts[sel.contentIds.first()] ?: return
+            if (!t.bounds.contains(x, y)) return
             paper.releaseRender()
-            HeadingEditDialog.show(this@NotebookActivity, h) { raw -> applyHeadingEdit(h.id, raw) }
+            textFlow.edit(t)
         }
         /**
          * A sub-threshold pen tap on bare paper with the lasso armed and nothing selected (0.1.5):
@@ -1873,24 +1913,20 @@ class NotebookActivity : AppCompatActivity() {
      * while no link is in it. A link anywhere in a mixed selection takes Link away — the no-nesting
      * rule (K1), read off the working copy rather than trusted from the engine's id set.
      *
-     * **Arc 28 (H1):** a selection holding a text, a shape or a sticky classifies as
-     * [SelectionMode.MIXED] and needs no arm of its own — its `contentIds` is non-empty and holds
-     * no heading and no link, which is the `else` this `when` already ends on. That is exactly the
-     * D5 row H1 wants: Snap / Copy / Cut / Delete and a link-free Link, with H, Pad, Calendar and
-     * Tag all gone. The lone-kind modes (TEXT / SHAPE / STICKY) arrive with the phases that give
-     * them something to offer.
+     * **Arc 28:** the rule itself moved to [SelectionModes] at H2, so the D5 table is a table a
+     * test can read; what stays here is the three predicates, which are answered off *this
+     * screen's working copies* rather than trusted from the engine's id set. A lone shape or
+     * sticky is still [SelectionMode.MIXED] — their own modes arrive with H4 and H5.
      */
     private fun showSelectionToolbar(sel: Selection) {
         val lone = sel.strokeIds.isEmpty() && sel.contentIds.size == 1
         val loneHeading = if (lone) liveHeadings[sel.contentIds.first()] else null
-        val hasLink = sel.contentIds.any { liveLinks.containsKey(it) }
-        val mode = when {
-            loneHeading != null -> SelectionMode.HEADING
-            lone && hasLink -> SelectionMode.LINK
-            hasLink -> SelectionMode.MIXED_WITH_LINK
-            sel.contentIds.isEmpty() && sel.strokeIds.isNotEmpty() -> SelectionMode.STROKES
-            else -> SelectionMode.MIXED
-        }
+        val mode = SelectionModes.classify(
+            sel.strokeIds.size, sel.contentIds,
+            isHeading = { liveHeadings.containsKey(it) },
+            isLink = { liveLinks.containsKey(it) },
+            isText = { pageObjects.texts.containsKey(it) },
+        )
         selectionToolbar.show(sel.bounds, mode, loneHeading?.level)
     }
 
@@ -2052,6 +2088,15 @@ class NotebookActivity : AppCompatActivity() {
         selectionActive = true
         currentSelection = Selection(emptySet(), setOf(h.id), h.bounds)
         selectionToolbar.show(h.bounds, SelectionMode.HEADING, h.level)
+    }
+
+    /** [selectAsHeading]'s twin for a text object (arc 28 / H2) — [TextFlow] asks for it after a
+     *  create, a conversion or an edit, all three of which leave the old selection frame stale. */
+    private fun selectAsText(t: PageText) {
+        paper.setSelection(emptySet(), setOf(t.id), t.bounds)
+        selectionActive = true
+        currentSelection = Selection(emptySet(), setOf(t.id), t.bounds)
+        selectionToolbar.show(t.bounds, SelectionMode.TEXT, null)
     }
 
     // ── Links (K1/K2) ────────────────────────────────────────────────────────
@@ -2615,11 +2660,7 @@ class NotebookActivity : AppCompatActivity() {
             // lasso dismisses whatever selection was still up, and that dismissal runs
             // `restoreToolAfterTransferPaste` — which would consume this very field and put the pen
             // back under the selection we are about to make.
-            val priorTool = paper.tool
-            if (priorTool != Tool.LASSO) {
-                armLasso()
-                toolBeforeTransferPaste = priorTool
-            }
+            armLassoForLanding()
             val strokeIds = strokes.mapTo(HashSet()) { it.id }
             val selection = Selection(strokeIds, emptySet(), box)
             paper.setSelection(strokeIds, emptySet(), box)
@@ -2649,8 +2690,26 @@ class NotebookActivity : AppCompatActivity() {
         val truncatedBodyRes: Int,
     )
 
-    /** Put back the tool a transfer paste took away — only while the lasso is still armed (a tool
-     *  the user picked meanwhile wins), and pen-idle, because it is a chrome frame like any other. */
+    /**
+     * Arm the lasso for a selection the host is about to land while some other tool is armed — a
+     * transfer paste, or (arc 28 / H2) an Insert. A selection drawn under a PEN tool looks selected
+     * and is not: the pen inks through it and can neither drag nor tap it (the eye-check #5 round-2
+     * finding, met again on the Nomad at H2's first walk). The prior tool is remembered and comes
+     * back at this selection's dismissal via [restoreToolAfterTransferPaste], which is what "the
+     * armed tool is unchanged by an insert" (D4) means in practice. Must run BEFORE `setSelection`
+     * (the O2 lesson): arming dismisses whatever selection was still up, and that dismissal is the
+     * restore path.
+     */
+    private fun armLassoForLanding() {
+        val priorTool = paper.tool
+        if (priorTool == Tool.LASSO) return
+        armLasso()
+        toolBeforeTransferPaste = priorTool
+    }
+
+    /** Put back the tool a transfer paste or an insert took away — only while the lasso is still
+     *  armed (a tool the user picked meanwhile wins), and pen-idle, because it is a chrome frame
+     *  like any other. */
     private fun restoreToolAfterTransferPaste() {
         val prior = toolBeforeTransferPaste ?: return
         toolBeforeTransferPaste = null

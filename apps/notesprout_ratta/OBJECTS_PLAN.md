@@ -7,7 +7,7 @@ whole at every phase start, together with the root `CLAUDE.md` and `apps/notespr
 traps are summarized at the end so this file is enough. `RESTORE_PLAN.md`, `ENCRYPTION_PLAN.md` and
 `DRIVE_PLAN.md` are the shapes this file copies.
 
-**Status: H1 ✅ landed 2026-09-06 — H2 ⬜ next.** H1 ✅ · H2 ⬜ · H3 ⬜ · H4 ⬜ · H5 ⬜ · H6 ⬜ ·
+**Status: H2 ✅ landed 2026-09-06 — H3 ⬜ next.** H1 ✅ · H2 ✅ · H3 ⬜ · H4 ⬜ · H5 ⬜ · H6 ⬜ ·
 H7 ⬜. When the arc closes, `docs/objects.md` is the reference.
 
 **Phase letter:** **H** — the last free letter in `RATTA_PLAN.md`'s A–Z (L went to arc 27). After
@@ -320,7 +320,7 @@ creatable by the user at the end of H1**; every enumeration site already knows t
 **Questions to resolve at phase start:** app version · whether the debug-menu sample-insert entry
 stays after H1 (default: removed in H7).
 
-### ⬜ H2 — Text objects end to end (Opus code on a Fable brief · Fable review · walk by hand)
+### ✅ H2 — Text objects end to end (Opus code on a Fable brief · Fable review · walk by hand)
 
 - `TextRenderer` (D1) + `remeasureForDevice` · `TextEditDialog` (D6 of the wizard) · Insert →
   Text (insert at centre → dialog → Save lands selected / Cancel removes) · lasso bar **Text**
@@ -520,4 +520,44 @@ and an `AskUserQuestion` never share one turn — explain, wait, then ask.
   48 px; `PageObjects` re-measures texts on every load and writes nothing back (N3).
 - **Open for H2:** `NotebookActivity` is now 3472 lines (3150 before) despite `PageObjects` — H2's
   brief should keep pulling per-kind flows into their own files.
+
+### H2 — Outcome (2026-09-06)
+
+- **Phase-start answers:** version stays `0.1.0-ratta`; dialog title **"Text"**; Cancel is a
+  **button** on every showing (create and re-edit alike — one dialog shape).
+- **Landed:** `TextEditDialog` (multi-line raw Markdown, `HeadingEditDialog`'s shape, IME asked for
+  on the way in and never hidden, no `IME_ACTION_DONE`, `onCancel` on button/Back/outside behind a
+  latch) · `TextLines` (pure: `normalize` for recognized ink — collapse, per-line trim, ≤ 1 interior
+  blank; `typed` for the dialog — per-line `trimEnd` + outer blank lines only, the interior is the
+  author's) · `TextPlacement.centred` (pure) · `SelectionModes.classify` (D5's table pulled out of
+  the activity and pinned by test: lone shape / sticky stay `MIXED` until H4 / H5) · `TextFlow` +
+  `TextFlow.Host` (insert / convert / edit out of the activity on the `LinkPickFlow` pattern —
+  **nothing exists until Save** on an insert: no placeholder row, no id minted, Cancel and blank
+  Save leave nothing) · `HeadingConvert.run(multiLine = true)` (heading and tag callers byte-identical)
+  · `SelectionMode.TEXT` + the lasso bar's **Text** button directly after H, ink-only · `TagSelection`
+  refuses `TEXT` · `onSelectionTapped` opens a lone selected text's dialog after the heading lookup
+  misses · Insert bar offers Text in every build (the other seven stay debug-only), `btnInsert`
+  visible in every build.
+- **Two review/walk fixes:** (1) the Insert bar's `releaseRender` was still H1's pen-idle-gated
+  lambda — a dialog opened by a hovering pen would have waited for the pen to leave; ungated like
+  the tags popup. (2) **The walk's one failure:** an inserted text landed selected under a PEN tool
+  — drawn selected, but the pen inked through it and could neither drag nor tap it (the eye-check
+  #5 round-2 finding again). Fixed by `armLassoForLanding()` — the transfer paste's arm-lasso /
+  remember-prior-tool / restore-at-dismissal recipe, now one shared helper the paste and the insert
+  both call **before** `setSelection` (the O2 ordering). That is what D4's "the armed tool is
+  unchanged by an insert" means in practice: the lasso is armed for the selection's life, the prior
+  tool returns at dismissal.
+- **Nomad (by hand, the user, 2026-09-06):** all eight checklist items pass after fix (2) —
+  insert / cancel / blank save / lasso → Text with line breaks kept / failure leaves ink / stylus
+  tap opens the dialog / blank Save deletes / drag / wrap at the right edge / undo-redo ×3 / copy +
+  paste across a flip / survives close-reopen.
+- **Tests:** `:app` 1337 → **1369** (+32: `TextLinesTest`, `SelectionModesTest`,
+  `TextPlacementTest`, `TagSelectionTest` TEXT row); every module green.
+- **`NotebookActivity`:** 3472 → 3531 (+59, the `Host` object and the two landing helpers); the
+  flows themselves are in `TextFlow.kt`. H4's brief keeps the same rule.
+- **Planner calls recorded:** `TextLines` has two rules on purpose (a recognizer's spacing is a
+  guess, a person's is deliberate); the lasso bar's Text shares `ic_text_recognition` with the
+  Insert bar's; the "nothing recognized" dialog wording is shared by all three convert callers.
+- **Open for H4:** the ink-selection bar is now ten buttons with Pad · Calendar · Tag installed —
+  it fits one row on the Nomad; H4's Transform button lands on the SHAPE row only, not this one.
 

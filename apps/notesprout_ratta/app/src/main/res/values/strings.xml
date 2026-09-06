@@ -634,6 +634,10 @@
     <string name="heading_edit_title">Edit heading</string>
     <string name="heading_edit_save">Save</string>
 
+    <!-- Text objects (arc 28 / H2). The Save button is the heading dialog's — one word, one string. -->
+    <string name="text_edit_title">Text</string>
+    <string name="text_convert_action">Make text</string>
+
     <!-- Contents (table of contents over the notebook's core heading rows) -->
     <string name="contents_title">Contents</string>
     <string name="cd_contents">Contents</string>

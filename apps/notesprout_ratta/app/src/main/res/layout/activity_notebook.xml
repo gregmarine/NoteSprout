@@ -71,14 +71,13 @@
             <!-- Insert (arc 28 / H1, D4) — directly after the lasso, because what it places lands
                  selected under the lasso the moment it appears. It opens a sub-bar rather than
                  inserting anything itself, and it is a COMMAND, not a tool: the armed tool is
-                 unchanged by an insert. GONE in release for the whole of H1 (nothing on the bar is
-                 offered yet); the screen makes it visible in debug builds only, so the row can be
-                 measured on the Nomad before the phases that fill it. -->
+                 unchanged by an insert. Visible in every build since H2, when the bar got its
+                 first real offer (Text); the sub-bar's other seven buttons stay debug-only until
+                 H4 and H5 wire them. -->
             <androidx.appcompat.widget.AppCompatImageButton
                 android:id="@+id/btnInsert"
                 style="@style/Widget.Notesprout.ToolbarButton"
                 android:src="@drawable/ic_plus"
-                android:visibility="gone"
                 android:contentDescription="@string/cd_insert"/>
 
             <!-- Everything above is a tool; Recents is not, so the row's free space sits here and

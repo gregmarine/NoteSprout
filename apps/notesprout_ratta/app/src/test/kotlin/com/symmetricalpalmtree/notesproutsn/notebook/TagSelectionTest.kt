@@ -38,6 +38,13 @@ class TagSelectionTest {
         assertEquals(TagFlow.NONE, TagSelection.flowFor(SelectionMode.LINK))
     }
 
+    @Test
+    fun `a lone text object has no flow either`() {
+        // Arc 28 / H2: it carries words already, but they are a paragraph rather than a title —
+        // there is no one line in it a tag could honestly be made of.
+        assertEquals(TagFlow.NONE, TagSelection.flowFor(SelectionMode.TEXT))
+    }
+
     // ── Whether it is offered ────────────────────────────────────────────────
 
     @Test
@@ -54,6 +61,7 @@ class TagSelectionTest {
         assertFalse(TagSelection.offered(SelectionMode.MIXED, tagsAvailable = true))
         assertFalse(TagSelection.offered(SelectionMode.MIXED_WITH_LINK, tagsAvailable = true))
         assertFalse(TagSelection.offered(SelectionMode.LINK, tagsAvailable = true))
+        assertFalse(TagSelection.offered(SelectionMode.TEXT, tagsAvailable = true))
     }
 
     // ── Is it a tag as it stands (the silent gate) ───────────────────────────

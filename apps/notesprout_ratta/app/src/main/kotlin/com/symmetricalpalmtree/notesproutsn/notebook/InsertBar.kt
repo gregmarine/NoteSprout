@@ -23,9 +23,9 @@ import com.symmetricalpalmtree.notesproutsn.R
  *
  * **Every button is [offer]ed by its own phase, and hidden until then** (J4: GONE, never disabled
  * — a control that does nothing does not exist, and on e-ink a greyed control is invisible anyway).
- * H1 offers none: the bar exists, hinted and placed, so the button's geometry can be measured on
- * the Nomad before the phases that fill it. H2 offers [Kind.TEXT], H4 the six shapes, H5
- * [Kind.STICKY].
+ * H2 offers [Kind.TEXT] in every build; H4 brings the six shapes and H5 [Kind.STICKY]. Until then
+ * those seven are offered in **debug builds only**, which is how the eight-button bar's width goes
+ * on being measurable on the Nomad without a release build growing controls that do nothing.
  *
  * The screen owns *when* it closes — a pick, another bar button, a tool switch, a page swap, a
  * finger gesture, an outside tap — and unions [rects] into the exclusion rects and the
@@ -66,7 +66,7 @@ class InsertBar(
         buttons[kind]?.visibility = if (offered) View.VISIBLE else View.GONE
     }
 
-    /** Whether anything at all is on offer — H1's answer is `false` for every build. */
+    /** Whether anything at all is on offer — `true` in every build since H2 offered Text. */
     val hasOffers: Boolean get() = buttons.values.any { it.visibility == View.VISIBLE }
 
     fun show(): Boolean = bar.show()
