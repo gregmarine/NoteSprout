@@ -6,7 +6,8 @@ cross-session memory for the arc: read it whole at every phase start, together w
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `ENCRYPTION_PLAN.md` and `DRIVE_PLAN.md` are the shapes this file copies.
 
-**Status:** wizard locked 2026-09-05 · L1 ⬜ · L2 ⬜ · L3 ⬜ · L4 ⬜ · L5 ⬜ · L6 ⬜
+**Status:** wizard locked 2026-09-05 · Fable review folded in 2026-09-05 (R1–R7, § Review
+amendments) · L1 ⬜ · L2 ⬜ · L3 ⬜ · L4 ⬜ · L5 ⬜ · L6 ⬜
 
 **Phase letters:** every letter A–Z is spoken for in `RATTA_PLAN.md` except **H** and **L**. This
 arc takes **L**; H stays free.
@@ -55,7 +56,7 @@ logic. Four things make SN's restore a different animal, and each is a decision 
 | Piece | SN today | This arc |
 |---|---|---|
 | `SafBackupWriter` — the `.part`/`.old` swap, one listing per write, DocumentsContract by hand (no `androidx.documentfile`) | the write half only | L1 adds `SafBackupReader`, its read twin, in the same hand-rolled style |
-| `SelfContainedSnapshot` — WAL absorbed into a cache copy so the cloud never holds a sidecar | write side | L4 relies on it being true: a **cloud** backup has no `-wal` to fetch; a **local** one can |
+| `SelfContainedSnapshot` — WAL absorbed into a cache copy so the cloud never holds a sidecar | write side | L4 relies on it being true: a **cloud** backup's mains are complete, so any `-wal` there is stale and is **never** fetched (R3); a **local** one is fetched with its main |
 | `SoilCrypto.probe` / `SoilFileKind` | the one probe | L2's staged-set validation — `Encrypted` passes without a key, exactly og |
 | `SoilRekey.recoverGarden` + `RekeyRecovery` (Bootstrap runs it after the index opens) | arc 26 / U2 | L2 adds `RestoreEngine.recoverInterrupted` **before** it in the same `boot()` — a restore's aside must settle before a rekey's leftovers are judged |
 | `SnIndex.closeForRotation()` — the one door that closes the index | arc 26 / U3, rotation only | L2 is its **second** caller; its contract widens from "rotation only" to "rotation or restore", both ending in a relaunch |
@@ -114,11 +115,15 @@ gets staged:
   `*.old.bak` (an arc-26 `SoilRekey` commit interrupted **on the source device** and copied by a
   later backup run), any `-shm` (rebuilt on open, never copied by the writer either), any
   directory, anything else.
-- **The WAL rule, read side.** A `-wal` is taken **only** with its main file, and both must land or
-  the whole fetch fails. A `.soil` staged without its backed-up `-wal` is a silent loss of the
-  writes in it; a `-wal` staged without its `.soil` is meaningless. Never one, never neither-when-
-  the-backup-has-both. (The cloud leg's backups carry no sidecars at all by
-  `SelfContainedSnapshot`'s construction; the rule still runs, and finds none.)
+- **The WAL rule, read side — local leg only.** A `-wal` is taken **only** with its main file, and
+  both must land or the whole fetch fails. A `.soil` staged without its backed-up `-wal` is a silent
+  loss of the writes in it; a `-wal` staged without its `.soil` is meaningless. Never one, never
+  neither-when-the-backup-has-both.
+- **The cloud leg never takes a `-wal` (R3).** `SelfContainedSnapshot` makes every uploaded main
+  file complete, so any `-wal` sitting in a cloud device folder is **stale by construction** — left
+  by a stale-sidecar delete that failed (`CloudBackupLeg` guards exactly this). Pairing it with a
+  fresh main file is the corruption that guard exists to prevent; the read side must not undo it.
+  The manifest takes a `leg` parameter and the WAL rule is skipped-and-ignored for `CLOUD`.
 - **`dev/`.** Debug builds back up into a `dev/` subfolder. Enumeration is therefore **one level
   deep**: the picked tree counts as a backup if it directly holds `notesprout.db`, and each
   immediate subfolder that holds one counts too. og's rule, and it is also what lets a user pick a
@@ -126,53 +131,82 @@ gets staged:
 
 ### D2 — Staging (`restore/RestoreStaging`, L1)
 
-`cacheDir/restore_staging`, wiped and recreated at the top of every attempt. Every file streams to
-a `.part` name and renames on completion, so a dropped read never leaves a truncated file under a
-name the commit would install. **Every per-file result is checked and any single failure aborts the
-whole fetch** — a silently short staging set would commit as the entire library. Progress is
-`(done, total)` across the manifest. The live library is untouched by anything in this step.
+**`getExternalFilesDir(null)/restore_staging/` — the library's own volume, a sibling of `Garden/`
+(R1; og stages in `cacheDir` and copies, and the plan first copied og).** The index and `Garden/`
+both live under `getExternalFilesDir(null)`, so staging beside them makes the commit **renames
+only**: peak disk drops from old + staged + new-copy to old + staged, the kill window shrinks from a
+multi-hundred-MB copy to milliseconds, D5 gets simpler, and the free-space gate measures the one
+volume everything sits on. Nothing enumerates that directory (`extensionStoreFiles` and
+`recoverGarden` read `Garden/` only), so a leftover is invisible to the library. Layout mirrors the
+live one: `restore_staging/notesprout.db` (+ `-wal`) and `restore_staging/Garden/…`.
+
+Wiped and recreated at the top of every attempt. Every file streams to a `.part` name and renames
+on completion, so a dropped read never leaves a truncated file under a name the commit would
+install. **Every per-file result is checked and any single failure aborts the whole fetch** — a
+silently short staging set would commit as the entire library. Progress is `(done, total)` across
+the manifest. The live library is untouched by anything in this step.
+
+**Free space is gated before the first byte is fetched (R1).** Both listings carry sizes for free —
+`CloudEntry.sizeBytes`, and `COLUMN_SIZE` in the one SAF listing — so `RestoreBackup` carries a
+`totalBytes` and the pre-flight refuses when `totalBytes + HEADROOM` exceeds the volume's usable
+space. The post-stage check (D3 step 6) is the honest re-measure.
 
 ### D3 — The commit (`restore/RestoreEngine`, L2)
 
-og's order, with SN's four additions. Steps 1–5 touch nothing live; the point of no return is 7.
+og's order, with SN's additions and the review's reshaping (R1, R2, R4, R7). Steps 1–7 touch
+nothing live; the point of no return is 8.
 
 1. **Pre-flight.** No rotation marker; no `.soil` held open; a destination the source can still
-   reach. Refuse with a named `Problem`, nothing staged.
+   reach; the listing's `totalBytes` + headroom fits the library volume (D2). Refuse with a named
+   `Problem`, nothing staged.
 2. **Stage** (D2).
 3. **Validate.** `SoilCrypto.probe` every staged `.soil`, every staged store and the staged index —
    `Invalid` fails the restore by name. `Encrypted` passes; nothing is read deeper without a key.
 4. **Prove the key** (decision 6). Test-open the *staged* index: cached global first, silently;
-   then the prompt, under `AttemptLimiter("RESTORE")`, folding Crockford confusables the way Unlock
-   does. Opens or the restore stops here, live library untouched. The proven passphrase is held in
-   memory for step 8 — **never** logged, never in an Intent, never written outside `PassphraseStore`.
-5. **Free-space gate.** Staged bytes + 64 MB headroom against the library volume's usable space;
-   short means a hard fail naming the shortfall. The commit copies the staged set in while the old
-   library still exists aside.
-6. **Read out this device's destination** (decision 3) — `treeUri`, `cloudEnabled`,
+   then the prompt, under `AttemptLimiter("RESTORE")`. **The prompt accepts a typed passphrase
+   (R6)** — arc 26 lets a library carry a typed global, the Nomad's dev library does — so it verifies
+   the text **as typed first, then `GlobalKey.normalize`d** exactly as `UnlockActivity` does, and
+   its wording says "passphrase or recovery key", never just "recovery key". Opens or the restore
+   stops here, live library untouched. The proven passphrase is held in memory for step 9 —
+   **never** logged, never in an Intent, never written outside `PassphraseStore`.
+5. **Read out this device's destination** (decision 3) — `treeUri`, `cloudEnabled`,
    `cloudDeviceFolder` — from `BackupStore` while the index is still open, and park them
    device-locally (`SecurePrefs`, a `restore_pending_destination` blob; not a secret, but it rides
    the store that already survives the swap).
-7. **Close and swap.** `ExtensionStores.closeAll()` → `SnIndex.checkpoint()` →
-   `SnIndex.closeForRotation()` → rename the live `notesprout.db*` and the whole `Garden/` into
-   `restore_replaced/` → copy the staged Garden in → install the staged index **last**, `.part` +
-   fsync + rename. **The installed index is the commit marker.**
-8. **Key state.** `PassphraseStore.setGlobalPassphrase(proven)`, clear the recovery-key
-   acknowledgement **only if** it was never set for this library (see below), `KeyMaterial.clearAll`,
-   `KeySession.clear()`, `NotebookUnlocks.clear()`, `PassphraseCache.clear()`,
-   `PassphraseStore.clearRotationMarker()`.
-9. **Discard the aside** (decision 5) and the staging dir.
-10. **Relaunch.** Report dialog → Restart → `BootstrapActivity.relaunchIntent(thenBackup = false)` +
+6. **Free-space re-check.** Staged bytes already sit on the volume, so what remains to fit is only
+   the headroom (64 MB, an L2 question) — a hard fail naming the shortfall if even that is short.
+7. **Blind the process (R2).** `KeySession.clear()` **before** anything closes. `ExtensionStores.open`
+   *creates* an empty store when the file is missing, and the cloud leg's downloads handed `:ext-cloud`
+   its `IExtensionStore` binder — that process can call back after the fetch, and the swap window
+   below is exactly when the Garden is absent. With no key in session every such call throws
+   `SoilLockedException` instead of minting a store the install would collide with. The session is
+   set again only in step 9, after the index is installed; a rollback re-sets the **old** passphrase.
+8. **Close and swap — renames only (R1).** `ExtensionStores.closeAll()` → `SnIndex.checkpoint()` →
+   `SnIndex.closeForRotation()` → aside in this order: **(a)** live `notesprout.db` + its sidecars
+   into `restore_replaced/`, **(b)** live `Garden/` into `restore_replaced/Garden`; then install:
+   **(c)** staged `Garden/` renamed to live, **(d)** staged index sidecar (if any) renamed beside,
+   **(e)** staged `notesprout.db` renamed **last**. **The installed index is the commit marker**, and
+   every step is a same-volume `rename` — nothing is copied, nothing is `.part` at this point.
+9. **Key state.** `PassphraseStore.setGlobalPassphrase(proven)`, **`setRecoveryKeyAcknowledged`
+   (R7 — set, unconditionally; see below)**, `KeyMaterial.clearAll`, `KeySession.set(proven)`,
+   `NotebookUnlocks.clear()`, `PassphraseCache.clear()`, `PassphraseStore.clearRotationMarker()`.
+10. **Discard the aside** (decision 5) and the staging dir.
+11. **Relaunch.** Report dialog → Restart → `BootstrapActivity.relaunchIntent(thenBackup = false)` +
     `finishAffinity()`.
 
-**Failure inside step 7 rolls the aside back and reopens the index**, so the app keeps working
-without a restart — og's rule, and the reason the aside is renames rather than copies.
+**Failure inside step 8 renames the aside back and relaunches (R4)** — it does **not** reopen the
+index in place. `SnIndex` has no reopen door after `closeForRotation` except `ensureReady`, which
+is Bootstrap's alone; a rotation already ends every path in the Bootstrap relaunch and `IndexGuard`
+already bounces every other screen there. The rollback is D5's rule run in-process (per-item,
+idempotent), then the old passphrase back into the session, then a report dialog naming the failure
+with the one action Restart. One ending path, two outcomes.
 
-**The acknowledgement question.** The restored library's recovery key is the source device's, and
-the user just typed it (or it was already this device's). Showing `RecoveryKeyActivity` after a
-restore would present a key the user demonstrably already has. So the acknowledgement is **left
-set** when the key came from the cached global, and **set** when it came from the prompt — a
-restore never routes to the recovery-key screen. Recorded here because `BootstrapRoute.afterOpen`
-would otherwise send them there.
+**The acknowledgement question (R7).** The restored library's recovery key is the source device's,
+and the user just typed it (or it was already this device's cached global). Showing
+`RecoveryKeyActivity` after a restore would present a key the user demonstrably already has, so the
+commit **sets the acknowledgement unconditionally** — it is either already set (cached-global case)
+or must be set now (prompt case). A restore never routes to the recovery-key screen; it must be set
+before the relaunch or `BootstrapRoute.afterOpen` sends them there.
 
 ### D4 — Destination carry-over (`restore/RestoreDestination`, L2, pure decision + a tiny store)
 
@@ -195,17 +229,27 @@ The pure rule (`RestoreDestination.merge(restored, parked)`), JVM-tested:
 
 ### D5 — Interrupted-commit recovery (`RestoreEngine.recoverInterrupted`, L2)
 
-Launch-time repair, called from `BootstrapActivity.boot()` **before** `SoilRekey.recoverGarden` and
-before `SnIndex.ensureReady` can treat a missing index as a fresh install. The installed index is
-the commit marker:
+Launch-time repair, called from `BootstrapActivity.boot()` **first** — before `SnIndex.ensureReady`
+(which would otherwise treat a missing index as a fresh install, or judge rekey leftovers over a
+half-swapped Garden) and therefore before `SoilRekey.recoverGarden`. The installed index is the
+commit marker. The aside is built by two renames and installed by three (D3 step 8), so the repair
+is **per-item and idempotent (R5)** rather than a two-branch table:
 
-- aside present + **no** live index → the swap never completed → roll the old library back.
-- aside present + live index present → the commit finished and the cleanup did not → the aside is
-  the replaced library; discard it.
-- a leftover `notesprout.db.part` is stale on both branches; delete it.
+- **Live index present** → the commit finished. Whatever sits in `restore_replaced/` is the replaced
+  library: delete it whole. Delete `restore_staging/` too (its files were renamed out; anything left
+  is a partial of nothing).
+- **Live index absent, aside index present** → the swap did not complete. First, if **both** a live
+  `Garden/` and `restore_replaced/Garden` exist, the live one is the **new** Garden renamed in at
+  step 8(c) — delete it. Then rename every aside item back (Garden, index sidecars, index). Delete
+  `restore_staging/`. The old library is whole again.
+- **Live index absent, aside index absent** → nothing of a restore is in flight (a fresh install, or
+  a rekey leftover for `ensureReady` to judge). Touch nothing except a stray `restore_staging/`.
+- `restore_replaced/` present with **only** a Garden (killed between 8(a) and 8(b) is impossible in
+  that order; between 8(b) and 8(c) leaves aside = index + Garden) — covered by the second rule,
+  which keys on the aside **index**, the first thing moved aside and the last thing moved back.
 
-Ordering matters: a restore's aside must settle before a rekey's `.rekey.tmp` / `.old.bak` are
-judged, or `recoverGarden` would reason about a Garden that is halfway between two libraries.
+The pure decision (`RestoreRecovery.plan(liveIndex, asideIndex, liveGarden, asideGarden)` → an
+ordered list of `Delete` / `RenameBack` actions) is JVM-tested against every combination.
 
 ### D6 — The sources (`restore/RestoreSource`, L1 + L4)
 
@@ -241,35 +285,42 @@ this phase.**
 
 - `restore/RestoreManifest` (D1) — pure, exhaustively JVM-tested against the real filename shapes:
   `.part`, `.old`, `.rekey.tmp`, `.old.bak`, `-shm`, a store whose stem fails
-  `isValidExtensionPackage`, a `-wal` with no main file, a main file with no `-wal`.
+  `isValidExtensionPackage`, a `-wal` with no main file, a main file with no `-wal`, and the same
+  folder under `leg = CLOUD` (every `-wal` ignored).
 - `restore/RestoreSource` + `RestoreBackup` (D6).
 - `data/backup/SafBackupReader` — the writer's read twin, hand-rolled `DocumentsContract`, one
   listing per enumeration, `.part`+rename copies.
 - `SafRestoreSource` — one-level-deep enumeration (D1), notebook counts, index mtime.
-- `restore/RestoreStaging` (D2).
+- `restore/RestoreStaging` (D2) — on the library volume, beside `Garden/`; `RestoreBackup.totalBytes`.
 
-**Questions to resolve at phase start:** app version · whether `RestoreBackup` carries a total byte
-size (it would let L3 show "N notebooks · 412 MB" and L2 pre-check free space before fetching — one
-extra `COLUMN_SIZE` query per file, or the listing's size column if it is populated).
+**Questions to resolve at phase start:** app version. *(Resolved by the review: `RestoreBackup`
+**does** carry `totalBytes` — `CloudEntry.sizeBytes` and the SAF listing's `COLUMN_SIZE` both come
+free with the one listing — so L3 can show "N notebooks · 412 MB" and the pre-flight gates free
+space before fetching, D2/R1.)*
 
 ### ⬜ L2 — the commit engine
 
 The dangerous half, and the one Fable writes.
 
-- `restore/RestoreEngine` (D3) — `Result`/`Problem` types, never throws past its top-level catch.
+- `restore/RestoreEngine` (D3) — `Result`/`Problem` types, never throws past its top-level catch;
+  the swap is renames only, the session is cleared before it, a failed swap rolls back and relaunches.
+- `restore/RestoreRecovery` (D5) — the pure per-item plan; `recoverInterrupted` executes it.
 - `restore/RestoreDestination` (D4) — the pure merge + the `SecurePrefs` park; applied in
   `BootstrapActivity`.
 - `RestoreEngine.recoverInterrupted` (D5), wired into `boot()` ahead of `recoverGarden`.
 - `SnIndex.closeForRotation`'s contract widened to "rotation or restore" (doc comment + the
   `IndexGuard` note); `AttemptLimiter` `"RESTORE"` bucket.
-- JVM tests for every pure part: the merge table, the manifest→plan, the free-space arithmetic, the
-  recover-interrupted branch table.
+- JVM tests for every pure part: the merge table, the manifest→plan (both legs — the cloud leg
+  takes no `-wal`), the free-space arithmetic, the recovery plan over every live/aside combination.
 
 **Questions to resolve at phase start:** whether the free-space headroom stays og's 64 MB · whether
 a `.soil` that fails its probe fails the whole restore (og) or is skipped-and-named (the backup
 engine's "copy it as the bytes it is" instinct points the other way; **default: fail**, because a
 restore installs a library and a bad notebook in it is a library that lies) · where the parked
-destination blob lives if not `SecurePrefs`.
+destination blob lives if not `SecurePrefs`. *(Settled by the review, not to be re-asked: staging
+on the library volume + rename-only commit (R1); session cleared before the swap (R2); rollback
+relaunches rather than reopening (R4); per-item recovery (R5); typed-then-normalized prompt (R6);
+acknowledgement set unconditionally (R7).)*
 
 ### ⬜ L3 — the screen, the Backup row, and the local walk
 
@@ -310,13 +361,18 @@ outright below some free-space margin before it starts downloading.
 **No `/code-review` in this arc** (decision 8). Instead, break it on purpose and fix what falls out.
 A debug-menu `RestoreProbe` is the door, in the `RekeyProbe` shape. At minimum:
 
-- kill the process mid-commit, at each of: after the aside rename, after the Garden copy, before the
-  index rename, after the index rename and before the key reset. D5's branch table proved live.
+- kill the process mid-commit, at each of D3 step 8's seams: after 8(a), after 8(b), after 8(c),
+  after 8(e) and before the key reset (step 9). D5's per-item plan proved live on every one.
+- an extension call into its store during the swap window (a debug `RestoreProbe` hook that binds
+  `:ext-cloud`'s store between 8(a) and 8(e)) — must be refused, never create a store (R2).
+- a swap failure injected at 8(c) (a file planted at the live `Garden/` name) — the aside renames
+  back, the old session is restored, the relaunch lands in the old library untouched (R4).
 - a full disk at the free-space gate, and a disk that fills *during* the Garden copy.
 - a torn staging set (delete a staged `.soil` between validate and commit).
 - a backup folder salted with `.part`, `.old`, `.rekey.tmp`, `.old.bak`, a stray `-shm` and a
   foreign `.db` — none of them may be staged.
-- a `.soil` + `-wal` pair where only one side is present in the backup.
+- a `.soil` + `-wal` pair where only one side is present in the backup (local leg); a stale `-wal`
+  planted in a cloud device folder — never fetched (R3).
 - the wrong recovery key, three times, into the limiter's lockout.
 - a restore attempted while a rotation marker stands.
 - a `NOTEBOOK`-scope notebook in the backup: it restores, shows a lock card, and prompts on open.
@@ -338,6 +394,24 @@ header; `PARITY_BACKLOG.md` item 2 → **DONE**; monorepo `BACKLOG.md`'s W5 "a r
 closed. Arc marked COMPLETE + FROZEN here.
 
 ---
+
+## Review amendments (Fable pass, 2026-09-05 — folded into D1–D5 above; recorded so the *why* survives)
+
+The plan was drafted by Opus and reviewed by Fable against the code before L1. Every seam it leans
+on was confirmed (per-file SQLCipher salts make a foreign index open under the source passphrase;
+`cloudDeviceFolder` is minted lazily by both the Backup screen and `CloudBackupLeg`; `CloudEntry`
+carries `sizeBytes` + `modifiedAt`; `BootstrapRoute` does route an unacknowledged key to
+`RecoveryKeyActivity`). Seven things changed:
+
+| # | Amendment | Why |
+|---|---|---|
+| R1 | Stage on the library volume (`getExternalFilesDir(null)/restore_staging/`), commit by **rename only**; gate free space from the listing's sizes **before** fetching | og stages in `cacheDir` and copies; index and Garden share one volume, so the copy bought nothing but a 3× disk peak and a long kill window |
+| R2 | `KeySession.clear()` **before** `closeAll` + the swap; session set again only after the index is installed | `ExtensionStores.open` creates an empty store when the file is missing; `:ext-cloud` holds its store binder after the download and can call back during the window when the Garden is aside |
+| R3 | The cloud leg **never** fetches a `-wal` | `SelfContainedSnapshot` makes every cloud main complete; a `-wal` there is a failed stale-sidecar delete, and pairing it with a fresh main is the corruption the backup leg guards against |
+| R4 | A failed swap renames back and **relaunches**; no in-place reopen | `SnIndex` has no reopen door but `ensureReady` (Bootstrap-only); rotation already ends in the relaunch and `IndexGuard` already covers it |
+| R5 | `recoverInterrupted` is a per-item idempotent plan, not a two-branch table | the aside is two renames and the install three; a kill between any two leaves a state the two branches did not name (a new partial Garden beside an aside one) |
+| R6 | The key prompt verifies **as typed, then normalized**, and says "passphrase or recovery key" | arc 26 allows a typed global (the Nomad's dev library has one); `GlobalKey.normalize` would corrupt it |
+| R7 | The acknowledgement is **set unconditionally** at commit, before the relaunch | the draft's step 8 said "clear if never set" against its own paragraph saying "leave set / set"; an unset flag routes the relaunch to the recovery-key screen |
 
 ## Standing traps that bind this arc
 
