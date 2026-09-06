@@ -16,8 +16,10 @@ written here is *what* and *why*, plus the user's own directives and the traps a
 binds every item here.
 
 **Status:** item 1 **DONE** (arc 26 "Keys", U1–U7 landed 2026-09-05, complete + frozen; the
-reference is `docs/encryption.md`, the plan and ledger `ENCRYPTION_PLAN.md`). Items 2–7 not started. No
-ordering has been decided — the numbering below is the order the user listed them in, not a priority.
+reference is `docs/encryption.md`, the plan and ledger `ENCRYPTION_PLAN.md`). Item 2 **PLANNED** — arc 27
+"Restore", wizard locked 2026-09-05, phases L1–L6 in the standalone `RESTORE_PLAN.md`; no code yet.
+Items 3–7 not started. No ordering has been decided — the numbering below is the order the user listed
+them in, not a priority.
 
 ---
 
@@ -68,7 +70,13 @@ probably not). Reference: og `docs/encryption.md`, `crypto/*`, `EncryptionSettin
 
 ---
 
-## 2. Restore
+## 2. Restore — 🔄 PLANNED (arc 27 "Restore", wizard locked 2026-09-05)
+
+**The plan is `RESTORE_PLAN.md`** — read that, not this section, for the arc. Phases L1–L6, both
+legs (local SAF **and** cloud), replace-all, no undo, the staged index proved openable before any
+commit, and the backup destination treated as device-local state that a restore never rewrites —
+the user's directive below, made whole as decision 3. No code review in the arc; L5 is a failure-injection
+pass. The text that follows is the gap review as it stood before the wizard, kept for the record.
 
 **User's call:** "Need restore for sure."
 
@@ -101,6 +109,12 @@ ciphertext is keyed to the device that wrote it, so a restore across devices nee
 device's recovery key, exactly as an encrypted import does. That last one ties this effort to
 effort 1. Also open: whether the cloud leg gets a restore too, or only local. Reference: og
 `docs/backup.md`, `data/backup/RestoreEngine.kt`, `RestoreSource.kt`, `SafBackupReader.kt`.
+
+**All of the above are answered in `RESTORE_PLAN.md` § Decisions** (2026-09-05): the cloud leg **does**
+get a restore (`ICloudStorage` already has `list` + `download`, so no contract change); "replace all"
+means the whole library, index and extension stores included, with the aside-swap and the installed
+index as the commit marker; and the cross-device key case is met **before** the commit rather than
+after it — the staged index must open under a key the user can supply, or nothing live is touched.
 
 ---
 

@@ -153,7 +153,10 @@ skill (`.claude/skills/device-build-install/SKILL.md`) — invoked automatically
   PARITY_BACKLOG item 1) is COMPLETE + FROZEN (U1–U7 landed 2026-09-05)**: the reference is
   `apps/notesprout_ratta/docs/encryption.md`; for any work on it read the standalone
   `apps/notesprout_ratta/ENCRYPTION_PLAN.md` (not `RATTA_PLAN.md`) — no code review, host-only,
-  no ninth point. **Arcs 1–26 are all complete and frozen.** **No NINTH extension point
+  no ninth point. **Arcs 1–26 are all complete and frozen.** **Arc 27 "Restore" (whole-library
+  restore, PARITY_BACKLOG item 2) is PLANNED and not started — wizard locked 2026-09-05; its
+  reference is the standalone `apps/notesprout_ratta/RESTORE_PLAN.md` (not `RATTA_PLAN.md`),
+  phases L1–L6, host-only, no code review in the arc.** **No NINTH extension point
   and no other arc without another user decision. Read `apps/notesprout_ratta/RATTA_PLAN.md`
   first for ANY other work there** — it holds the working protocol, model recipe, standing
   traps, and the per-arc ledger of still-binding decisions. Subsystem detail:

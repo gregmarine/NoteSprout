@@ -240,6 +240,23 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   **U7 (docs + freeze, 2026-09-05):** `docs/encryption.md` written, pointers in the eight docs it
   touches, `PARITY_BACKLOG.md` item 1 closed — no code. Nomad library left all-GLOBAL under a typed
   passphrase (the value is in the memory file, never in a doc).
+- **Arc 27 "Restore" is PLANNED, not started** (wizard locked 2026-09-05) — whole-library restore,
+  `PARITY_BACKLOG.md` item 2. **Read the standalone `RESTORE_PLAN.md`, not `RATTA_PLAN.md`, for any
+  work on it**: phases L1–L6, host-only, no point, no API bump, version stays `0.1.0-ratta`, and
+  **no `/code-review` in the arc** (L5 is a failure-injection pass instead). The four decisions that
+  bind everything else: **both legs** (local SAF and cloud — `ICloudStorage` already has `list` +
+  `download`, so no contract change); **replace all** with the aside-swap and the installed index as
+  the commit marker, no undo once it commits; **the staged index must open under a key the user can
+  supply BEFORE anything live is touched** (cached global silently, then a prompt under
+  `AttemptLimiter("RESTORE")`); and **the backup destination is device-local state that a restore
+  never rewrites** — `treeUri` / `cloudEnabled` / `cloudDeviceFolder` are read out before the swap
+  and re-applied after it, both stamp maps cleared, the backup's own destination fields always
+  discarded. That last one is the user's own incident (a restored backup silently re-aimed a
+  device's backup folder at another device's, and overwrote it over several runs); reading a backup
+  and writing one are two different questions. A restore is refused while a rotation marker stands,
+  the cloud extension store is restored like any other (the host never reaches into `:ext-cloud`'s
+  tables), and every restore walk is driven by hand on the Nomad against a backup made foreign by
+  `GlobalRotation` — never the Manta.
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by
