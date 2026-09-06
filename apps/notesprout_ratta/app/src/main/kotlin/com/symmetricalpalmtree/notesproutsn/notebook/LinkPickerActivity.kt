@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.util.Log
 import android.view.MotionEvent
@@ -12,6 +13,7 @@ import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.content.res.AppCompatResources
 import androidx.appcompat.widget.TooltipCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -133,6 +135,14 @@ class LinkPickerActivity : AppCompatActivity() {
     private var density = 1f
     private var scaledDensity = 1f
 
+    /**
+     * The sticky icon, inflated **once on Main** (arc 28 / H1). Previews rasterize concurrently on
+     * [Dispatchers.Default], and a `Drawable` carries mutable bounds, so each render takes its own
+     * copy off this one's `constantState` rather than sharing it — and a preview simply draws
+     * without note icons if it could not be loaded at all.
+     */
+    private var stickyIconSource: Drawable? = null
+
     /** One create at a time. E-ink gives a tap no feedback for hundreds of ms, so a second tap in
      *  that gap would insert a second page nobody asked for. Released in `finally`. */
     private var creatingPage = false
@@ -198,6 +208,7 @@ class LinkPickerActivity : AppCompatActivity() {
         val dm = resources.displayMetrics
         density = dm.density
         scaledDensity = dm.scaledDensity
+        stickyIconSource = AppCompatResources.getDrawable(this, R.drawable.ic_sticker_2)
 
         val prefill = intent.getStringExtra(EXTRA_INITIAL_PAYLOAD)
         editing = prefill != null
@@ -503,8 +514,11 @@ class LinkPickerActivity : AppCompatActivity() {
             val (w, h) = PreviewMath.renderSize(width, page.width, page.height)
             val entry = withContext(Dispatchers.Default) {
                 PreviewEntry(
+                    // One Paints set per preview: these run concurrently on Default, and a Paint /
+                    // Drawable is mutated as it draws (PagePreview.Paints).
                     bitmap = PagePreview.render(
-                        page, content, w, h, density, HeadingRenderer.basePaint(scaledDensity),
+                        page, content, w, h, density,
+                        PagePreview.Paints.of(scaledDensity, previewStickyIcon()),
                     ),
                     title = PageLabels.titleOf(content),
                 )
@@ -516,6 +530,11 @@ class LinkPickerActivity : AppCompatActivity() {
             imageView.setImageBitmap(entry.bitmap)
         }
     }
+
+    /** A private copy of [stickyIconSource] for one preview raster — never the shared instance,
+     *  which has mutable bounds. Null (no icons drawn) when the drawable would not load. */
+    private fun previewStickyIcon(): Drawable? =
+        stickyIconSource?.constantState?.newDrawable()?.mutate()
 
     private fun labelFor(position: Int, title: String?): String =
         if (title.isNullOrEmpty()) getString(R.string.link_page_label, position)

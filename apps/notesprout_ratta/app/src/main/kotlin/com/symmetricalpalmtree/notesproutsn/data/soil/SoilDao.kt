@@ -66,10 +66,11 @@ interface SoilDao {
     @Query("SELECT id FROM notebook WHERE parentId = :pageId AND type = 'stroke' AND deletedAt IS NULL")
     suspend fun liveStrokeIds(pageId: String): List<String>
 
-    /** Live stroke + heading ids of a page — what a page delete soft-deletes along with it.
-     *  Superseded by [liveDescendantIds] for page delete since arc 6 (links wrap grandchildren);
-     *  still the right call for anything that wants the page's own loose content only. */
-    @Query("SELECT id FROM notebook WHERE parentId = :pageId AND type IN ('stroke','heading') AND deletedAt IS NULL")
+    /** Live loose content ids of a page — strokes, headings and (arc 28) texts, shapes and sticky
+     *  icons. Superseded by [liveDescendantIds] for page delete since arc 6 (links wrap
+     *  grandchildren, stickies hold children); still the right call for anything that wants the
+     *  page's own loose content only. */
+    @Query("SELECT id FROM notebook WHERE parentId = :pageId AND type IN ('stroke','heading','text','shape','sticky_note') AND deletedAt IS NULL")
     suspend fun liveContentIds(pageId: String): List<String>
 
     /** Live link rows of a page in z-order (arc 6 / K1). */
@@ -80,19 +81,24 @@ interface SoilDao {
     @Query("UPDATE notebook SET parentId = :newParentId, updatedAt = :at WHERE id IN (:ids)")
     suspend fun reparent(ids: List<String>, newParentId: String, at: Long)
 
-    /** Live content ids of a page **one level deeper than [liveContentIds]** (arc 6 / K1): strokes,
-     *  headings, links and the page's `document` (arc 19), plus the links' own children (the page's
-     *  grandchildren) — what a page delete / undo must carry so a wrapped selection rides its page.
-     *  Paper's `liveDescendantIds` with `'heading'` in place of `'object'` (the SN child types).
+    /** Live content ids of a page **two levels deeper than [liveContentIds]** (arc 6 / K1, grown
+     *  arc 28 / H1): strokes, headings, links, texts, shapes, stickies and the page's `document`
+     *  (arc 19); plus the links' own children (the page's grandchildren — which since arc 28 may
+     *  include a sticky icon); plus **every sticky's content strokes**, whether the sticky sits on
+     *  the page or inside a link (a great-grandchild branch) — what a page delete / undo must
+     *  carry so a wrapped selection and a note's content both ride their page.
      *
      *  A `document` is a *product* of the page, not content on it (it is excluded from every
      *  staleness whitelist — [DocumentDao.maxContentUpdatedAt]), but it is still the user's writing
      *  and it belongs to that page: a delete, its undo, and a page copy must all carry it. Only the
-     *  page level gains it — a link never wraps a document, so the grandchild branch is unchanged. */
+     *  page level gains it — a link never wraps a document. */
     @Query(
         """SELECT id FROM notebook WHERE deletedAt IS NULL AND (
-             (parentId = :pageId AND type IN ('stroke', 'heading', 'link', 'document'))
-             OR parentId IN (SELECT id FROM notebook WHERE parentId = :pageId AND type = 'link' AND deletedAt IS NULL))""",
+             (parentId = :pageId AND type IN ('stroke', 'heading', 'link', 'document', 'text', 'shape', 'sticky_note'))
+             OR parentId IN (SELECT id FROM notebook WHERE parentId = :pageId AND type = 'link' AND deletedAt IS NULL)
+             OR parentId IN (SELECT s.id FROM notebook s WHERE s.type = 'sticky_note' AND s.deletedAt IS NULL AND (
+                   s.parentId = :pageId
+                   OR s.parentId IN (SELECT l.id FROM notebook l WHERE l.parentId = :pageId AND l.type = 'link' AND l.deletedAt IS NULL))))""",
     )
     suspend fun liveDescendantIds(pageId: String): List<String>
 
@@ -153,6 +159,20 @@ interface SoilDao {
     /** Rewrite a heading's content: text + authoritative level + the re-measured box size. */
     @Query("UPDATE notebook SET text = :text, flags = :flags, width = :width, height = :height, updatedAt = :at WHERE id = :id")
     suspend fun setHeadingContent(id: String, text: String, flags: Int, width: Float, height: Float, at: Long)
+
+    /** Rewrite a text object's content (arc 28): the Markdown source + the re-measured box size.
+     *  Top-left is kept — the box grows from its anchor. */
+    @Query("UPDATE notebook SET text = :text, width = :width, height = :height, updatedAt = :at WHERE id = :id")
+    suspend fun setTextContent(id: String, text: String, width: Float, height: Float, at: Long)
+
+    /** Rewrite a shape's whole geometry (arc 28, a transform): centre, un-rotated extents and the
+     *  packed `flags` (aspect · points · rotation) — `style` and `strokeWidth` untouched. */
+    @Query("UPDATE notebook SET x = :x, y = :y, width = :width, height = :height, flags = :flags, updatedAt = :at WHERE id = :id")
+    suspend fun setShapeGeometry(id: String, x: Float, y: Float, width: Float, height: Float, flags: Long, at: Long)
+
+    /** Live sticky rows of a page in z-order (arc 28) — icons only; content is read per note. */
+    @Query("SELECT * FROM notebook WHERE parentId = :pageId AND type = 'sticky_note' AND deletedAt IS NULL ORDER BY `order`")
+    suspend fun stickiesOf(pageId: String): List<SoilObjectEntity>
 
     @Query("UPDATE notebook SET refId = :refId, updatedAt = :at WHERE id = :id")
     suspend fun setRefId(id: String, refId: String?, at: Long)

@@ -38,6 +38,16 @@ object NotebookUndo {
              * (`LinkStore.restore`); ids alone couldn't rebuild a row the writer never saw.
              */
             val links: List<PageLink> = emptyList(),
+            /** Arc 28 (H1) — texts and shapes deleted in the same tap. Ids only, for the heading's
+             *  reason: their rows survive soft-deleted with every column intact and revive in place. */
+            val textIds: List<String> = emptyList(),
+            val shapeIds: List<String> = emptyList(),
+            /**
+             * Stickies deleted in the same tap — full [PageSticky] snapshots **with their content**
+             * ([StickyStore.withContent]), never ids: `StickyStore.restore` revives the snapshot's
+             * `childIds`, and an icon carrying no children would come back as an empty note.
+             */
+            val stickies: List<PageSticky> = emptyList(),
         ) : Action
 
         /**
@@ -57,6 +67,11 @@ object NotebookUndo {
             val strokes: List<Stroke>,
             val headingIds: List<String> = emptyList(),
             val links: List<PageLink> = emptyList(),
+            /** Arc 28 (H1) — the three new kinds a scribble can take, on [Deleted]'s terms: ids for
+             *  texts and shapes, whole content-carrying snapshots for stickies. */
+            val textIds: List<String> = emptyList(),
+            val shapeIds: List<String> = emptyList(),
+            val stickies: List<PageSticky> = emptyList(),
         ) : Action
 
         /**
@@ -73,6 +88,16 @@ object NotebookUndo {
             /** Links that rode the same drag (K1) — ids only: `LinkStore.move` shifts a link row
              *  and its wrapped children from ids, in either direction. */
             val linkIds: List<String> = emptyList(),
+            /**
+             * Arc 28 (H1) — texts, shapes and stickies that rode the same drag. **Ids only, all
+             * three**, including the stickies: a move is a delta on two columns and nothing is
+             * created or destroyed, so there is no row to rebuild from a snapshot. A sticky's
+             * content does not move at all (it is local to the note), which is exactly why its
+             * icon's id is the whole of what a move has to remember.
+             */
+            val textIds: List<String> = emptyList(),
+            val shapeIds: List<String> = emptyList(),
+            val stickyIds: List<String> = emptyList(),
         ) : Action
 
         /**
@@ -131,6 +156,73 @@ object NotebookUndo {
         ) : Action
 
         /**
+         * A text object created (arc 28 / H2): either an **insert** from the Insert bar, whose
+         * [strokeIds] is empty, or a **conversion** of lassoed ink, whose [strokeIds] is the ink
+         * the text replaced. Undo erases the text row and revives the ink **in place** (writing
+         * order is load-bearing — the arc-3 trap); redo restores the row and re-deletes the ink.
+         * The heading conversion's entry, with the two cases folded into one kind because an
+         * insert is a conversion of nothing.
+         */
+        data class TextCreated(
+            override val pageId: String,
+            val text: PageText,
+            val strokeIds: List<String> = emptyList(),
+        ) : Action
+
+        /** An edit-dialog Save that changed a text object. Both sides carry the whole [PageText]
+         *  (source and the re-measured box, the top-left unchanged) — replay writes one side's
+         *  content over the row ([TextStore.updateContent]), exactly as [HeadingTextEdited] does. */
+        data class TextEdited(
+            override val pageId: String,
+            val before: PageText,
+            val after: PageText,
+        ) : Action
+
+        /** A shape placed from the Insert bar (arc 28 / H4). Undo soft-deletes the row, redo
+         *  revives it in place — geometry, rotation and z-order all still on it. */
+        data class ShapeInserted(override val pageId: String, val shape: PageShape) : Action
+
+        /**
+         * One finished transform (arc 28 / H4 — g-paper's transform mode reports before/after in
+         * one callback, so a whole drag of a handle is one entry). Both sides carry the whole
+         * [PageShape]; replay writes one side's geometry word over the row
+         * ([ShapeStore.transform]). Nothing is created or destroyed, so ids suffice on neither
+         * side and the snapshots are the entry.
+         */
+        data class ShapeTransformed(
+            override val pageId: String,
+            val before: PageShape,
+            val after: PageShape,
+        ) : Action
+
+        /**
+         * A sticky note inserted from the Insert bar (arc 28 / H5). The [sticky] is the icon row
+         * as created — no content yet, because the editor has not run: an insert's undo takes an
+         * empty note away. Undo is `StickyStore.remove` (which takes any children with it), redo
+         * `StickyStore.restore`, which re-inserts the row if the undo's soft-delete is not what it
+         * finds.
+         */
+        data class StickyInserted(override val pageId: String, val sticky: PageSticky) : Action
+
+        /**
+         * One **showing** of the sticky editor that changed the note (arc 28 / H5): the content
+         * before it opened and the content it left. Recorded once per showing from the result
+         * callback — the editor's own undo stack is alive inside the showing only, and the page's
+         * history must not fill with one entry per stroke drawn inside a note.
+         *
+         * Both sides are whole [Stroke] lists in the note's **local** space; replay is
+         * `StickyStore.setContent(stickyId, side)`, which makes the set the note's whole content
+         * (rows not in it soft-deleted, rows in it upserted in order) — so either direction is
+         * the same call with the other list.
+         */
+        data class StickyContentEdited(
+            override val pageId: String,
+            val stickyId: String,
+            val before: List<Stroke>,
+            val after: List<Stroke>,
+        ) : Action
+
+        /**
          * An object paste (arc 8) — [Deleted] run in reverse. Undo soft-deletes the rows the paste
          * created (a link's [PageLink] snapshot takes its wrapped children down with it, exactly as
          * a delete does); redo restores them in place, geometry and rebased `"order"` intact,
@@ -146,6 +238,12 @@ object NotebookUndo {
             val strokeIds: List<String>,
             val headingIds: List<String>,
             val links: List<PageLink>,
+            /** Arc 28 (H1) — the pasted texts and shapes, ids only ([Deleted]'s reason). */
+            val textIds: List<String> = emptyList(),
+            val shapeIds: List<String> = emptyList(),
+            /** The pasted stickies as whole snapshots **with the content the paste wrote**: the
+             *  redo has to revive the note's children by id, and only the snapshot names them. */
+            val stickies: List<PageSticky> = emptyList(),
         ) : Action
 
         /** A page insert or delete, replayable both ways through [NotebookSession.reconcile]. */

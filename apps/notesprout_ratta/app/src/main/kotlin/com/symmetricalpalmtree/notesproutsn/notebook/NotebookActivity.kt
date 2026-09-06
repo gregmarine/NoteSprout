@@ -14,6 +14,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.content.res.AppCompatResources
 import androidx.appcompat.widget.TooltipCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -25,6 +26,7 @@ import com.symmetricalpalmtree.gpaper.core.model.Bounds
 import com.symmetricalpalmtree.gpaper.core.model.Selection
 import com.symmetricalpalmtree.gpaper.core.model.SelectionMove
 import com.symmetricalpalmtree.gpaper.core.model.Stroke
+import com.symmetricalpalmtree.notesproutsn.BuildConfig
 import com.symmetricalpalmtree.notesproutsn.R
 import com.symmetricalpalmtree.notesproutsn.core.ActionSheetDialog
 import com.symmetricalpalmtree.notesproutsn.core.Dialogs
@@ -132,6 +134,8 @@ class NotebookActivity : AppCompatActivity() {
     private lateinit var tagEntry: TagManagerEntry
     /** The three tag doors that button opens (arc 21 / W2). */
     private lateinit var tagsPopup: TagsPopup
+    /** The Insert button's sub-bar (arc 28 / H1) — Sticky, Text and the six shapes. */
+    private lateinit var insertBar: InsertBar
     private val repo by lazy { IndexRepository() }
 
     /** The global clipboard's one index row (arc 7) — the payload, read and written only here. */
@@ -291,6 +295,13 @@ class NotebookActivity : AppCompatActivity() {
     private lateinit var linkRenderer: LinkRenderer
 
     /**
+     * The visible page's texts, shapes and sticky icons, and the three renderers that paint them
+     * (arc 28 / H1). One field instead of six working copies and three renderers, for the reason
+     * this file's header gives: everything separable lives in a collaborator.
+     */
+    private lateinit var pageObjects: PageObjects
+
+    /**
      * The page whose strokes are on the paper — written on Main only, at the two places
      * `loadStrokes` runs. The g-paper callbacks stamp their rows with THIS, never with
      * `session.currentPage`: the session's `pages`/`currentIndex` mutate on IO mid-flip (`goTo`
@@ -346,10 +357,19 @@ class NotebookActivity : AppCompatActivity() {
         val dm = resources.displayMetrics
         headingRenderer = HeadingRenderer(dm.density, dm.scaledDensity)
         paper.addContentRenderer(headingRenderer)
-        // The links go in after the headings: same layer, and a link's composite already holds the
-        // headings it wrapped — registration order is what puts a link's own chrome on top of them.
-        linkRenderer = LinkRenderer(dm.density, dm.scaledDensity)
+        // Arc 28 (D8): **registration order is z-order**, and this is the one place it is written
+        // out — headings · texts · shapes · links · sticky icons, then the engine's ink over all of
+        // it. Texts and shapes go under the links because a link's composite already holds the ones
+        // it wrapped and its own chrome must sit on top of them; the sticky icons go last, so a
+        // note dropped over anything stays reachable.
+        pageObjects = PageObjects(dm.density, dm.scaledDensity, stickyIcon())
+        paper.addContentRenderer(pageObjects.textRenderer)
+        paper.addContentRenderer(pageObjects.shapeRenderer)
+        // Its own mutate()d icon: a Drawable carries mutable bounds, and the composite raster it
+        // draws a wrapped sticky into may not be built on Main.
+        linkRenderer = LinkRenderer(dm.density, dm.scaledDensity, stickyIcon())
         paper.addContentRenderer(linkRenderer)
+        paper.addContentRenderer(pageObjects.stickyRenderer)
 
         // The toolbar owns all pen/eraser configuration — fixed values, no panels, no prefs.
         // Its Back goes through backPressed(), never straight to close(): in a via-link notebook
@@ -361,8 +381,12 @@ class NotebookActivity : AppCompatActivity() {
             // A second tap on the armed lasso opens the clipboard popup (arc 8) — and stays P1's
             // silent no-op when there is nothing of ours on the clipboard.
             onLassoReTap = { if (lassoPopup.isShowing) hideLassoPopup() else showLassoPopup() },
-            // Arming a different tool takes the popup with it: it belongs to the lasso.
-            onToolTapped = { if (lassoPopup.isShowing) hideLassoPopup() },
+            // Arming a different tool takes the popup with it: it belongs to the lasso. The Insert
+            // bar goes too — it belongs to no tool, but a tool tap is a new intention.
+            onToolTapped = {
+                if (lassoPopup.isShowing) hideLassoPopup()
+                hideInsertBar()
+            },
         )
         lassoPopup = LassoPopup(
             root = binding.root,
@@ -587,6 +611,31 @@ class NotebookActivity : AppCompatActivity() {
             if (tagsPopup.isShowing) hideTagsPopup() else showTagsPopup()
         }
         TooltipCompat.setTooltipText(binding.btnTags, binding.btnTags.contentDescription)
+
+        // Insert (arc 28 / H1, D4) — the sub-bar and the button that opens it. Every one of the
+        // eight buttons is GONE until its own phase offers it (J4), so at H1 the bar opens empty
+        // and the button itself is a **debug-only** control: a control that does nothing does not
+        // exist in a release build, and the only reason it exists here is so the top row's width
+        // can be measured on the Nomad before H2/H4/H5 fill the bar.
+        insertBar = InsertBar(
+            root = binding.root,
+            bar = binding.insertBar,
+            anchor = binding.btnInsert,
+            bandBottom = { chromeBand()?.last },
+            releaseRender = { if (!paper.isPenActive) paper.releaseRender() },
+            // H1 offers nothing, so nothing can fire this. The phases wire their own arms in.
+            onInsert = { hideInsertBar() },
+        )
+        binding.btnInsert.visibility = if (BuildConfig.DEBUG) View.VISIBLE else View.GONE
+        // Debug only, and only in H1: every button is shown so the EIGHT-button bar's width can
+        // be measured against the Nomad (D4's "wrap to two rows?" question). A tap does nothing
+        // but close the bar. H2/H4/H5 replace this with their real offers; release never sees it.
+        if (BuildConfig.DEBUG) InsertBar.Kind.entries.forEach { insertBar.offer(it, true) }
+        binding.btnInsert.setOnClickListener {
+            if (!opened || closing) return@setOnClickListener
+            if (insertBar.isShowing) hideInsertBar() else showInsertBar()
+        }
+        TooltipCompat.setTooltipText(binding.btnInsert, binding.btnInsert.contentDescription)
         // We died with the editor still on screen (M4): the extension's process — and its unsaved
         // text — outlived us, holding a host binder that went with the old instance. Re-open the
         // client here, in onCreate, so the fresh `begin` reaches the editor as its flush signal.
@@ -790,6 +839,9 @@ class NotebookActivity : AppCompatActivity() {
         val strokes = session.store.loadPage(page.id)
         val headings = remeasureForDevice(session.headings.loadPage(page.id))
         val links = withUnderlineBand(session.links.loadPage(page.id))
+        // Arc 28: the page's texts, shapes and sticky icons, read here with everything else — the
+        // texts already re-measured for this device (the heading remeasure's rule, PageObjects).
+        val objects = pageObjects.load(session, page.id, page.width)
         val linkBitmaps = linkRenderer.prebuild(links)   // raster off Main, in the load phase
         paper.setPageSize(page.width, page.height)
         paper.setTemplate(session.template)
@@ -800,6 +852,7 @@ class NotebookActivity : AppCompatActivity() {
         headingRenderer.headings = headings
         liveLinks = links.associateByTo(linkedMapOf()) { it.id }
         linkRenderer.update(links, linkBitmaps)
+        pageObjects.set(objects)
         paper.loadStrokes(strokes)
         liveStrokes = strokes.associateBy { it.id }.toMutableMap()
         displayedPageId = page.id
@@ -1070,9 +1123,24 @@ class NotebookActivity : AppCompatActivity() {
                 for (id in linkIds) liveLinks[id]?.let { liveLinks[id] = it.translated(move.dx, move.dy) }
                 linkRenderer.update(liveLinks.values.toList())
             }
+            // Arc 28: texts, shapes and stickies that rode the same drag. Each store's move is a
+            // delta on the same two columns; a sticky's content is local to the note and does not
+            // move at all, which is why its icon's row is the whole of the write.
+            val objs = pageObjects.split(move.contentIds)
+            if (!objs.isEmpty) {
+                session.texts.move(objs.textIds, move.dx, move.dy)
+                session.shapes.move(objs.shapeIds, move.dx, move.dy)
+                session.stickies.move(objs.stickyIds, move.dx, move.dy)
+                pageObjects.translate(objs, move.dx, move.dy)
+            }
             // One drag is one re-record, whatever kinds rode along.
-            if (headingIds.isNotEmpty() || linkIds.isNotEmpty()) paper.notifyContentChanged()
-            undo.record(Action.Moved(pageId, ids, move.dx, move.dy, headingIds, linkIds))
+            if (headingIds.isNotEmpty() || linkIds.isNotEmpty() || !objs.isEmpty) paper.notifyContentChanged()
+            undo.record(
+                Action.Moved(
+                    pageId, ids, move.dx, move.dy, headingIds, linkIds,
+                    objs.textIds, objs.shapeIds, objs.stickyIds,
+                )
+            )
             // The selection survives a move, at its new position — keep our copy honest.
             currentSelection = currentSelection?.let { it.copy(bounds = it.bounds.offset(move.dx, move.dy)) }
             // The drag is over (this fires at lift), so bring the bar back where the box now is.
@@ -1133,14 +1201,16 @@ class NotebookActivity : AppCompatActivity() {
         override fun onContentErased(contentIds: List<String>) {
             if (!opened) return
             val pageId = displayedPageId
-            val (headingIds, links) = removeContent(contentIds) ?: return
+            val removed = removeContent(contentIds) ?: return
             paper.notifyContentChanged()
             // One sweep is one entry. A link's restore needs its full snapshot (row + wrapped
             // children), so anything with a link in it is recorded as a Deleted covering both
-            // kinds rather than two entries the user would have to undo twice.
-            if (links.isNotEmpty()) undo.record(Action.Deleted(pageId, emptyList(), headingIds, links))
-            else undo.record(Action.HeadingDeleted(pageId, headingIds))
-            Slog.d(TAG) { "eraser removed ${headingIds.size} headings, ${links.size} links" }
+            // kinds rather than two entries the user would have to undo twice — and since arc 28
+            // the same is true of a text, a shape or a sticky.
+            recordWithStickies(removed.stickies, removed.links) { stickies, links ->
+                eraseEntry(pageId, emptyList(), removed, stickies, links, scribble = false)
+            }
+            Slog.d(TAG) { "eraser removed ${removed.summary()}" }
         }
         /**
          * A scribble crossed something out (arc 14 / g-paper 0.1.23). One gesture, one callback,
@@ -1162,13 +1232,12 @@ class NotebookActivity : AppCompatActivity() {
             // The mirror is the only place the geometry still exists once the engine drops it.
             val strokes = strokeIds.mapNotNull { liveStrokes.remove(it) }
             if (strokeIds.isNotEmpty()) session.store.erase(strokeIds)
-            val (headingIds, links) = removeContent(contentIds) ?: (emptyList<String>() to emptyList())
-            if (strokes.isEmpty() && headingIds.isEmpty() && links.isEmpty()) return
-            undo.record(Action.ScribbleErased(pageId, strokes, headingIds, links))
-            Slog.d(TAG) {
-                "scribble removed ${strokes.size} strokes, ${headingIds.size} headings, " +
-                    "${links.size} links"
+            val removed = removeContent(contentIds) ?: Removed.NONE
+            if (strokes.isEmpty() && removed.isEmpty) return
+            recordWithStickies(removed.stickies, removed.links) { stickies, links ->
+                eraseEntry(pageId, strokes, removed, stickies, links, scribble = true)
             }
+            Slog.d(TAG) { "scribble removed ${strokes.size} strokes, ${removed.summary()}" }
         }
         /** The pen is dragging the box — the bar would be dragged over, and it never follows live. */
         override fun onSelectionDragStarted() { selectionToolbar.hide() }
@@ -1204,24 +1273,123 @@ class NotebookActivity : AppCompatActivity() {
      * own the moment `onScribbleErased` returns, and a second repaint is a second EPD refresh
      * whose first half would show the ink gone and the heading still standing.
      */
-    private fun removeContent(contentIds: List<String>): Pair<List<String>, List<PageLink>>? {
+    private fun removeContent(contentIds: List<String>): Removed? {
         val headingIds = contentIds.filter { liveHeadings.containsKey(it) }
         val links = contentIds.mapNotNull { liveLinks[it] }
-        if (headingIds.isEmpty() && links.isEmpty()) return null
+        val objs = pageObjects.split(contentIds)
+        if (headingIds.isEmpty() && links.isEmpty() && objs.isEmpty) return null
         if (headingIds.isNotEmpty()) {
             session.headings.erase(headingIds)
             headingIds.forEach { liveHeadings.remove(it) }
             headingRenderer.headings = liveHeadings.values.toList()
         }
         if (links.isNotEmpty()) {
-            session.links.remove(links)
+            // A link wrapping a sticky is deferred too ([recordWithStickies]): the note's content
+            // must be read before LinkStore.remove takes it down with the link.
+            session.links.remove(links.filter { it.stickies.isEmpty() })
             links.forEach { liveLinks.remove(it.id) }
             linkRenderer.update(liveLinks.values.toList())
+        }
+        val stickies = pageObjects.stickiesIn(objs.stickyIds)
+        if (!objs.isEmpty) {
+            // Texts and shapes go down here, with everything else. **The sticky rows do not** —
+            // see [recordWithStickies]: their content has to be read before it is deleted, and
+            // that read suspends. What happens here is the whole of what the eye sees.
+            session.texts.erase(objs.textIds)
+            session.shapes.erase(objs.shapeIds)
+            pageObjects.drop(objs)
         }
         // Wrapped headings are out of the outline while wrapped (their parent is the link, not
         // the page), so erasing a link that holds one changes the Contents just as a loose one does.
         if (headingIds.isNotEmpty() || links.any { it.headings.isNotEmpty() }) contentsFlow.refresh()
-        return headingIds to links
+        return Removed(headingIds, links, objs.textIds, objs.shapeIds, stickies)
+    }
+
+    /**
+     * What one erase, scribble or Delete took off the page besides ink — the shape every one of
+     * those undo entries is built from. [stickies] are **icons**: their content is read, and their
+     * rows deleted, by [recordWithStickies].
+     */
+    private class Removed(
+        val headingIds: List<String>,
+        val links: List<PageLink>,
+        val textIds: List<String>,
+        val shapeIds: List<String>,
+        val stickies: List<PageSticky>,
+    ) {
+        val isEmpty: Boolean get() =
+            headingIds.isEmpty() && links.isEmpty() && textIds.isEmpty() &&
+                shapeIds.isEmpty() && stickies.isEmpty()
+
+        fun summary(): String =
+            "${headingIds.size} headings, ${links.size} links, ${textIds.size} texts, " +
+                "${shapeIds.size} shapes, ${stickies.size} stickies"
+
+        companion object { val NONE = Removed(emptyList(), emptyList(), emptyList(), emptyList(), emptyList()) }
+    }
+
+    /**
+     * Record the one entry a delete deserves — and, when a sticky went with it, finish the sticky
+     * half first.
+     *
+     * A sticky's undo snapshot has to carry its **content** (`StickyStore.restore` revives the
+     * snapshot's `childIds`, and an icon alone would come back as an empty note), and that read
+     * suspends — which a g-paper callback does not. So with a sticky in the act the row delete and
+     * the entry both move into one page op, in the only order that works: drain the writer, read
+     * the children, *then* soft-delete them. It is still **one gesture, one entry** — the entry is
+     * simply recorded a beat later, and nothing repaints from here either way (the page already
+     * lost the icon in the caller's own frame).
+     *
+     * With no sticky in the act nothing is deferred at all: [entry] is recorded on the spot, which
+     * is every erase and every delete in the app until H5 puts a sticky on a page.
+     */
+    private fun recordWithStickies(
+        icons: List<PageSticky>,
+        links: List<PageLink>,
+        entry: (stickies: List<PageSticky>, links: List<PageLink>) -> Action,
+    ) {
+        // A link that wraps a sticky is in the same boat: `LinkStore.remove` takes the note's
+        // content down with the link, and `LinkStore.restore` can only revive what the snapshot
+        // names — so its stickies are read whole first, and only then is the link removed.
+        val deferredLinks = links.filter { it.stickies.isNotEmpty() }
+        if (icons.isEmpty() && deferredLinks.isEmpty()) { undo.record(entry(emptyList(), links)); return }
+        runPageOp {
+            session.store.drain()
+            val full = icons.map { session.stickies.withContent(it) }
+            val fullLinks = links.map { l ->
+                if (l.stickies.isEmpty()) l
+                else l.copy(stickies = l.stickies.map { session.stickies.withContent(it) })
+            }
+            session.stickies.remove(full.map { it.id })
+            session.links.remove(fullLinks.filter { it.stickies.isNotEmpty() })
+            undo.record(entry(full, fullLinks))
+        }
+    }
+
+    /**
+     * The kind an erase gets: a scribble is always its own kind, and an eraser sweep that took
+     * nothing but headings keeps the narrower [Action.HeadingDeleted] it has always had (its rows
+     * revive in place from ids alone). Everything else is a [Action.Deleted] covering every kind
+     * at once — one sweep the user undoes with one tap.
+     */
+    private fun eraseEntry(
+        pageId: String,
+        strokes: List<Stroke>,
+        r: Removed,
+        stickies: List<PageSticky>,
+        /** [Removed.links], with any wrapped sticky's content read in ([recordWithStickies]). */
+        links: List<PageLink>,
+        scribble: Boolean,
+    ): Action = when {
+        scribble -> Action.ScribbleErased(
+            pageId, strokes, r.headingIds, links, r.textIds, r.shapeIds, stickies,
+        )
+        strokes.isEmpty() && links.isEmpty() && r.textIds.isEmpty() &&
+            r.shapeIds.isEmpty() && stickies.isEmpty() ->
+            Action.HeadingDeleted(pageId, r.headingIds)
+        else -> Action.Deleted(
+            pageId, strokes, r.headingIds, links, r.textIds, r.shapeIds, stickies,
+        )
     }
 
     // ── Page gestures → operations ───────────────────────────────────────────
@@ -1326,12 +1494,14 @@ class NotebookActivity : AppCompatActivity() {
         val strokes: List<Stroke>
         val headings: List<Heading>
         val links: List<PageLink>
+        val objects: PageObjects.Loaded
         val linkBitmaps: Map<String, android.graphics.Bitmap>
         try {
             page = session.goTo(index)
             strokes = session.store.loadPage(page.id)
             headings = remeasureForDevice(session.headings.loadPage(page.id))
             links = withUnderlineBand(session.links.loadPage(page.id))
+            objects = pageObjects.load(session, page.id, page.width)
             // Composites raster off Main here, inside the buffered-commit window — never in the
             // display block below, where a link-heavy page would stall the flip frame (K5 review).
             linkBitmaps = linkRenderer.prebuild(links)
@@ -1345,6 +1515,7 @@ class NotebookActivity : AppCompatActivity() {
         selectionToolbar.hide()   // idempotent — clearSelection fires onSelectionDismissed too
         hideLassoPopup()          // it belongs to the page being left, like every other floating bar
         hideTagsPopup()           // and its Tag page door would now aim at a page nobody chose
+        hideInsertBar()           // whatever it would place belongs to the page being left
         paper.clearForContentSwap()
         paper.setPageSize(page.width, page.height)
         paper.setTemplate(session.template)
@@ -1354,6 +1525,7 @@ class NotebookActivity : AppCompatActivity() {
         headingRenderer.headings = headings
         liveLinks = links.associateByTo(linkedMapOf()) { it.id }
         linkRenderer.update(links, linkBitmaps)
+        pageObjects.set(objects)
         paper.loadStrokes(allStrokes)
         liveStrokes = allStrokes.associateBy { it.id }.toMutableMap()
         displayedPageId = page.id
@@ -1431,6 +1603,11 @@ class NotebookActivity : AppCompatActivity() {
                 session.store.revive(a.strokes.map { it.id })
                 session.headings.restore(a.headingIds)
                 session.links.restore(a.pageId, a.links)
+                // Arc 28: texts and shapes revive in place from ids; a sticky needs its snapshot,
+                // whose `childIds` are the content rows the restore has to bring back with it.
+                session.texts.restore(a.textIds)
+                session.shapes.restore(a.shapeIds)
+                session.stickies.restore(a.pageId, a.stickies)
                 session.store.drain(); refreshToPage(a.pageId)
             }
             // Same replay as Deleted — a different act to the user, the same rows to put back.
@@ -1438,12 +1615,19 @@ class NotebookActivity : AppCompatActivity() {
                 session.store.revive(a.strokes.map { it.id })
                 session.headings.restore(a.headingIds)
                 session.links.restore(a.pageId, a.links)
+                session.texts.restore(a.textIds)
+                session.shapes.restore(a.shapeIds)
+                session.stickies.restore(a.pageId, a.stickies)
                 session.store.drain(); refreshToPage(a.pageId)
             }
             is Action.Moved -> {
                 session.store.move(a.ids, -a.dx, -a.dy)
                 session.headings.move(a.headingIds, -a.dx, -a.dy)
                 session.links.move(a.linkIds, -a.dx, -a.dy)
+                session.texts.move(a.textIds, -a.dx, -a.dy)
+                session.shapes.move(a.shapeIds, -a.dx, -a.dy)
+                // The icon row only: a note's content is local and never moved with it.
+                session.stickies.move(a.stickyIds, -a.dx, -a.dy)
                 session.store.drain(); refreshToPage(a.pageId)
             }
             is Action.HeadingCreated -> {
@@ -1460,10 +1644,31 @@ class NotebookActivity : AppCompatActivity() {
                 session.store.remove(a.strokeIds)
                 session.headings.erase(a.headingIds)
                 session.links.remove(a.links)
+                session.texts.erase(a.textIds)
+                session.shapes.erase(a.shapeIds)
+                // remove(), not erase(): a pasted note's content rows go down with its icon.
+                session.stickies.remove(a.stickies.map { it.id })
                 session.store.drain(); refreshToPage(a.pageId)
             }
             is Action.HeadingTextEdited -> { session.headings.updateContent(a.before); session.store.drain(); refreshToPage(a.pageId) }
             is Action.HeadingLevelChanged -> { session.headings.updateContent(a.before); session.store.drain(); refreshToPage(a.pageId) }
+            // Arc 28 — the three new kinds. A text conversion is the heading conversion's shape:
+            // the row goes, the ink it consumed comes back IN PLACE (writing order is load-bearing).
+            // An insert's strokeIds is empty, so the same arm covers both.
+            is Action.TextCreated -> {
+                session.texts.erase(listOf(a.text.id))
+                session.store.revive(a.strokeIds)
+                session.store.drain(); refreshToPage(a.pageId)
+            }
+            is Action.TextEdited -> { session.texts.updateContent(a.before); session.store.drain(); refreshToPage(a.pageId) }
+            is Action.ShapeInserted -> { session.shapes.erase(listOf(a.shape.id)); session.store.drain(); refreshToPage(a.pageId) }
+            is Action.ShapeTransformed -> { session.shapes.transform(a.before); session.store.drain(); refreshToPage(a.pageId) }
+            // remove(), for the paste's reason: an insert's undo takes the note's children too —
+            // there are none yet at an insert, and there may be after a redo/edit/undo round trip.
+            is Action.StickyInserted -> { session.stickies.remove(listOf(a.sticky.id)); session.store.drain(); refreshToPage(a.pageId) }
+            // setContent makes the list the note's WHOLE content, so either direction is the same
+            // call with the other side's strokes.
+            is Action.StickyContentEdited -> { session.stickies.setContent(a.stickyId, a.before); session.store.drain(); refreshToPage(a.pageId) }
             // Undo of a wrap IS an unlink; undo of an unlink is a re-wrap in place (K1).
             is Action.LinkCreated -> { session.links.unlink(a.pageId, a.link); session.store.drain(); refreshToPage(a.pageId) }
             is Action.LinkUnlinked -> { session.links.relink(a.pageId, a.link); session.store.drain(); refreshToPage(a.pageId) }
@@ -1491,18 +1696,27 @@ class NotebookActivity : AppCompatActivity() {
                 session.store.remove(a.strokes.map { it.id })
                 session.headings.erase(a.headingIds)
                 session.links.remove(a.links)
+                session.texts.erase(a.textIds)
+                session.shapes.erase(a.shapeIds)
+                session.stickies.remove(a.stickies.map { it.id })
                 session.store.drain(); refreshToPage(a.pageId)
             }
             is Action.ScribbleErased -> {
                 session.store.remove(a.strokes.map { it.id })
                 session.headings.erase(a.headingIds)
                 session.links.remove(a.links)
+                session.texts.erase(a.textIds)
+                session.shapes.erase(a.shapeIds)
+                session.stickies.remove(a.stickies.map { it.id })
                 session.store.drain(); refreshToPage(a.pageId)
             }
             is Action.Moved -> {
                 session.store.move(a.ids, a.dx, a.dy)
                 session.headings.move(a.headingIds, a.dx, a.dy)
                 session.links.move(a.linkIds, a.dx, a.dy)
+                session.texts.move(a.textIds, a.dx, a.dy)
+                session.shapes.move(a.shapeIds, a.dx, a.dy)
+                session.stickies.move(a.stickyIds, a.dx, a.dy)
                 session.store.drain(); refreshToPage(a.pageId)
             }
             is Action.HeadingCreated -> {
@@ -1515,10 +1729,25 @@ class NotebookActivity : AppCompatActivity() {
                 session.store.revive(a.strokeIds)
                 session.headings.restore(a.headingIds)
                 session.links.restore(a.pageId, a.links)
+                session.texts.restore(a.textIds)
+                session.shapes.restore(a.shapeIds)
+                session.stickies.restore(a.pageId, a.stickies)
                 session.store.drain(); refreshToPage(a.pageId)
             }
             is Action.HeadingTextEdited -> { session.headings.updateContent(a.after); session.store.drain(); refreshToPage(a.pageId) }
             is Action.HeadingLevelChanged -> { session.headings.updateContent(a.after); session.store.drain(); refreshToPage(a.pageId) }
+            is Action.TextCreated -> {
+                session.texts.restore(listOf(a.text.id))
+                session.store.remove(a.strokeIds)
+                session.store.drain(); refreshToPage(a.pageId)
+            }
+            is Action.TextEdited -> { session.texts.updateContent(a.after); session.store.drain(); refreshToPage(a.pageId) }
+            is Action.ShapeInserted -> { session.shapes.restore(listOf(a.shape.id)); session.store.drain(); refreshToPage(a.pageId) }
+            is Action.ShapeTransformed -> { session.shapes.transform(a.after); session.store.drain(); refreshToPage(a.pageId) }
+            // restore(), not a create: the row is soft-deleted, not gone — and if the undo's delete
+            // never reached the file, StickyStore.restore re-inserts the snapshot rather than fail.
+            is Action.StickyInserted -> { session.stickies.restore(a.pageId, listOf(a.sticky)); session.store.drain(); refreshToPage(a.pageId) }
+            is Action.StickyContentEdited -> { session.stickies.setContent(a.stickyId, a.after); session.store.drain(); refreshToPage(a.pageId) }
             is Action.LinkCreated -> { session.links.relink(a.pageId, a.link); session.store.drain(); refreshToPage(a.pageId) }
             is Action.LinkUnlinked -> { session.links.unlink(a.pageId, a.link); session.store.drain(); refreshToPage(a.pageId) }
             is Action.LinkEdited -> { session.links.updatePayload(a.linkId, a.after); session.store.drain(); refreshToPage(a.pageId) }
@@ -1552,17 +1781,27 @@ class NotebookActivity : AppCompatActivity() {
         val ids = sel.strokeIds.toList()
         val headingIds = sel.contentIds.filter { liveHeadings.containsKey(it) }
         val links = sel.contentIds.mapNotNull { liveLinks[it] }
-        if (ids.isEmpty() && headingIds.isEmpty() && links.isEmpty()) return
+        val objs = pageObjects.split(sel.contentIds)
+        if (ids.isEmpty() && headingIds.isEmpty() && links.isEmpty() && objs.isEmpty) return
         val strokes = ids.mapNotNull { liveStrokes[it] }
+        val stickyIcons = pageObjects.stickiesIn(objs.stickyIds)
         if (headingIds.isNotEmpty()) {
             session.headings.erase(headingIds)
             headingIds.forEach { liveHeadings.remove(it) }
             headingRenderer.headings = liveHeadings.values.toList()
         }
         if (links.isNotEmpty()) {
-            session.links.remove(links)
+            // A link wrapping a sticky is deferred with the stickies — see [recordWithStickies].
+            session.links.remove(links.filter { it.stickies.isEmpty() })
             links.forEach { liveLinks.remove(it.id) }
             linkRenderer.update(liveLinks.values.toList())
+        }
+        if (!objs.isEmpty) {
+            // The sticky rows are deliberately not deleted here — [recordWithStickies] does that,
+            // after it has read the content the undo snapshot needs (the read suspends).
+            session.texts.erase(objs.textIds)
+            session.shapes.erase(objs.shapeIds)
+            pageObjects.drop(objs)
         }
         if (ids.isNotEmpty()) {
             paper.removeStrokes(ids)
@@ -1573,14 +1812,18 @@ class NotebookActivity : AppCompatActivity() {
         }
         // Unconditional: removeStrokes only re-records when it actually dropped a stroke, so the
         // content removals must not ride on it. Both calls land in one Main block → one frame.
-        if (headingIds.isNotEmpty() || links.isNotEmpty()) paper.notifyContentChanged()
+        if (headingIds.isNotEmpty() || links.isNotEmpty() || !objs.isEmpty) paper.notifyContentChanged()
         // Nothing captured means nothing to put back — record no history rather than a lying entry.
-        if (strokes.isNotEmpty() || headingIds.isNotEmpty() || links.isNotEmpty()) {
-            undo.record(Action.Deleted(pageId, strokes, headingIds, links))
+        if (strokes.isNotEmpty() || headingIds.isNotEmpty() || links.isNotEmpty() || !objs.isEmpty) {
+            recordWithStickies(stickyIcons, links) { stickies, fullLinks ->
+                Action.Deleted(pageId, strokes, headingIds, fullLinks, objs.textIds, objs.shapeIds, stickies)
+            }
         } else Log.w(TAG, "selection delete: no geometry for ${ids.size} ids — not undoable")
         if (headingIds.isNotEmpty() || links.any { it.headings.isNotEmpty() }) contentsFlow.refresh()
         Slog.d(TAG) {
-            "selection delete: ${strokes.size} strokes, ${headingIds.size} headings, ${links.size} links"
+            "selection delete: ${strokes.size} strokes, ${headingIds.size} headings, " +
+                "${links.size} links, ${objs.textIds.size} texts, ${objs.shapeIds.size} shapes, " +
+                "${stickyIcons.size} stickies"
         }
     }
 
@@ -1629,6 +1872,13 @@ class NotebookActivity : AppCompatActivity() {
      * with its level lit + Link, one link alone → Edit + Unlink, anything mixed → Delete plus Link
      * while no link is in it. A link anywhere in a mixed selection takes Link away — the no-nesting
      * rule (K1), read off the working copy rather than trusted from the engine's id set.
+     *
+     * **Arc 28 (H1):** a selection holding a text, a shape or a sticky classifies as
+     * [SelectionMode.MIXED] and needs no arm of its own — its `contentIds` is non-empty and holds
+     * no heading and no link, which is the `else` this `when` already ends on. That is exactly the
+     * D5 row H1 wants: Snap / Copy / Cut / Delete and a link-free Link, with H, Pad, Calendar and
+     * Tag all gone. The lone-kind modes (TEXT / SHAPE / STICKY) arrive with the phases that give
+     * them something to offer.
      */
     private fun showSelectionToolbar(sel: Selection) {
         val lone = sel.strokeIds.isEmpty() && sel.contentIds.size == 1
@@ -1885,8 +2135,15 @@ class NotebookActivity : AppCompatActivity() {
         val pageId = displayedPageId
         val strokes = liveStrokes.values.filter { it.id in sel.strokeIds }
         val headings = sel.contentIds.mapNotNull { liveHeadings[it] }
+        // Arc 28: a link wraps the new kinds too — `LinkStore` re-parents whatever ids it is
+        // handed, and the children lists are what make a wrapped set move, capture and restore
+        // whole. A wrapped sticky's own content stays under the sticky, not under the link.
+        val objs = pageObjects.split(sel.contentIds)
+        val texts = pageObjects.textsIn(objs.textIds)
+        val shapes = pageObjects.shapesIn(objs.shapeIds)
+        val stickies = pageObjects.stickiesIn(objs.stickyIds)
         val bounds = PageLink.unionBounds(
-            strokes, headings, resources.displayMetrics.density,
+            strokes, headings, resources.displayMetrics.density, texts, shapes, stickies,
         ) ?: return   // nothing of the captured selection is still on the page
         val link = PageLink(
             id = java.util.UUID.randomUUID().toString(),
@@ -1894,6 +2151,7 @@ class NotebookActivity : AppCompatActivity() {
             x = bounds.left, y = bounds.top, width = bounds.width, height = bounds.height,
             order = 0,   // the store lands it at MAX(order)+1 among the page's links
             strokes = strokes, headings = headings,
+            texts = texts, shapes = shapes, stickies = stickies,
         )
         session.links.create(pageId, link)
         undo.record(Action.LinkCreated(pageId, link))
@@ -1903,6 +2161,9 @@ class NotebookActivity : AppCompatActivity() {
         val strokeIds = strokes.map { it.id }
         strokeIds.forEach { liveStrokes.remove(it) }
         headings.forEach { liveHeadings.remove(it.id) }
+        // The wrapped objects leave the page's own lists: they belong to the link now, and the
+        // link's composite is what draws them.
+        pageObjects.drop(objs)
         liveLinks[link.id] = link
         headingRenderer.headings = liveHeadings.values.toList()
         linkRenderer.update(liveLinks.values.toList())
@@ -1916,7 +2177,10 @@ class NotebookActivity : AppCompatActivity() {
         // Unconditional, for the conversion's reason: removeStrokes only re-records when it dropped
         // something, and a heading-only wrap still has to paint. One Main block → one frame.
         paper.notifyContentChanged()
-        Slog.d(TAG) { "wrapped ${strokeIds.size} strokes + ${headings.size} headings → link" }
+        Slog.d(TAG) {
+            "wrapped ${strokeIds.size} strokes + ${headings.size} headings + ${texts.size} texts + " +
+                "${shapes.size} shapes + ${stickies.size} stickies → link"
+        }
     }
 
     /** Land the selection on a freshly wrapped [l] — the link is what the user now has in hand.
@@ -1969,7 +2233,9 @@ class NotebookActivity : AppCompatActivity() {
         val sel = currentSelection ?: return
         val pageId = displayedPageId
         val topIds = sel.strokeIds.toList() +
-            sel.contentIds.filter { liveHeadings.containsKey(it) || liveLinks.containsKey(it) }
+            sel.contentIds.filter {
+                liveHeadings.containsKey(it) || liveLinks.containsKey(it) || pageObjects.holds(it)
+            }
         if (topIds.isEmpty()) return
         runPageOp {
             session.store.drain()
@@ -2063,6 +2329,9 @@ class NotebookActivity : AppCompatActivity() {
             // device, and any under-sized underline band grown. Rows are corrected when next written.
             val headings = remeasureForDevice(plan.headings)
             val links = withUnderlineBand(plan.links)
+            // Arc 28: a pasted text is re-measured for THIS device too — same correction, same
+            // reason (the row is corrected whenever the text is next written).
+            val texts = pageObjects.remeasured(plan.texts, page.width)
             // Composites off Main, before the frame that paints them (the hover-repaint trap).
             val linkBitmaps = linkRenderer.prebuild(links)
 
@@ -2071,12 +2340,19 @@ class NotebookActivity : AppCompatActivity() {
             plan.strokes.forEach { liveStrokes[it.id] = it }
             headingRenderer.headings = liveHeadings.values.toList()
             linkRenderer.update(liveLinks.values.toList(), linkBitmaps)
+            pageObjects.put(texts, plan.shapes, plan.stickies)
             if (plan.strokes.isNotEmpty()) paper.addStrokes(plan.strokes)
             // Unconditional: addStrokes only re-records when it actually added ink, and a
             // heading-or-link-only paste still has to paint. One Main block → one frame.
             paper.notifyContentChanged()
             undo.record(
-                Action.ObjectsPasted(pageId, plan.strokes.map { it.id }, headings.map { it.id }, links)
+                Action.ObjectsPasted(
+                    pageId, plan.strokes.map { it.id }, headings.map { it.id }, links,
+                    texts.map { it.id }, plan.shapes.map { it.id },
+                    // Whole snapshots: the paste wrote a note's content, and only the snapshot
+                    // names the child rows a redo has to bring back.
+                    plan.stickies,
+                )
             )
             if (headings.isNotEmpty() || links.any { it.headings.isNotEmpty() }) contentsFlow.refresh()
 
@@ -2085,8 +2361,15 @@ class NotebookActivity : AppCompatActivity() {
             for (s in plan.strokes) box = box?.union(s.bounds) ?: s.bounds
             for (h in headings) box = box?.union(h.bounds) ?: h.bounds
             for (l in links) box = box?.union(l.bounds) ?: l.bounds
+            for (t in texts) box = box?.union(t.bounds) ?: t.bounds
+            // A shape's box is its rotated, point-tight outline — the same rect the lasso shows.
+            for (sh in plan.shapes) { val r = ShapeGeometry.tightBounds(sh); box = box?.union(r) ?: r }
+            for (st in plan.stickies) box = box?.union(st.bounds) ?: st.bounds
             box?.let { bounds ->
-                val contentIds = (headings.map { it.id } + links.map { it.id }).toSet()
+                val contentIds = (
+                    headings.map { it.id } + links.map { it.id } + texts.map { it.id } +
+                        plan.shapes.map { it.id } + plan.stickies.map { it.id }
+                    ).toSet()
                 val strokeIds = plan.strokes.mapTo(HashSet()) { it.id }
                 val selection = Selection(strokeIds, contentIds, bounds)
                 paper.setSelection(strokeIds, contentIds, bounds)
@@ -2096,7 +2379,8 @@ class NotebookActivity : AppCompatActivity() {
             }
             toast(getString(R.string.objects_pasted_toast))
             Slog.d(TAG) {
-                "pasted ${plan.strokes.size} strokes, ${headings.size} headings, ${links.size} links"
+                "pasted ${plan.strokes.size} strokes, ${headings.size} headings, ${links.size} links, " +
+                    "${texts.size} texts, ${plan.shapes.size} shapes, ${plan.stickies.size} stickies"
             }
         }
     }
@@ -2420,6 +2704,31 @@ class NotebookActivity : AppCompatActivity() {
         tagsPopup.hide()
         pushExclusions()
     }
+
+    // ── The Insert bar (arc 28 / H1) ─────────────────────────────────────────
+
+    /**
+     * Open the Insert sub-bar. [canvasShown] gates it for the tag bar's reason — everything it can
+     * place lands on the page whose ink is on the paper, and a text document that has never shown
+     * its pages has none. The two other floating bars come down first: they are three answers to
+     * three different buttons, and the newest tap wins.
+     */
+    private fun showInsertBar() {
+        if (!opened || closing || !canvasShown) return
+        hideLassoPopup()
+        hideTagsPopup()
+        if (insertBar.show()) pushExclusions()
+    }
+
+    private fun hideInsertBar() {
+        if (!::insertBar.isInitialized || !insertBar.isShowing) return
+        insertBar.hide()
+        pushExclusions()
+    }
+
+    /** A fresh `ic_sticker_2` for one renderer: a [android.graphics.drawable.Drawable] carries
+     *  mutable bounds, so every renderer that draws one owns its own `mutate()`d copy (D2). */
+    private fun stickyIcon() = AppCompatResources.getDrawable(this, R.drawable.ic_sticker_2)!!.mutate()
 
     /**
      * The two quick doors: the tag screen in **ADD** mode, on this notebook or on the page whose
@@ -2799,7 +3108,7 @@ class NotebookActivity : AppCompatActivity() {
         val paperLoc = IntArray(2).also { paper.asView().getLocationInWindow(it) }
         val rects = (
             listOfNotNull(rectOf(binding.topBar), rectOf(binding.bottomStrip)) +
-                selectionToolbar.rects() + lassoPopup.rects() + tagsPopup.rects()
+                selectionToolbar.rects() + lassoPopup.rects() + tagsPopup.rects() + insertBar.rects()
             )
             .map { Rect(it.left - paperLoc[0], it.top - paperLoc[1], it.right - paperLoc[0], it.bottom - paperLoc[1]) }
         paper.setExclusionRects(rects)
@@ -2846,6 +3155,7 @@ class NotebookActivity : AppCompatActivity() {
             if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
                 dismissLassoPopupOnContact(ev, ev.actionIndex)
                 dismissTagsPopupOnContact(ev, ev.actionIndex)
+                dismissInsertBarOnContact(ev, ev.actionIndex)
             }
             if (action == MotionEvent.ACTION_DOWN) {
                 val tool = ev.getToolType(0)
@@ -2891,6 +3201,17 @@ class NotebookActivity : AppCompatActivity() {
         hideTagsPopup()
     }
 
+    /** The Insert bar's outside-tap dismissal (arc 28 / H1) — the tag bar's rule exactly, its own
+     *  button excluded for the same reason, and [tapDismissedPopup] deliberately untouched: that
+     *  latch belongs to the clipboard popup, whose contact has a second meaning. */
+    private fun dismissInsertBarOnContact(ev: MotionEvent, index: Int) {
+        if (!::insertBar.isInitialized || !insertBar.isShowing) return
+        val x = ev.getX(index).toInt(); val y = ev.getY(index).toInt()
+        if (rectOf(binding.btnInsert)?.contains(x, y) == true) return
+        if (insertBar.contains(x, y)) return
+        hideInsertBar()
+    }
+
     /** Both bars, the selection toolbar and the two floating popups — a floating bar is chrome
      *  like any other. */
     private fun overChrome(ev: MotionEvent): Boolean {
@@ -2901,7 +3222,8 @@ class NotebookActivity : AppCompatActivity() {
             (bottom?.contains(x, y) == true) ||
             (::selectionToolbar.isInitialized && selectionToolbar.contains(x, y)) ||
             (::lassoPopup.isInitialized && lassoPopup.contains(x, y)) ||
-            (::tagsPopup.isInitialized && tagsPopup.contains(x, y))
+            (::tagsPopup.isInitialized && tagsPopup.contains(x, y)) ||
+            (::insertBar.isInitialized && insertBar.contains(x, y))
     }
 
     private fun rectOf(v: View): Rect? {

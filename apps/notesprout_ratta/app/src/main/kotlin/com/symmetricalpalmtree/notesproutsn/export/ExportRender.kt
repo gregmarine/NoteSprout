@@ -6,8 +6,9 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
-import android.text.TextPaint
 import android.util.Log
+import androidx.appcompat.content.res.AppCompatResources
+import com.symmetricalpalmtree.notesproutsn.R
 import com.symmetricalpalmtree.notesproutsn.crypto.KeyResolver
 import com.symmetricalpalmtree.notesproutsn.core.Bitmaps
 import com.symmetricalpalmtree.notesproutsn.core.Slog
@@ -17,7 +18,6 @@ import com.symmetricalpalmtree.notesproutsn.data.soil.SoilObjectEntity
 import com.symmetricalpalmtree.notesproutsn.data.soil.SoilSchema
 import com.symmetricalpalmtree.notesproutsn.data.template.BuiltInTemplates
 import com.symmetricalpalmtree.notesproutsn.extension.PageBundle
-import com.symmetricalpalmtree.notesproutsn.notebook.HeadingRenderer
 import com.symmetricalpalmtree.notesproutsn.notebook.NotebookSession
 import com.symmetricalpalmtree.notesproutsn.notebook.PageContent
 import com.symmetricalpalmtree.notesproutsn.notebook.PagePreview
@@ -58,9 +58,10 @@ import java.io.IOException
  *
  * The bake itself is the page as it stands on the glass, minus the chrome: white ground, the
  * template under everything (unless the exporter's page-template toggle says otherwise — arc 18 /
- * D2, the one option this render executes), then the [PagePreview] layering — headings, each link's
- * wrapped children, then the loose ink. No link chrome, no selection chrome; those are the screen's
- * furniture, not the page's content. Pixels are [Bitmap.Config.RGB_565] over an opaque ground and
+ * D2, the one option this render executes), then the [PagePreview] layering — the one place that
+ * order is written down ([PagePreview.drawContent]), which since arc 28 also carries text objects,
+ * shapes and sticky icons (never a note's content). No link chrome, no selection chrome; those are
+ * the screen's furniture, not the page's content. Pixels are [Bitmap.Config.RGB_565] over an opaque ground and
  * WEBP lossy q100 ([BuiltInTemplates.toWebp] — the app's one measured encoder, the F5 finding),
  * at the **page's own** size and scale 1: a page authored on another panel keeps its own edge, and
  * the screen's size never enters this file.
@@ -209,7 +210,14 @@ object ExportRender {
         val bundle = File(ExportArtifact.freshDir(context), "$notebookId.pages")
 
         val metrics = context.resources.displayMetrics
-        val paint = HeadingRenderer.basePaint(metrics.scaledDensity)
+        // One set for the whole bake: the pages are rendered one at a time on this coroutine, and
+        // a Paint / Drawable is mutated as it draws (PagePreview.Paints). A sticky icon that will
+        // not load costs the note icons, never the export.
+        val paints = PagePreview.Paints.of(
+            metrics.scaledDensity,
+            runCatching { AppCompatResources.getDrawable(context, R.drawable.ic_sticker_2)?.mutate() }
+                .getOrNull(),
+        )
         // The pages of a notebook share one template row in the ordinary case, so the decode is
         // held across pages that want the same one and dropped the moment they do not — two
         // bitmaps at the high-water mark instead of one per page decoded again and again.
@@ -240,7 +248,7 @@ object ExportRender {
                     }
                     val content = PageReads.content(dao, page.id)
                     val image = bakePage(
-                        page.widthPx, page.heightPx, template, content, metrics.density, paint,
+                        page.widthPx, page.heightPx, template, content, metrics.density, paints,
                     )
                     writer.writePage(page.widthPx, page.heightPx, image)
                 }
@@ -280,7 +288,7 @@ object ExportRender {
         template: Bitmap?,
         content: PageContent,
         density: Float,
-        paint: TextPaint,
+        paints: PagePreview.Paints,
     ): ByteArray {
         val bitmap = try {
             Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.RGB_565)
@@ -293,7 +301,7 @@ object ExportRender {
             if (template != null) {
                 canvas.drawBitmap(template, null, Rect(0, 0, widthPx, heightPx), templatePaint)
             }
-            PagePreview.drawContent(canvas, content, density, paint)
+            PagePreview.drawContent(canvas, content, density, paints)
             BuiltInTemplates.toWebp(bitmap)
         } finally {
             // Before the next page starts — the memory rule, kept where it cannot be forgotten.

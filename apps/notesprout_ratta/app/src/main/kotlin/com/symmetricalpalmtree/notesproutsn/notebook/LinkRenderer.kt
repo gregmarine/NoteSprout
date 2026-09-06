@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.DashPathEffect
 import android.graphics.Paint
+import android.graphics.drawable.Drawable
 import com.symmetricalpalmtree.gpaper.core.render.ContentLayer
 import com.symmetricalpalmtree.gpaper.core.render.ContentRenderer
 import com.symmetricalpalmtree.gpaper.core.render.HitTarget
@@ -18,11 +19,15 @@ import kotlinx.coroutines.withContext
  * alongside [HeadingRenderer].
  *
  * **Below the ink** ([ContentLayer.BELOW_STROKES], the K1 wizard's og-parity call): fresh ink over
- * a link stays visible on top. Each link draws its composite bitmap ([LinkComposite] — the wrapped
- * strokes + headings at 1:1 page px) or the standard dashed placeholder when the composite could
- * not build, then its chrome: a whole-pixel inkBlack underline across the bounds' bottom when the
- * link's decoded chrome says so — drawn **live**, never baked, so a chrome edit repaints without a
- * rebuild.
+ * a link stays visible on top. Each link draws its composite bitmap ([LinkComposite] — everything
+ * it wraps at 1:1 page px, in the page's own draw order) or the standard dashed placeholder when
+ * the composite could not build, then its chrome: a whole-pixel inkBlack underline across the
+ * bounds' bottom when the link's decoded chrome says so — drawn **live**, never baked, so a chrome
+ * edit repaints without a rebuild.
+ *
+ * The renderer owns **its own** [PagePreview.Paints] (arc 28 / H1), built from the [stickyIcon] the
+ * host hands it: a composite may be rasterized off Main ([prebuild]), and a `Paint` / `Drawable`
+ * carries mutable state, so nothing here is shared with [StickyRenderer]'s or [ShapeRenderer]'s.
  *
  * [update] is the one way in, on Main: it swaps the working copy and (re)builds composites —
  * reusing a cached bitmap when the link's drawable size is unchanged, which makes a move free
@@ -37,6 +42,9 @@ import kotlinx.coroutines.withContext
 class LinkRenderer(
     private val density: Float,
     scaledDensity: Float,
+    /** `R.drawable.ic_sticker_2`, **`mutate()`d for this renderer alone** — a wrapped sticky's icon
+     *  is drawn from the composite raster, which may not be on Main. */
+    stickyIcon: Drawable,
 ) : ContentRenderer {
 
     override val layer = ContentLayer.BELOW_STROKES
@@ -46,7 +54,7 @@ class LinkRenderer(
         private set
 
     private val composites = HashMap<String, Bitmap>()
-    private val textPaint = HeadingRenderer.basePaint(scaledDensity)
+    private val paints = PagePreview.Paints.of(scaledDensity, stickyIcon)
     private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val underline = Paint().apply { color = Color.BLACK; style = Paint.Style.FILL }
     private val placeholder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -73,7 +81,7 @@ class LinkRenderer(
         if (todo.isEmpty()) return emptyMap()
         return withContext(Dispatchers.Default) {
             buildMap {
-                for (l in todo) LinkComposite.build(l, density, textPaint)?.let { put(l.id, it) }
+                for (l in todo) LinkComposite.build(l, density, paints)?.let { put(l.id, it) }
             }
         }
     }
@@ -100,7 +108,7 @@ class LinkRenderer(
             }
             val cached = composites[l.id]
             if (cached != null && cached.width == w && cached.height == h) continue
-            val built = LinkComposite.build(l, density, textPaint)
+            val built = LinkComposite.build(l, density, paints)
             if (built != null) composites[l.id] = built else composites.remove(l.id)
         }
     }

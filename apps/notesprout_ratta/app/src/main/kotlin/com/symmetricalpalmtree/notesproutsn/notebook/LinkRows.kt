@@ -27,8 +27,20 @@ object LinkRows {
      * type or any of the four bounds missing/unusable (the caller drops it and the page still
      * renders). A null payload reads as `""` and an unusable one degrades to no chrome — content
      * still shows; only the follow explains itself (K4's dead-target rule).
+     *
+     * Arc 28 (H1) widened the child set to the three new kinds. They are **trailing defaults** on
+     * purpose: a caller that wraps only ink and headings (a test, a foreign-file read) keeps its
+     * three-argument call, and a wrapped sticky arrives icon-only unless the caller read its
+     * content ([StickyStore.withContent]) — the page never needs it, a delete snapshot does.
      */
-    fun toLink(row: SoilObjectEntity, strokes: List<Stroke>, headings: List<Heading>): PageLink? {
+    fun toLink(
+        row: SoilObjectEntity,
+        strokes: List<Stroke>,
+        headings: List<Heading>,
+        texts: List<PageText> = emptyList(),
+        shapes: List<PageShape> = emptyList(),
+        stickies: List<PageSticky> = emptyList(),
+    ): PageLink? {
         if (row.type != SoilSchema.TYPE_LINK) return null
         val x = row.x ?: return null
         val y = row.y ?: return null
@@ -40,6 +52,7 @@ object LinkRows {
             id = row.id, payload = payload, chrome = LinkPayload.chromeOf(payload),
             x = x, y = y, width = w, height = h, order = row.order,
             strokes = strokes, headings = headings,
+            texts = texts, shapes = shapes, stickies = stickies,
         )
     }
 

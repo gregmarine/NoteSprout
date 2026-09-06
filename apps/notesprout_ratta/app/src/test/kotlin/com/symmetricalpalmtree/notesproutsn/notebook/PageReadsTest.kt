@@ -69,6 +69,97 @@ class PageReadsTest {
         writer.close()
     }
 
+    // ── Arc 28 (H1): text objects, shapes and sticky notes ──────────────────
+
+    private fun text(id: String) =
+        PageText(id = id, text = "on-page **text**", x = 5f, y = 6f, width = 90f, height = 40f, order = 0)
+
+    private fun shape(id: String) = PageShape(
+        id = id, type = ShapeType.ELLIPSE, cx = 300f, cy = 200f, width = 60f, height = 40f,
+        strokeWidth = ShapeRows.DEFAULT_STROKE_WIDTH_PX, rotationDeg = 30f, aspectLocked = true,
+        pointCount = ShapeFlags.DEFAULT_POINTS, order = 0,
+    )
+
+    private fun note(id: String) = PageSticky(
+        id = id, x = 400f, y = 40f, width = 72f, height = 72f, contentW = 1404, contentH = 1800, order = 0,
+    )
+
+    /**
+     * The loose/wrapped split holds for all three new kinds, and a sticky comes back **icon-only**
+     * on both levels — the page's whole knowledge of a note is its icon (D2), and this read is the
+     * one that feeds every page raster (preview, cover, PDF bake).
+     */
+    @Test
+    fun `content splits the three new kinds loose from wrapped, stickies icon-only`() = runBlocking {
+        val dao = FakeSoilDao()
+        val writer = SoilWriter {}
+        val links = LinkStore(dao, writer) { block -> block() }
+        val texts = TextStore(dao, writer)
+        val shapes = ShapeStore(dao, writer)
+        val stickies = StickyStore(dao, writer) { block -> block() }
+
+        texts.create("page", text("t-loose"))
+        texts.create("page", text("t-wrapped"))
+        shapes.create("page", shape("sh-loose"))
+        shapes.create("page", shape("sh-wrapped"))
+        stickies.create("page", note("n-loose"))
+        stickies.create("page", note("n-wrapped"))
+        writer.drain()
+        stickies.setContent("n-wrapped", listOf(stroke("c1")))
+        writer.drain()
+        links.create(
+            "page",
+            PageLink(
+                id = "l1", payload = payload, chrome = LinkPayload.CHROME_UNDERLINE,
+                x = 0f, y = 0f, width = 120f, height = 60f, order = 0,
+                strokes = emptyList(), headings = emptyList(),
+                texts = listOf(text("t-wrapped")),
+                shapes = listOf(shape("sh-wrapped")),
+                stickies = listOf(note("n-wrapped")),
+            ),
+        )
+        writer.drain()
+
+        val content = PageReads.content(dao, "page")
+        assertEquals(listOf("t-loose"), content.texts.map { it.id })
+        assertEquals(listOf("sh-loose"), content.shapes.map { it.id })
+        assertEquals(listOf("n-loose"), content.stickies.map { it.id })
+        val l = content.links.single()
+        assertEquals(listOf("t-wrapped"), l.texts.map { it.id })
+        assertEquals(listOf("sh-wrapped"), l.shapes.map { it.id })
+        assertEquals(listOf("n-wrapped"), l.stickies.map { it.id })
+        // A note's content is never in a drawing read, loose or wrapped.
+        assertTrue(l.stickies.single().strokes.isEmpty())
+        assertTrue(content.strokes.isEmpty())
+        // The shape round-tripped through its packed flags, rotation and all.
+        assertEquals(30f, l.shapes.single().rotationDeg, 0.01f)
+        assertEquals(ShapeType.ELLIPSE, l.shapes.single().type)
+        writer.close()
+    }
+
+    @Test
+    fun `a soft-deleted object of any new kind never previews`() = runBlocking {
+        val dao = FakeSoilDao()
+        val writer = SoilWriter {}
+        val texts = TextStore(dao, writer)
+        val shapes = ShapeStore(dao, writer)
+        val stickies = StickyStore(dao, writer) { block -> block() }
+        texts.create("page", text("t1"))
+        shapes.create("page", shape("sh1"))
+        stickies.create("page", note("n1"))
+        writer.drain()
+        texts.erase(listOf("t1"))
+        shapes.erase(listOf("sh1"))
+        stickies.remove(listOf("n1"))
+        writer.drain()
+
+        val content = PageReads.content(dao, "page")
+        assertTrue(content.texts.isEmpty())
+        assertTrue(content.shapes.isEmpty())
+        assertTrue(content.stickies.isEmpty())
+        writer.close()
+    }
+
     @Test
     fun `pages maps live page rows in order with their authored size`() = runBlocking {
         val dao = FakeSoilDao()

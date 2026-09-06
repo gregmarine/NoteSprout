@@ -56,13 +56,18 @@ interface DocumentDao {
 
     /**
      * The page's content watermark: `MAX(updatedAt)` over everything **on** [pageId] — its strokes,
-     * headings and links, plus the links' own children ([SoilDao.liveDescendantIds]'s two-level
+     * headings, links, and (arc 28) texts, shapes and sticky icons, plus the links' own children ([SoilDao.liveDescendantIds]'s two-level
      * shape, so a wrapped selection counts exactly as it did before it was wrapped).
      *
      * **Soft-deleted rows count** (og's rule, and the reason there is no `deletedAt IS NULL` here or
      * in the join): a soft-delete sets `updatedAt` to the deletion time, so an *erase* raises this
      * value exactly as new ink does. Filtering to live rows would make erasing a page's ink invisible
      * to the draft written from it — the one change most likely to leave a document lying.
+     *
+     * **A sticky's content strokes are not in the whitelist** (arc 28): they are parented to the
+     * sticky, not the page or a link, so the join never reaches them — deliberately. The page's
+     * knowledge of a note is its icon; ink inside the note never draws on the page and never
+     * feeds the document, so an edit inside one is not "the page has changed".
      *
      * `document` rows are **excluded** by the whitelist, at both levels, and that is the rule the
      * whole feature rests on (og's): a document is a *product* of the page, not content on it, so
@@ -80,7 +85,7 @@ interface DocumentDao {
      */
     @Query(
         """SELECT COALESCE(MAX(updatedAt), 0) FROM notebook
-           WHERE type IN ('stroke', 'heading', 'link') AND (
+           WHERE type IN ('stroke', 'heading', 'link', 'text', 'shape', 'sticky_note') AND (
              parentId = :pageId
              OR parentId IN (SELECT id FROM notebook WHERE parentId = :pageId AND type = 'link'))"""
     )
@@ -103,10 +108,10 @@ interface DocumentDao {
      */
     @Query(
         """SELECT COALESCE(MAX(updatedAt), 0) FROM notebook
-           WHERE (type IN ('stroke', 'heading', 'link', 'document')
+           WHERE (type IN ('stroke', 'heading', 'link', 'document', 'text', 'shape', 'sticky_note')
                     AND parentId IN (SELECT id FROM notebook
                                      WHERE type = 'page' AND parentId = :rootId))
-              OR (type IN ('stroke', 'heading', 'link')
+              OR (type IN ('stroke', 'heading', 'link', 'text', 'shape', 'sticky_note')
                     AND parentId IN (SELECT l.id FROM notebook l
                                      WHERE l.type = 'link'
                                        AND l.parentId IN (SELECT p.id FROM notebook p

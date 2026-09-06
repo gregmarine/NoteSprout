@@ -2,19 +2,23 @@ package com.symmetricalpalmtree.notesproutsn.notebook
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.text.TextPaint
 import android.util.Log
 import com.symmetricalpalmtree.gpaper.core.render.StrokeRasterizer
 import kotlin.math.ceil
+import kotlin.math.max
 
 /**
  * Builds a link's composite bitmap (arc 6 / K1): the wrapped content rendered core-side at 1:1
- * page px, sized to the link's bounds. Heading children first (below the ink — the paper's own
- * layering, via [HeadingRenderer.drawHeading] so a wrapped heading looks exactly as it did on the
- * page); then the wrapped strokes through g-paper's [StrokeRasterizer] — the same internal
+ * page px, sized to the link's bounds, **in the page's own draw order** (D8) — headings, texts,
+ * shapes, then the wrapped strokes through g-paper's [StrokeRasterizer] (the same internal
  * renderer live ink bakes with, so the composite is pixel-identical to how the strokes looked
- * before the wrap. The underline chrome is **not** baked in — [LinkRenderer] draws it live from
- * the link's decoded chrome, so a chrome edit never invalidates the composite.
+ * before the wrap), then the wrapped sticky **icons** on top. Every kind goes through the same
+ * static recipe its on-page renderer uses, so a wrap changes nothing about how content looks.
+ *
+ * A wrapped sticky's **content** is never drawn — a note's ink appears nowhere on a page.
+ *
+ * The underline chrome is **not** baked in — [LinkRenderer] draws it live from the link's decoded
+ * chrome, so a chrome edit never invalidates the composite.
  *
  * The composite is translation-invariant (children ride the bounds), so a move never rebuilds it;
  * it changes only when the wrapped content set does (create / unlink / undo-redo — all of which
@@ -26,12 +30,17 @@ object LinkComposite {
      * The margin the composite renders beyond the link's bounds, on every side: a `Stroke.bounds`
      * is the tight bounds of its **points** (`Bounds.of(points)` — no width), but the rasterized
      * ink overhangs them by half the stroke width plus its round cap, so a bitmap cut exactly at
-     * the union bounds shears the outermost strokes (eye-check #7: the "L"'s foot). Zero for a
-     * heading-only link — a heading's box already includes its padding.
+     * the union bounds shears the outermost strokes (eye-check #7: the "L"'s foot). A **shape**
+     * has the same problem for the same reason — its geometry is a centre line — so it counts too.
+     * Zero for a link with neither (a heading, text or sticky box already includes its own room).
      */
     fun padOf(link: PageLink): Int {
-        val maxWidth = link.strokes.maxOfOrNull { it.width } ?: return 0
-        return ceil(maxWidth / 2f).toInt() + 1   // +1: anti-aliasing slop
+        val widest = max(
+            link.strokes.maxOfOrNull { it.width } ?: 0f,
+            link.shapes.maxOfOrNull { it.strokeWidth } ?: 0f,
+        )
+        if (!(widest > 0f)) return 0
+        return ceil(widest / 2f).toInt() + 1   // +1: anti-aliasing slop
     }
 
     /** The bitmap size [build] will produce for [link] — bounds plus [padOf] on each side, capped.
@@ -45,8 +54,12 @@ object LinkComposite {
     /** Build the composite, or null when the link has no drawable size or the allocation failed
      *  (the caller draws the dashed placeholder instead and does not retry until the next update).
      *  The bitmap is [padOf] larger than the bounds on every side — draw it at
-     *  `(x - pad, y - pad)`, which [LinkRenderer.drawLink] does. */
-    fun build(link: PageLink, density: Float, paint: TextPaint): Bitmap? {
+     *  `(x - pad, y - pad)`, which [LinkRenderer.drawLink] does.
+     *
+     *  [paints] is the caller's own set ([PagePreview.Paints]) — a `Paint` and a `Drawable` both
+     *  carry mutable state and a composite may be built off Main, so the renderer that owns this
+     *  set never shares it with the engine's own renderers. */
+    fun build(link: PageLink, density: Float, paints: PagePreview.Paints): Bitmap? {
         val (w, h) = sizeOf(link)
         if (w < 1 || h < 1) return null
         // ARGB_8888 and it must stay that way: unlike the card thumbnails, this bitmap is NOT
@@ -62,8 +75,12 @@ object LinkComposite {
         val pad = padOf(link)
         val canvas = Canvas(bmp)
         canvas.translate(pad - link.x, pad - link.y)
-        for (heading in link.headings) HeadingRenderer.drawHeading(canvas, heading, density, paint)
+        for (heading in link.headings) HeadingRenderer.drawHeading(canvas, heading, density, paints.heading)
+        for (text in link.texts) TextRenderer.drawText(canvas, text, density, paints.text)
+        for (shape in link.shapes) ShapeRenderer.drawShape(canvas, shape, paints.shape)
         StrokeRasterizer.draw(canvas, link.strokes)
+        val icon = paints.stickyIcon
+        if (icon != null) for (sticky in link.stickies) StickyRenderer.drawSticky(canvas, sticky, icon)
         return bmp
     }
 

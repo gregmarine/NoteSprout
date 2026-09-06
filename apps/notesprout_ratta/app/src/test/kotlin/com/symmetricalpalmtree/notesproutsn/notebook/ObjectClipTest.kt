@@ -347,6 +347,152 @@ class ObjectClipTest {
         assertEquals(1, p.links.size)
     }
 
+    // ── Arc 28 (H1): text objects, shapes and sticky notes ──────────────────
+
+    private fun textRow(id: String, parentId: String, order: Int, x: Float, y: Float) =
+        TextRows.toRow(
+            PageText(id = id, text = "an **object**", x = x, y = y, width = 80f, height = 30f, order = order),
+            parentId, now,
+        )
+
+    private fun shapeRow(
+        id: String, parentId: String, order: Int, cx: Float, cy: Float,
+        rotation: Float = 0f, strokeWidth: Float = 4f,
+    ) = ShapeRows.toRow(
+        PageShape(
+            id = id, type = ShapeType.RECTANGLE, cx = cx, cy = cy, width = 100f, height = 50f,
+            strokeWidth = strokeWidth, rotationDeg = rotation, aspectLocked = true,
+            pointCount = ShapeFlags.DEFAULT_POINTS, order = order,
+        ),
+        parentId, now,
+    )
+
+    private fun stickyRow(id: String, parentId: String, order: Int, x: Float, y: Float) =
+        StickyRows.toRow(
+            PageSticky(
+                id = id, x = x, y = y, width = 72f, height = 72f,
+                contentW = 1404, contentH = 1800, order = order,
+            ),
+            parentId, now,
+        )
+
+    /** One of each new kind loose on the page, the note holding a stroke of its own. */
+    private fun objectEnvelope(): ClipEnvelope = ObjectClip.capture(
+        listOf(
+            textRow("t-1", srcPage, 2, 100f, 100f),
+            shapeRow("sh-1", srcPage, 4, 300f, 300f),
+            stickyRow("n-1", srcPage, 6, 500f, 100f),
+        ),
+        listOf(StrokeRows.toRow(stroke("n-ink", 5f, 5f), "n-1", 0, now)),
+        notebookId, now,
+    )!!
+
+    @Test
+    fun `the three new kinds travel with fresh ids and a per-type order rebase`() {
+        val bases = mapOf(
+            SoilSchema.TYPE_TEXT to 3,
+            SoilSchema.TYPE_SHAPE to 0,
+            SoilSchema.TYPE_STICKY to 11,
+        )
+        val p = plan(objectEnvelope(), bases = bases)!!
+        assertEquals(1, p.texts.size)
+        assertEquals(1, p.shapes.size)
+        assertEquals(1, p.stickies.size)
+        val old = setOf("t-1", "sh-1", "n-1", "n-ink")
+        for (row in p.rows) assertTrue("$row kept a source id", row.id !in old)
+        assertEquals(4, p.contentIds.size)     // the note's ink is a pasted row too
+        assertEquals(4, p.rows.single { it.type == SoilSchema.TYPE_TEXT }.order)
+        assertEquals(1, p.rows.single { it.type == SoilSchema.TYPE_SHAPE }.order)
+        assertEquals(12, p.rows.single { it.type == SoilSchema.TYPE_STICKY }.order)
+        // The shape's packed flags survive the trip.
+        assertEquals(ShapeType.RECTANGLE, p.shapes.single().type)
+        assertTrue(p.shapes.single().aspectLocked)
+    }
+
+    @Test
+    fun `a shape is placed by its rotated outline, not by its columns`() {
+        // A shape's x/y is a CENTRE and its outline is a centre line: read as a box the payload
+        // would be placed a whole half-size and half a stroke out.
+        var seen: Bounds? = null
+        val env = ObjectClip.capture(
+            listOf(shapeRow("sh-1", srcPage, 0, 300f, 300f, strokeWidth = 4f)), emptyList(), notebookId, now,
+        )!!
+        plan(env, place = { seen = it; ObjectPlacement.Offset.NONE })
+        assertEquals(300f - 50f - 2f, seen!!.left, 0.01f)
+        assertEquals(300f - 25f - 2f, seen!!.top, 0.01f)
+        assertEquals(300f + 50f + 2f, seen!!.right, 0.01f)
+        assertEquals(300f + 25f + 2f, seen!!.bottom, 0.01f)
+    }
+
+    @Test
+    fun `a note's content travels with fresh ids, un-shifted, re-parented onto the copy`() {
+        val p = plan(objectEnvelope(), place = { ObjectPlacement.Offset(25f, -10f) })!!
+        val note = p.stickies.single()
+        assertEquals(525f, note.x, 0.01f)          // the icon moves…
+        assertEquals(90f, note.y, 0.01f)
+        val ink = note.strokes.single()
+        assertNotEquals("n-ink", ink.id)
+        assertEquals(5f, ink.bounds.left, 0.01f)   // …its local ink does not
+        assertEquals(5f, ink.bounds.top, 0.01f)
+        // The pasted stroke row hangs off the pasted note, never off the page.
+        val inkRow = p.rows.single { it.type == SoilSchema.TYPE_STROKE }
+        assertEquals(note.id, inkRow.parentId)
+        assertTrue(ink.id in p.contentIds)
+    }
+
+    @Test
+    fun `a sticky inside a link travels three levels deep`() {
+        val env = ObjectClip.capture(
+            listOf(linkRow("lnk-1", srcPage, 1, 300f, 300f)),
+            listOf(
+                stickyRow("n-1", "lnk-1", 0, 320f, 320f),
+                textRow("t-1", "lnk-1", 0, 330f, 330f),
+                StrokeRows.toRow(stroke("n-ink", 7f, 7f), "n-1", 0, now),
+            ),
+            notebookId, now,
+        )!!
+        val p = plan(env, place = { ObjectPlacement.Offset(10f, 10f) })!!
+        val link = p.links.single()
+        assertEquals(1, link.stickies.size)
+        assertEquals(1, link.texts.size)
+        assertTrue(p.stickies.isEmpty())           // it is the link's, not the page's
+        val note = link.stickies.single()
+        assertNotEquals("n-1", note.id)
+        assertEquals(330f, note.x, 0.01f)          // wrapped children are page-absolute
+        assertEquals(340f, link.texts.single().x, 0.01f)
+        val ink = note.strokes.single()
+        assertEquals(7f, ink.bounds.left, 0.01f)   // …the note's own ink is not
+        assertEquals(note.id, p.rows.single { it.type == SoilSchema.TYPE_STROKE }.parentId)
+    }
+
+    @Test
+    fun `a note's orphaned ink is dropped, never re-parented onto the page`() {
+        val env = ObjectClip.capture(
+            listOf(StrokeRows.toRow(stroke("s-a", 100f, 100f), srcPage, 0, now)),
+            listOf(StrokeRows.toRow(stroke("orphan", 10f, 10f), "sticky-gone", 0, now)),
+            notebookId, now,
+        )!!
+        val p = plan(env)!!
+        assertEquals(1, p.strokes.size)
+        assertEquals(listOf(dstPage), p.rows.map { it.parentId })
+        assertEquals(100f, p.strokes.single().bounds.left, 0.01f)
+    }
+
+    @Test
+    fun `a row of the wrong kind under a note is refused rather than pasted`() {
+        // Only stroke rows may be a note's children (decision 3).
+        val env = ObjectClip.capture(
+            listOf(stickyRow("n-1", srcPage, 0, 500f, 100f)),
+            listOf(headingRow("h-inside", "n-1", 0, 10f, 10f)),
+            notebookId, now,
+        )!!
+        val p = plan(env)!!
+        assertEquals(1, p.stickies.size)
+        assertTrue(p.stickies.single().strokes.isEmpty())
+        assertTrue(p.headings.isEmpty())
+        assertEquals(1, p.rows.size)
+    }
+
     @Test
     fun `the envelope round-trips through the clipboard codec unchanged`() {
         val bytes = ClipEnvelope.encode(envelope())!!

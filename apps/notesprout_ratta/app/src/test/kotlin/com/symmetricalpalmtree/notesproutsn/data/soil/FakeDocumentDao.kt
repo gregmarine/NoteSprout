@@ -15,9 +15,11 @@ class FakeDocumentDao(private val soil: FakeSoilDao) : DocumentDao {
 
     private val rows get() = soil.rows
 
-    /** The staleness whitelist — `document` is deliberately absent (see [DocumentDao]). */
+    /** The staleness whitelist — `document` is deliberately absent (see [DocumentDao]); arc 28's
+     *  three object kinds are in, and a sticky's content strokes are reached by neither join. */
     private val content = setOf(
         SoilSchema.TYPE_STROKE, SoilSchema.TYPE_HEADING, SoilSchema.TYPE_LINK,
+        SoilSchema.TYPE_TEXT, SoilSchema.TYPE_SHAPE, SoilSchema.TYPE_STICKY,
     )
 
     override suspend fun documentFor(parentId: String): SoilObjectEntity? =

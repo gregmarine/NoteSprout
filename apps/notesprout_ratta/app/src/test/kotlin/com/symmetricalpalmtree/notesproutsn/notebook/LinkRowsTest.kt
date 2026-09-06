@@ -8,6 +8,7 @@ import com.symmetricalpalmtree.notesproutsn.data.soil.SoilSchema
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** [LinkRows] mapping + [PageLink.unionBounds] — incl. the two locked family deltas from Paper:
@@ -158,5 +159,86 @@ class LinkRowsTest {
         assertEquals(10f, l.strokes[0].points[0].x)
         assertEquals(11f, l.headings[0].x)
         assertEquals(listOf("s", "h"), l.childIds)
+    }
+
+    // ── Arc 28 (H1): the three new wrapped kinds ─────────────────────────────
+
+    private fun text(id: String, x: Float = 10f, y: Float = 40f, w: Float = 80f, h: Float = 30f) =
+        PageText(id = id, text = "note **text**", x = x, y = y, width = w, height = h, order = 0)
+
+    private fun shape(
+        id: String, cx: Float = 100f, cy: Float = 100f, w: Float = 40f, h: Float = 20f,
+        rotation: Float = 0f, strokeWidth: Float = 4f,
+    ) = PageShape(
+        id = id, type = ShapeType.RECTANGLE, cx = cx, cy = cy, width = w, height = h,
+        strokeWidth = strokeWidth, rotationDeg = rotation, aspectLocked = false,
+        pointCount = ShapeFlags.DEFAULT_POINTS, order = 0,
+    )
+
+    private fun sticky(id: String, x: Float = 200f, y: Float = 60f) = PageSticky(
+        id = id, x = x, y = y, width = 72f, height = 72f,
+        contentW = 1404, contentH = 1800, order = 0,
+    )
+
+    @Test
+    fun `toLink carries the three new kinds and keeps the old call shape`() {
+        val wide = LinkRows.toLink(
+            row(), emptyList(), emptyList(),
+            texts = listOf(text("t1")), shapes = listOf(shape("sh1")), stickies = listOf(sticky("n1")),
+        )!!
+        assertEquals(listOf("t1"), wide.texts.map { it.id })
+        assertEquals(listOf("sh1"), wide.shapes.map { it.id })
+        assertEquals(listOf("n1"), wide.stickies.map { it.id })
+        assertEquals(listOf("t1", "sh1", "n1"), wide.childIds)
+        // The arc-6 three-argument call still means "wraps ink and headings only".
+        val narrow = LinkRows.toLink(row(), emptyList(), emptyList())!!
+        assertTrue(narrow.texts.isEmpty() && narrow.shapes.isEmpty() && narrow.stickies.isEmpty())
+    }
+
+    @Test
+    fun `translated shifts the new kinds too — a note's icon moves, its content does not`() {
+        val note = sticky("n1").copy(strokes = listOf(stroke("c1", 5f, 5f, 9f, 9f)))
+        val l = link().copy(
+            texts = listOf(text("t1")), shapes = listOf(shape("sh1")), stickies = listOf(note),
+        ).translated(10f, -5f)
+        assertEquals(20f, l.texts[0].x)
+        assertEquals(35f, l.texts[0].y)
+        assertEquals(110f, l.shapes[0].cx)      // a shape moves by its centre
+        assertEquals(95f, l.shapes[0].cy)
+        assertEquals(210f, l.stickies[0].x)
+        // Local space: the note's own ink is not in page coordinates at all.
+        assertEquals(5f, l.stickies[0].strokes[0].points[0].x)
+        // …and it is not part of the link's re-parent set either.
+        assertEquals(listOf("t1", "sh1", "n1"), l.childIds)
+    }
+
+    @Test
+    fun `unionBounds and bandBottom take in text, shape and sticky boxes`() {
+        // A text box and a sticky box count as-is (like a heading); a shape counts as its rotated
+        // outline grown by half its own width, which its columns alone never say.
+        val t = text("t", x = 0f, y = 0f, w = 20f, h = 10f)
+        val sh = shape("sh", cx = 100f, cy = 100f, w = 40f, h = 20f, strokeWidth = 4f)
+        val n = sticky("n", x = 200f, y = 5f)
+        val b = PageLink.unionBounds(
+            emptyList(), emptyList(), density,
+            texts = listOf(t), shapes = listOf(sh), stickies = listOf(n),
+        )!!
+        assertEquals(0f, b.left)
+        assertEquals(0f, b.top)
+        assertEquals(272f, b.right)            // the sticky icon's right edge
+        // The lowest box is the sticky's (5 + 72 = 77); the shape reaches 100 + 10 + 2 = 112.
+        assertEquals(112f + clear, b.bottom)
+        assertEquals(112f + clear, PageLink.bandBottom(
+            emptyList(), emptyList(), density, listOf(t), listOf(sh), listOf(n),
+        ))
+    }
+
+    @Test
+    fun `a rotated shape's box is the rotated outline, never its columns`() {
+        val square = shape("sh", cx = 0f, cy = 0f, w = 100f, h = 100f, rotation = 45f, strokeWidth = 0f)
+        val b = PageLink.unionBounds(emptyList(), emptyList(), density, shapes = listOf(square))!!
+        // A 100 x 100 square turned 45° spans 100 * sqrt(2) ≈ 141.42 — the columns still say 100.
+        assertEquals(-70.71f, b.left, 0.05f)
+        assertEquals(70.71f, b.right, 0.05f)
     }
 }

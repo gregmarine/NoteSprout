@@ -40,14 +40,20 @@ import com.symmetricalpalmtree.notesproutsn.data.soil.SoilSchema
  *    inference here that [PageClip] gets for free from the page row it carries — see [sourcePageOf].
  *  - **A copied link's own-notebook target is re-pointed across notebooks**, so it keeps meaning the
  *    page it named rather than silently naming one of the destination — see [rewriteLink].
+ *
+ * Arc 28 (H1) added the three object kinds and, with the sticky, the payload's **third level**:
+ * page → link → sticky → stroke. A note's content strokes are the only rows in a payload that are
+ * *not* in page space — they are local to the note — so they are the only rows a paste copies with
+ * fresh ids and **un-shifted** geometry. Everything else moves by the placement offset.
  */
 object ObjectClip {
 
     /**
      * The rows to write and what they become. [rows] is in insert order (top-level first, then each
-     * link's children); the decoded halves are what the screen puts into its working copies and onto
-     * the paper, already translated. [contentIds] — the new ids of the **top-level** rows plus the
-     * links' children — is what an undo of the paste soft-deletes and a redo restores.
+     * link's children, then each sticky's content); the decoded halves are what the screen puts into
+     * its working copies and onto the paper, already translated. [contentIds] — the new ids of the
+     * **top-level** rows plus every child that travelled with them (a link's wrapped set, a note's
+     * content) — is what an undo of the paste soft-deletes and a redo restores.
      */
     data class Plan(
         val rows: List<SoilObjectEntity>,
@@ -55,24 +61,37 @@ object ObjectClip {
         val headings: List<Heading>,
         val links: List<PageLink>,
         val contentIds: List<String>,
+        /** Arc 28 (H1): the pasted top-level texts, shapes and stickies (a sticky with its pasted
+         *  content strokes attached — fresh ids, local coordinates kept). */
+        val texts: List<PageText> = emptyList(),
+        val shapes: List<PageShape> = emptyList(),
+        val stickies: List<PageSticky> = emptyList(),
     ) {
-        /** Union of everything pasted, for the selection the paste lands in. Null when empty. */
+        /** Union of everything pasted, for the selection the paste lands in. Null when empty. A
+         *  shape contributes its point-tight rotated box ([ShapeGeometry.tightBounds]). */
         val bounds: Bounds?
             get() {
                 var b: Bounds? = null
                 for (s in strokes) b = b?.union(s.bounds) ?: s.bounds
                 for (h in headings) b = b?.union(h.bounds) ?: h.bounds
                 for (l in links) b = b?.union(l.bounds) ?: l.bounds
+                for (t in texts) b = b?.union(t.bounds) ?: t.bounds
+                for (s in shapes) { val r = ShapeGeometry.tightBounds(s); b = b?.union(r) ?: r }
+                for (s in stickies) b = b?.union(s.bounds) ?: s.bounds
                 return b
             }
 
-        val isEmpty: Boolean get() = strokes.isEmpty() && headings.isEmpty() && links.isEmpty()
+        val isEmpty: Boolean get() =
+            strokes.isEmpty() && headings.isEmpty() && links.isEmpty() &&
+                texts.isEmpty() && shapes.isEmpty() && stickies.isEmpty()
     }
 
     /**
-     * Snapshot a selection into an envelope. [top] is the selected rows themselves — strokes,
-     * headings and links, exactly as they sit on the page — and [children] the live children of the
-     * selected **links** (a link copies whole; nothing ever reaches inside one — the K1 model).
+     * Snapshot a selection into an envelope. [top] is the selected rows themselves — every kind,
+     * exactly as they sit on the page — and [children] their live children: a selected **link**'s
+     * whole wrapped set (a link copies whole; nothing ever reaches inside one — the K1 model) and
+     * a **sticky**'s content strokes, whether the note sits on the page or inside a selected link.
+     * Top-level rows must come **first** in [top]: [sourcePageOf] leans on that order.
      *
      * The caller must have drained the writer first: a stroke commit still queued would land after
      * this read and be silently missing from the copy. Null when nothing usable was selected.
@@ -120,6 +139,7 @@ object ObjectClip {
     ): Plan? {
         val rowIds = env.rows.mapTo(HashSet()) { it.id }
         val linkIds = env.rows.filter { it.type == SoilSchema.TYPE_LINK }.mapTo(HashSet()) { it.id }
+        val stickyIds = env.rows.filter { it.type == SoilSchema.TYPE_STICKY }.mapTo(HashSet()) { it.id }
         val placeable = env.rows.filter { it.type != SoilSchema.TYPE_PAGE && it.type != SoilSchema.TYPE_TEMPLATE }
 
         // Top level = a row parented to the **source page** — the one parent every selected object
@@ -129,7 +149,14 @@ object ObjectClip {
         val sourceParent = sourcePageOf(placeable, rowIds) ?: return null
         val top = placeable.filter { it.parentId == sourceParent }
         if (top.isEmpty()) return null
-        val children = placeable.filter { it.parentId in linkIds && it.type != SoilSchema.TYPE_LINK }
+        // Children are two shapes now (arc 28 / H1). A **link**'s wrapped set is anything but
+        // another link — including a sticky, which is why the payload can be three levels deep. A
+        // **sticky**'s content is stroke rows and nothing else (decision 3): a row of any other
+        // kind parented to a note is a payload this build refuses to reproduce.
+        val children = placeable.filter { row ->
+            (row.parentId in linkIds && row.type != SoilSchema.TYPE_LINK) ||
+                (row.parentId in stickyIds && row.type == SoilSchema.TYPE_STROKE)
+        }
 
         // Decode first: the box the caller places by is the ink's true extent, and the decode is
         // also the only way a stroke's geometry can be translated at all.
@@ -138,7 +165,7 @@ object ObjectClip {
             if (row.type != SoilSchema.TYPE_STROKE) continue
             StrokeRows.toStroke(row.toRow(row.id, row.parentId, row.order, now))?.let { decoded[row.id] = it }
         }
-        val box = payloadBounds(top, decoded) ?: return null
+        val box = payloadBounds(top, decoded, now) ?: return null
         val offset = place(box)
         val dx = offset.dx
         val dy = offset.dy
@@ -158,8 +185,17 @@ object ObjectClip {
         val rows = ArrayList<SoilObjectEntity>(top.size + children.size)
         val strokes = ArrayList<Stroke>()
         val headings = ArrayList<Heading>()
+        val texts = ArrayList<PageText>()
+        val shapes = ArrayList<PageShape>()
         val childStrokes = HashMap<String, MutableList<Stroke>>()
         val childHeadings = HashMap<String, MutableList<Heading>>()
+        val childTexts = HashMap<String, MutableList<PageText>>()
+        val childShapes = HashMap<String, MutableList<PageShape>>()
+        /** Sticky rows by their **new** id, split by where they landed: loose, or inside a link. */
+        val topStickyRows = ArrayList<SoilObjectEntity>()
+        val childStickyRows = HashMap<String, MutableList<SoilObjectEntity>>()
+        /** A note's pasted content, keyed by the note's **new** id — local coordinates, un-shifted. */
+        val stickyStrokes = HashMap<String, MutableList<Stroke>>()
         val contentIds = ArrayList<String>(top.size + children.size)
         val linkRows = ArrayList<SoilObjectEntity>()
 
@@ -176,27 +212,57 @@ object ObjectClip {
                 SoilSchema.TYPE_STROKE -> StrokeRows.toStroke(out)?.let { strokes += it }
                 SoilSchema.TYPE_HEADING -> HeadingRows.toHeading(out)?.let { headings += it }
                 SoilSchema.TYPE_LINK -> linkRows += out
+                SoilSchema.TYPE_TEXT -> TextRows.toText(out)?.let { texts += it }
+                SoilSchema.TYPE_SHAPE -> ShapeRows.toShape(out)?.let { shapes += it }
+                SoilSchema.TYPE_STICKY -> topStickyRows += out
             }
         }
         // Children keep their own `"order"`: their parent is a row that did not exist a moment ago.
         for (row in children.sortedBy { it.order }) {
             val parentId = idMap[row.parentId] ?: continue
             val id = idMap.getValue(row.id)
-            val out = translated(row, id, parentId, row.order, now, dx, dy, decoded[row.id]) ?: continue
+            // A note's content is in the note's OWN space: the icon moves, its ink does not (D2).
+            // Shifting it by the paste offset would drag every stroke off the note's paper.
+            val local = row.parentId in stickyIds
+            val sx = if (local) 0f else dx
+            val sy = if (local) 0f else dy
+            val out = translated(row, id, parentId, row.order, now, sx, sy, decoded[row.id]) ?: continue
             rows += out
             contentIds += id
+            if (local) {
+                StrokeRows.toStroke(out)?.let { stickyStrokes.getOrPut(parentId) { ArrayList() } += it }
+                continue
+            }
             when (out.type) {
                 SoilSchema.TYPE_STROKE ->
                     StrokeRows.toStroke(out)?.let { childStrokes.getOrPut(parentId) { ArrayList() } += it }
                 SoilSchema.TYPE_HEADING ->
                     HeadingRows.toHeading(out)?.let { childHeadings.getOrPut(parentId) { ArrayList() } += it }
+                SoilSchema.TYPE_TEXT ->
+                    TextRows.toText(out)?.let { childTexts.getOrPut(parentId) { ArrayList() } += it }
+                SoilSchema.TYPE_SHAPE ->
+                    ShapeRows.toShape(out)?.let { childShapes.getOrPut(parentId) { ArrayList() } += it }
+                SoilSchema.TYPE_STICKY ->
+                    childStickyRows.getOrPut(parentId) { ArrayList() } += out
             }
         }
+        // Stickies are assembled before the links, because a link may hold one and a sticky holds
+        // its own content: page → link → sticky → stroke is three levels, and each is wired to the
+        // *new* id of the level above it.
+        fun stickyOf(row: SoilObjectEntity) = StickyRows.toSticky(row, stickyStrokes[row.id].orEmpty())
+        val stickies = topStickyRows.mapNotNull { stickyOf(it) }
         val links = linkRows.mapNotNull { row ->
-            LinkRows.toLink(row, childStrokes[row.id].orEmpty(), childHeadings[row.id].orEmpty())
+            LinkRows.toLink(
+                row,
+                childStrokes[row.id].orEmpty(),
+                childHeadings[row.id].orEmpty(),
+                childTexts[row.id].orEmpty(),
+                childShapes[row.id].orEmpty(),
+                childStickyRows[row.id].orEmpty().mapNotNull { stickyOf(it) },
+            )
         }
-        if (strokes.isEmpty() && headings.isEmpty() && links.isEmpty()) return null
-        return Plan(rows, strokes, headings, links, contentIds)
+        val plan = Plan(rows, strokes, headings, links, contentIds, texts, shapes, stickies)
+        return if (plan.isEmpty) null else plan
     }
 
     /**
@@ -249,6 +315,12 @@ object ObjectClip {
      *  2. Otherwise **the first row parented outside the payload**, because [capture] writes
      *     `top + children`: the top-level rows come first, by construction.
      *
+     * A `sticky_note` row is deliberately **not** a third signal (arc 28 / H1): unlike a link it may
+     * be a link's child, so its parent names a link as often as a page. It needs none — a note's own
+     * children are parented to the note, which is in the payload whenever they are, so a sticky's
+     * content never looks top-level; and an orphaned one (the note did not travel) is dropped by the
+     * same rule as a link's orphan, because [capture] put the genuine top-level rows first.
+     *
      * It was a **majority vote** until the O2 review, which is a rule that can invert itself on a
      * malformed payload: rows `[stroke → page, childA → lnk-1, childB → lnk-1]` with the link row
      * itself missing put the *orphans* in the majority, so they would have been written loose onto
@@ -275,13 +347,19 @@ object ObjectClip {
      *
      * A stroke contributes its *ink* extent (`bounds` grown by half the stroke width), not its
      * point-tight bounds: the standing K2 trap, applied to placement so a clamped paste never
-     * shears half a nib off the page edge. A row that decodes to nothing contributes nothing.
+     * shears half a nib off the page edge. A **shape** is the same trap in geometry — its `x`/`y`
+     * is a *centre* and its outline is a centre line, so its columns are not a box at all: it is
+     * decoded and measured through [ShapeGeometry.tightBounds], grown by half its own width.
+     * Every other kind's box *is* its columns. A row that decodes to nothing contributes nothing.
      */
-    private fun payloadBounds(top: List<ClipRow>, decoded: Map<String, Stroke>): Bounds? {
+    private fun payloadBounds(top: List<ClipRow>, decoded: Map<String, Stroke>, now: Long): Bounds? {
         var b: Bounds? = null
         for (row in top) {
             val r = when (row.type) {
                 SoilSchema.TYPE_STROKE -> decoded[row.id]?.let { it.bounds.inflated(it.width / 2f) }
+                SoilSchema.TYPE_SHAPE ->
+                    ShapeRows.toShape(row.toRow(row.id, row.parentId, row.order, now))
+                        ?.let { ShapeGeometry.tightBounds(it).inflated(it.strokeWidth / 2f) }
                 else -> {
                     val x = row.x; val y = row.y; val w = row.width; val h = row.height
                     if (x == null || y == null || w == null || h == null) null

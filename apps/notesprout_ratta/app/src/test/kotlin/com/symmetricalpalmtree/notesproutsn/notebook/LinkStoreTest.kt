@@ -251,6 +251,126 @@ class LinkStoreTest {
         writer.close()
     }
 
+    // ── Arc 28 (H1): a link may wrap texts, shapes and stickies ─────────────
+
+    private fun text(id: String) =
+        PageText(id = id, text = "wrapped **text**", x = 1f, y = 2f, width = 80f, height = 30f, order = 0)
+
+    private fun shape(id: String) = PageShape(
+        id = id, type = ShapeType.RECTANGLE, cx = 1f, cy = 2f, width = 40f, height = 20f,
+        strokeWidth = ShapeRows.DEFAULT_STROKE_WIDTH_PX, rotationDeg = 0f, aspectLocked = false,
+        pointCount = ShapeFlags.DEFAULT_POINTS, order = 0,
+    )
+
+    private fun note(id: String) = PageSticky(
+        id = id, x = 1f, y = 2f, width = 72f, height = 72f, contentW = 1404, contentH = 1800, order = 0,
+    )
+
+    /** The three object stores plus a link store, over one writer and one fake table. */
+    private class ObjectFixture(dao: FakeSoilDao) {
+        val writer = SoilWriter {}
+        val links = LinkStore(dao, writer) { block -> block() }
+        val texts = TextStore(dao, writer)
+        val shapes = ShapeStore(dao, writer)
+        val stickies = StickyStore(dao, writer) { block -> block() }
+    }
+
+    /** A page carrying one of each new kind, the note with a stroke of content, then a link
+     *  wrapping all three. Returns the link **with its note's content read** — the snapshot a
+     *  delete's undo needs (`StickyStore.withContent`). */
+    private suspend fun wrapAllKinds(dao: FakeSoilDao, f: ObjectFixture): PageLink {
+        f.texts.create("page", text("t1"))
+        f.shapes.create("page", shape("sh1"))
+        f.stickies.create("page", note("n1"))
+        f.writer.drain()
+        f.stickies.setContent("n1", listOf(stroke("c1")))
+        f.writer.drain()
+        val wrapping = link("l1", emptyList(), emptyList()).copy(
+            texts = listOf(text("t1")), shapes = listOf(shape("sh1")), stickies = listOf(note("n1")),
+        )
+        f.links.create("page", wrapping)
+        f.writer.drain()
+        return wrapping.copy(stickies = listOf(f.stickies.withContent(note("n1"))))
+    }
+
+    @Test
+    fun `loadPage decodes a link's wrapped texts, shapes and stickies — the note icon-only`() = runBlocking {
+        val dao = FakeSoilDao()
+        val f = ObjectFixture(dao)
+        wrapAllKinds(dao, f)
+
+        val l = f.links.loadPage("page").single()
+        assertEquals(listOf("t1"), l.texts.map { it.id })
+        assertEquals(listOf("sh1"), l.shapes.map { it.id })
+        assertEquals(listOf("n1"), l.stickies.map { it.id })
+        // The page never reads inside a note.
+        assertTrue(l.stickies.single().strokes.isEmpty())
+        f.writer.close()
+    }
+
+    @Test
+    fun `move shifts wrapped text, shape and sticky rows — never a note's content`() = runBlocking {
+        val dao = FakeSoilDao()
+        val f = ObjectFixture(dao)
+        wrapAllKinds(dao, f)
+
+        f.links.move(listOf("l1"), 10f, -5f)
+        f.writer.drain()
+        assertEquals(11f, dao.rows["t1"]!!.x)
+        assertEquals(-3f, dao.rows["t1"]!!.y)
+        assertEquals(11f, dao.rows["sh1"]!!.x)     // a shape's x IS its centre; a delta still works
+        assertEquals(11f, dao.rows["n1"]!!.x)
+        // The note's ink is in the note's own space and does not travel with the icon.
+        assertEquals(1f, StrokeRows.toStroke(dao.rows["c1"]!!)!!.points[0].x)
+        assertEquals(2f, StrokeRows.toStroke(dao.rows["c1"]!!)!!.points[0].y)
+        f.writer.close()
+    }
+
+    @Test
+    fun `remove and restore carry a wrapped note's content with the link`() = runBlocking {
+        val dao = FakeSoilDao()
+        val f = ObjectFixture(dao)
+        val snapshot = wrapAllKinds(dao, f)
+        assertEquals(listOf("c1"), snapshot.stickies.single().childIds)
+
+        f.links.remove(listOf(snapshot))
+        f.writer.drain()
+        for (id in listOf("l1", "t1", "sh1", "n1", "c1")) {
+            assertNotNull("$id should be soft-deleted", dao.rows[id]!!.deletedAt)
+        }
+        assertTrue(f.links.deepChildIds("page").isEmpty())
+
+        f.links.restore("page", listOf(snapshot))
+        f.writer.drain()
+        for (id in listOf("l1", "t1", "sh1", "n1", "c1")) {
+            assertNull("$id should be alive again", dao.rows[id]!!.deletedAt)
+        }
+        // Everything hangs where it did: the note under the link, its ink under the note.
+        assertEquals("l1", dao.rows["n1"]!!.parentId)
+        assertEquals("n1", dao.rows["c1"]!!.parentId)
+        f.writer.close()
+    }
+
+    @Test
+    fun `restore is bounded by the snapshot — an icon-only one revives the note but not its ink`() = runBlocking {
+        // Why a delete of a link holding stickies must snapshot through StickyStore.withContent:
+        // nothing can read soft-deleted children back, so ids not captured before the delete are
+        // not revivable afterwards.
+        val dao = FakeSoilDao()
+        val f = ObjectFixture(dao)
+        val full = wrapAllKinds(dao, f)
+        val iconOnly = full.copy(stickies = listOf(note("n1")))
+
+        f.links.remove(listOf(iconOnly))
+        f.writer.drain()
+        assertNotNull(dao.rows["c1"]!!.deletedAt)   // remove reads the live children itself
+        f.links.restore("page", listOf(iconOnly))
+        f.writer.drain()
+        assertNull(dao.rows["n1"]!!.deletedAt)
+        assertNotNull(dao.rows["c1"]!!.deletedAt)   // …but the undo could not name it
+        f.writer.close()
+    }
+
     @Test
     fun `restore revives in place too, and still upserts a row that never existed`() = runBlocking {
         val dao = FakeSoilDao()

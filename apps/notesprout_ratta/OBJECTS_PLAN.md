@@ -7,7 +7,7 @@ whole at every phase start, together with the root `CLAUDE.md` and `apps/notespr
 traps are summarized at the end so this file is enough. `RESTORE_PLAN.md`, `ENCRYPTION_PLAN.md` and
 `DRIVE_PLAN.md` are the shapes this file copies.
 
-**Status: WIZARD LOCKED 2026-09-06 — H1 ⬜ next.** H1 ⬜ · H2 ⬜ · H3 ⬜ · H4 ⬜ · H5 ⬜ · H6 ⬜ ·
+**Status: H1 ✅ landed 2026-09-06 — H2 ⬜ next.** H1 ✅ · H2 ⬜ · H3 ⬜ · H4 ⬜ · H5 ⬜ · H6 ⬜ ·
 H7 ⬜. When the arc closes, `docs/objects.md` is the reference.
 
 **Phase letter:** **H** — the last free letter in `RATTA_PLAN.md`'s A–Z (L went to arc 27). After
@@ -294,7 +294,7 @@ Engine-owned, host-agnostic — it knows nothing about shapes:
 
 ## Phases
 
-### ⬜ H1 — The substrate (Fable seams + Opus; Sonnet scaffold)
+### ✅ H1 — The substrate (Fable seams + Opus; Sonnet scaffold)
 
 Rows, mappers, stores, kind lists, the Insert sub-bar shell, draw order. **No new object is
 creatable by the user at the end of H1**; every enumeration site already knows the three kinds.
@@ -476,3 +476,48 @@ and an `AskUserQuestion` never share one turn — explain, wait, then ask.
 ## Ledger
 
 *(one Outcome entry per phase as it closes)*
+
+### H1 — Outcome (2026-09-06)
+
+- **Phase-start answers:** version stays `0.1.0-ratta`; the debug "Insert sample objects" entry
+  stays through H2–H6 and is removed in H7 (the default).
+- **Landed:** `SoilSchema.TYPE_TEXT/SHAPE/STICKY` (og's literals `text` / `shape` / `sticky_note`,
+  pinned in `FamilyConstantsTest`) · `TextRows`+`PageText`, `ShapeRows`+`PageShape`+`ShapeType`+
+  `ShapeFlags`, `StickyRows`+`PageSticky`+`StickyFlags` · `ShapeGeometry` (pure `outline` /
+  `tightBounds` / `aabb` + the thin `pathFor`; the plan's `ShapeRender.aabb` lives here as
+  `ShapeGeometry.aabb(shape, density)` — one object, not two) · `TextStore` / `ShapeStore` /
+  `StickyStore` on the one `SoilWriter` (`StickyStore.remove` reads and soft-deletes the note's
+  children itself; `restore` revives the snapshot's `childIds`, so every delete snapshot of a sticky
+  — loose or wrapped in a link — is taken with `withContent` **before** the row goes; the activity's
+  `recordWithStickies` defers exactly those deletes into one page op, still one gesture = one
+  entry) · `TextRenderer` / `ShapeRenderer` / `StickyRenderer` registered **headings · texts ·
+  shapes · links · stickies** with `PagePreview.drawContent` (now taking a `PagePreview.Paints`)
+  and `LinkComposite.build` mirroring D8 · `PageObjects` (the three renderers + working copies, a
+  view-model beside the activity) · `PageContent` / `PageLink` / `LinkRows` / `LinkStore` /
+  `PageReads` grown for the three kinds (a wrapped sticky's content stays under the sticky) ·
+  `ObjectClip` three arms + sticky children at zero translation, three levels deep through a link;
+  `ORDERED_TYPES` = 6; `captureObjects` gathers note content · `SoilDao.liveContentIds` /
+  `liveDescendantIds` (sticky content reached on the page and inside a link), `setTextContent`,
+  `setShapeGeometry`, `stickiesOf`; `DocumentDao`'s three whitelists (a note's content strokes
+  deliberately **not** counted — an edit inside a note is not "the page has changed") ·
+  `NotebookUndo` six new kinds + the four widened ones, both replay `when`s implemented ·
+  `SelectionMode`: a selection holding any new kind is `MIXED` in H1 (H/Pad/Calendar/Tag hidden,
+  link-free Link offered) — D5's `TEXT`/`SHAPE`/`STICKY` modes land with their phases ·
+  `btnInsert` (`ic_plus`, after the lasso) + `InsertBar` with all eight hinted buttons behind
+  `InsertBar.offer(kind, true)`; **debug builds offer all eight so the bar could be measured**
+  (a tap only closes the bar), release keeps the button GONE · debug `SampleObjects` +
+  the "Insert sample objects (debug)" entry (refuses an open, locked or missing notebook).
+- **Nomad (by adb, driven from the debug menu):** sample rows written to `20260905_142626`;
+  text (heading + wrapped paragraph), all six shapes (star at 37°), and the sticky icon render in
+  D8 order under the existing link; the page survives close → reopen; **the eight-button Insert
+  bar fits in ONE row on the Nomad** (~940 of 1404 px at `toolbar_button_size`) — D4's two-row
+  wrap is not needed there. "Both Sends hide" is by construction (`MIXED`) and is on the H2 hand
+  checklist with a real selection.
+- **Tests:** `:app` 1194 → **1337** (+143), every module green.
+- **Planner calls recorded:** star outline = alternating outer/inner vertices from the top, inner
+  ratio 0.5 (og's skip pattern not copied); arrow arms = `min(0.3·width, 48 px)` at ±150°; a
+  shape's AABB pad = `max(strokeWidth/2, 4 dp)`; `TextRenderer.measure` floors the wrap column at
+  48 px; `PageObjects` re-measures texts on every load and writes nothing back (N3).
+- **Open for H2:** `NotebookActivity` is now 3472 lines (3150 before) despite `PageObjects` — H2's
+  brief should keep pulling per-kind flows into their own files.
+

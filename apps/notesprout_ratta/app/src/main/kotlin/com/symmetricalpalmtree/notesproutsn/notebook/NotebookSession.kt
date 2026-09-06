@@ -64,6 +64,13 @@ class NotebookSession(
         private set
     lateinit var links: LinkStore
         private set
+    /** Arc 28's three object stores — the same writer, the same rules (H1). */
+    lateinit var texts: TextStore
+        private set
+    lateinit var shapes: ShapeStore
+        private set
+    lateinit var stickies: StickyStore
+        private set
 
     /**
      * The `document` rows' reader and writer (arc 19 / M3 — M2 built it). Not a `*Store` like its
@@ -136,6 +143,9 @@ class NotebookSession(
         store = StrokeStore(db.dao(), writer)
         headings = HeadingStore(db.dao(), writer)
         links = LinkStore(db.dao(), writer) { block -> db.withTransaction { block() } }
+        texts = TextStore(db.dao(), writer)
+        shapes = ShapeStore(db.dao(), writer)
+        stickies = StickyStore(db.dao(), writer) { block -> db.withTransaction { block() } }
         documents = DocumentRepository(db.documentDao(), db.dao())
         try {
             // The index bit, once (M8): blob-free, and before anything can ask — the screen's very
@@ -319,9 +329,14 @@ class NotebookSession(
     }
 
     /**
-     * Snapshot a lasso selection into a clipboard payload (arc 8). [topIds] are the selected rows —
-     * strokes, headings and links — and every selected **link**'s live children ride along with it
-     * (a link copies whole; nothing ever reaches inside one).
+     * Snapshot a lasso selection into a clipboard payload (arc 8, grown arc 28 / H1). [topIds] are
+     * the selected rows — any kind — and their live children ride along:
+     *
+     *  - a selected **link**'s whole wrapped set (a link copies whole; nothing ever reaches inside
+     *    one), which since arc 28 may itself include a sticky;
+     *  - a **sticky**'s content strokes, whether the note was selected on the page or arrived as a
+     *    selected link's child — three levels, gathered in that order so the top-level rows still
+     *    come first (`ObjectClip.sourcePageOf` leans on it).
      *
      * Reads only: the rows are the truth, so a copy carries exactly what a reopen would show. **The
      * caller must drain the writer first** — the arc's standing trap. Null when nothing selected is
@@ -333,11 +348,12 @@ class NotebookSession(
             .flatMap { db.dao().byIds(it) }
             .filter { it.deletedAt == null }
         if (top.isEmpty()) return@withContext null
-        val children = top.filter { it.type == SoilSchema.TYPE_LINK }.flatMap { link ->
-            db.dao().childrenOfType(link.id, SoilSchema.TYPE_STROKE) +
-                db.dao().childrenOfType(link.id, SoilSchema.TYPE_HEADING)
+        val wrapped = top.filter { it.type == SoilSchema.TYPE_LINK }.flatMap { link ->
+            LinkStore.WRAPPED_TYPES.flatMap { db.dao().childrenOfType(link.id, it) }
         }
-        ObjectClip.capture(top, children, notebookId, System.currentTimeMillis())
+        val stickies = (top + wrapped).filter { it.type == SoilSchema.TYPE_STICKY }
+        val noteContent = stickies.flatMap { db.dao().childrenOfType(it.id, SoilSchema.TYPE_STROKE) }
+        ObjectClip.capture(top, wrapped + noteContent, notebookId, System.currentTimeMillis())
     }
 
     /**
@@ -380,7 +396,8 @@ class NotebookSession(
         repo.touch(notebookId, now)
         Slog.d(TAG) {
             "pasted ${built.contentIds.size} rows onto $pageId " +
-                "(${built.strokes.size} strokes, ${built.headings.size} headings, ${built.links.size} links)"
+                "(${built.strokes.size} strokes, ${built.headings.size} headings, ${built.links.size} links, " +
+                "${built.texts.size} texts, ${built.shapes.size} shapes, ${built.stickies.size} stickies)"
         }
         built
     }
@@ -753,9 +770,12 @@ class NotebookSession(
         private const val ROW_CHUNK = 50
 
         /** The row types a lasso selection can put on the clipboard — `"order"` is numbered per
-         *  parent **and type** in the family, so a paste rebases each one against its own max. */
+         *  parent **and type** in the family, so a paste rebases each one against its own max.
+         *  Grown by arc 28 / H1 with the three object kinds; a kind missing here would have its
+         *  pasted rows land on `-1 + 1` and tie with the page's first row of that type. */
         private val ORDERED_TYPES = listOf(
             SoilSchema.TYPE_STROKE, SoilSchema.TYPE_HEADING, SoilSchema.TYPE_LINK,
+            SoilSchema.TYPE_TEXT, SoilSchema.TYPE_SHAPE, SoilSchema.TYPE_STICKY,
         )
     }
 }

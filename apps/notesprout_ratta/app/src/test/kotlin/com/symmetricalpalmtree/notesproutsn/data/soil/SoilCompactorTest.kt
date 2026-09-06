@@ -111,6 +111,51 @@ class SoilCompactorTest {
         assertEquals(setOf("p1", "doc-p1"), SoilCompactor.purgeIds(rows))
     }
 
+    /**
+     * Arc 28 (H1): the cascade is **type-agnostic** by design (only a template is exempt), so the
+     * three new kinds and the third level a sticky adds — page → sticky → stroke — need no code
+     * here at all. This is the test that says so, and that fails if the purge is ever taught to
+     * enumerate types.
+     */
+    @Test
+    fun aPurgedPageTakesTextShapesStickiesAndANotesContent() {
+        val rows = listOf(
+            root(), template("t1"),
+            page("p1", deleted = true),
+            Row("txt-1", "p1", SoilSchema.TYPE_TEXT, deleted = false),
+            Row("shp-1", "p1", SoilSchema.TYPE_SHAPE, deleted = false),
+            Row("stk-1", "p1", SoilSchema.TYPE_STICKY, deleted = false),
+            stroke("note-ink", "stk-1"),                       // the note's content, a level deeper
+            // A note wrapped in a link on the same page: page → link → sticky → stroke.
+            Row("lnk-1", "p1", SoilSchema.TYPE_LINK, deleted = false),
+            Row("stk-2", "lnk-1", SoilSchema.TYPE_STICKY, deleted = false),
+            stroke("note-ink-2", "stk-2"),
+            // A live page's objects are untouched.
+            page("p2"), Row("txt-2", "p2", SoilSchema.TYPE_TEXT, deleted = false),
+            Row("stk-3", "p2", SoilSchema.TYPE_STICKY, deleted = false), stroke("ink-3", "stk-3"),
+        )
+        assertEquals(
+            setOf("p1", "txt-1", "shp-1", "stk-1", "note-ink", "lnk-1", "stk-2", "note-ink-2"),
+            SoilCompactor.purgeIds(rows),
+        )
+    }
+
+    @Test
+    fun aSoftDeletedObjectOfAnyNewKindGoesWithItsChildren() {
+        val rows = listOf(
+            root(), page("p1"),
+            Row("txt-1", "p1", SoilSchema.TYPE_TEXT, deleted = true),
+            Row("shp-1", "p1", SoilSchema.TYPE_SHAPE, deleted = true),
+            // An erased note takes its content, whether or not the content rows were flagged too
+            // (`StickyStore.remove` soft-deletes both; the cascade covers the other order).
+            Row("stk-1", "p1", SoilSchema.TYPE_STICKY, deleted = true),
+            stroke("note-ink", "stk-1"),
+            Row("stk-2", "p1", SoilSchema.TYPE_STICKY, deleted = false),
+            stroke("kept-ink", "stk-2"),
+        )
+        assertEquals(setOf("txt-1", "shp-1", "stk-1", "note-ink"), SoilCompactor.purgeIds(rows))
+    }
+
     @Test
     fun emptyInputIsEmptyOutput() {
         assertTrue(SoilCompactor.purgeIds(emptyList()).isEmpty())

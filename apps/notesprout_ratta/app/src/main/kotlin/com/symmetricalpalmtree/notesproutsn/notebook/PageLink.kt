@@ -38,17 +38,31 @@ data class PageLink(
     val strokes: List<Stroke>,
     /** Wrapped heading children, page-absolute, in z-order. */
     val headings: List<Heading>,
+    /** Arc 28 (H1): wrapped texts, shapes and stickies, page-absolute, each in z-order. A wrapped
+     *  sticky's own content strokes are its grandchildren — local to the note, read through
+     *  `StickyStore.content`, and **not** in [childIds] (the sticky store carries them). */
+    val texts: List<PageText> = emptyList(),
+    val shapes: List<PageShape> = emptyList(),
+    val stickies: List<PageSticky> = emptyList(),
 ) {
     val bounds: Bounds get() = Bounds(x, y, x + width, y + height)
 
-    /** Ids of everything this link wraps — the re-parent / soft-delete / restore set. */
-    val childIds: List<String> get() = strokes.map { it.id } + headings.map { it.id }
+    /** Ids of everything this link wraps — the re-parent / soft-delete / restore set. A wrapped
+     *  sticky's content is not here: it hangs under the sticky, whose own store takes it down and
+     *  brings it back. */
+    val childIds: List<String> get() =
+        strokes.map { it.id } + headings.map { it.id } + texts.map { it.id } +
+            shapes.map { it.id } + stickies.map { it.id }
 
-    /** Shifts the link **and** every wrapped child: the children stay page-absolute. */
+    /** Shifts the link **and** every wrapped child: the children stay page-absolute (a sticky's
+     *  icon moves; its local content does not, by construction). */
     fun translated(dx: Float, dy: Float): PageLink = copy(
         x = x + dx, y = y + dy,
         strokes = strokes.map { it.translated(dx, dy) },
         headings = headings.map { it.translated(dx, dy) },
+        texts = texts.map { it.translated(dx, dy) },
+        shapes = shapes.map { it.translated(dx, dy) },
+        stickies = stickies.map { it.translated(dx, dy) },
     )
 
     /**
@@ -60,7 +74,7 @@ data class PageLink(
      * link down. Applied at page load, next to the heading remeasure.
      */
     fun withUnderlineBand(density: Float): PageLink {
-        val b = unionBounds(strokes, headings, density) ?: return this
+        val b = unionBounds(strokes, headings, density, texts, shapes, stickies) ?: return this
         val needed = b.bottom - y
         return if (needed > height) copy(height = needed) else this
     }
@@ -79,12 +93,28 @@ data class PageLink(
          * of its *points* (no stroke width — the trap [LinkComposite.padOf] pads for), so a
          * stroke's box is its ink extent (`bounds.bottom + width / 2`) plus that same padding.
          * Ink and headings then arrive at the line looking alike.
+         *
+         * Arc 28 (H1): a **text** object and a **sticky icon** have a box of their own, like a
+         * heading, and count as-is; a **shape** is measured by its rotated point-tight outline
+         * ([ShapeGeometry.tightBounds]) grown by half its own outline width, the stroke rule in
+         * geometry form. The three new lists are trailing defaults so the arc-6 call sites keep
+         * compiling unchanged.
          */
-        fun bandBottom(strokes: List<Stroke>, headings: List<Heading>, density: Float): Float? {
+        fun bandBottom(
+            strokes: List<Stroke>,
+            headings: List<Heading>,
+            density: Float,
+            texts: List<PageText> = emptyList(),
+            shapes: List<PageShape> = emptyList(),
+            stickies: List<PageSticky> = emptyList(),
+        ): Float? {
             val pad = HeadingTypography.paddingPx(density)
             var box: Float? = null
             for (s in strokes) box = max(box ?: Float.NEGATIVE_INFINITY, s.bounds.bottom + s.width / 2f + pad)
             for (h in headings) box = max(box ?: Float.NEGATIVE_INFINITY, h.bounds.bottom)
+            for (t in texts) box = max(box ?: Float.NEGATIVE_INFINITY, t.bounds.bottom)
+            for (s in shapes) box = max(box ?: Float.NEGATIVE_INFINITY, shapeBox(s).bottom)
+            for (s in stickies) box = max(box ?: Float.NEGATIVE_INFINITY, s.bounds.bottom)
             return box?.plus(UNDERLINE_CLEARANCE_DP * density)
         }
 
@@ -92,12 +122,28 @@ data class PageLink(
          * Union of the wrapped content's bounds, with the bottom carried down to [bandBottom] (the
          * underline band). Null when there is nothing to wrap. Pure — JVM-tested.
          */
-        fun unionBounds(strokes: List<Stroke>, headings: List<Heading>, density: Float): Bounds? {
+        fun unionBounds(
+            strokes: List<Stroke>,
+            headings: List<Heading>,
+            density: Float,
+            texts: List<PageText> = emptyList(),
+            shapes: List<PageShape> = emptyList(),
+            stickies: List<PageSticky> = emptyList(),
+        ): Bounds? {
             var union: Bounds? = null
             for (s in strokes) union = union?.union(s.bounds) ?: s.bounds
             for (h in headings) union = union?.union(h.bounds) ?: h.bounds
+            for (t in texts) union = union?.union(t.bounds) ?: t.bounds
+            for (s in shapes) { val r = shapeBox(s); union = union?.union(r) ?: r }
+            for (s in stickies) union = union?.union(s.bounds) ?: s.bounds
             val b = union ?: return null
-            return Bounds(b.left, b.top, b.right, bandBottom(strokes, headings, density) ?: b.bottom)
+            val bottom = bandBottom(strokes, headings, density, texts, shapes, stickies) ?: b.bottom
+            return Bounds(b.left, b.top, b.right, bottom)
         }
+
+        /** A shape's drawn extent: the rotated outline's tight box grown by half the outline width
+         *  (the `Stroke.bounds` trap, in geometry). Density-free — a shape's width is stored in px. */
+        private fun shapeBox(s: PageShape): Bounds =
+            ShapeGeometry.tightBounds(s).inflated(s.strokeWidth / 2f)
     }
 }

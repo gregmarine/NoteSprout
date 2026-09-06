@@ -894,4 +894,17 @@
     <string name="restore_problem_unexpected_body">Something went wrong (%1$s) and nothing was restored. Your library is untouched.</string>
     <string name="restore_no_picker_title">No folder picker</string>
     <string name="restore_no_picker_body">This device has no app for choosing a folder, so a backup folder cannot be chosen here.</string>
+
+    <!-- The Insert button and its sub-bar (arc 28 / H1, D4). Icon-only with long-press hints, the
+         recipe every floating bar in the notebook follows; each button is offered by its own phase
+         and absent until then. -->
+    <string name="cd_insert">Insert</string>
+    <string name="insert_sticky">Sticky note</string>
+    <string name="insert_text">Text</string>
+    <string name="insert_rectangle">Rectangle</string>
+    <string name="insert_ellipse">Ellipse</string>
+    <string name="insert_triangle">Triangle</string>
+    <string name="insert_line">Line</string>
+    <string name="insert_arrow">Arrow</string>
+    <string name="insert_star">Star</string>
 </resources>

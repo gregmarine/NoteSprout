@@ -47,7 +47,7 @@ class FakeSoilDao : SoilDao {
     override suspend fun liveStrokeIds(pageId: String) =
         rows.values.filter { it.parentId == pageId && it.type == "stroke" && it.deletedAt == null }.map { it.id }
     override suspend fun liveContentIds(pageId: String) =
-        rows.values.filter { it.parentId == pageId && (it.type == "stroke" || it.type == "heading") && it.deletedAt == null }
+        rows.values.filter { it.parentId == pageId && it.type in LOOSE_CONTENT && it.deletedAt == null }
             .map { it.id }
     override suspend fun linksOf(pageId: String) =
         rows.values.filter { it.parentId == pageId && it.type == "link" && it.deletedAt == null }
@@ -61,11 +61,15 @@ class FakeSoilDao : SoilDao {
             .filter { it.parentId == pageId && it.type == "link" && it.deletedAt == null }
             .map { it.id }
             .toSet()
+        val stickyIds = rows.values
+            .filter { it.type == "sticky_note" && it.deletedAt == null && (it.parentId == pageId || it.parentId in linkIds) }
+            .map { it.id }
+            .toSet()
         return rows.values.filter {
             it.deletedAt == null && (
-                (it.parentId == pageId &&
-                    (it.type == "stroke" || it.type == "heading" || it.type == "link" || it.type == "document")) ||
-                    it.parentId in linkIds
+                (it.parentId == pageId && (it.type in LOOSE_CONTENT || it.type == "link" || it.type == "document")) ||
+                    it.parentId in linkIds ||
+                    it.parentId in stickyIds
                 )
         }.map { it.id }
     }
@@ -111,6 +115,17 @@ class FakeSoilDao : SoilDao {
         rows[id]?.let { rows[id] = it.copy(x = x, y = y, updatedAt = at) }
         events += "setPosition:$id"
     }
+    override suspend fun setTextContent(id: String, text: String, width: Float, height: Float, at: Long) {
+        rows[id]?.let { rows[id] = it.copy(text = text, width = width, height = height, updatedAt = at) }
+        events += "setTextContent:$id"
+    }
+    override suspend fun setShapeGeometry(id: String, x: Float, y: Float, width: Float, height: Float, flags: Long, at: Long) {
+        rows[id]?.let { rows[id] = it.copy(x = x, y = y, width = width, height = height, flags = flags, updatedAt = at) }
+        events += "setShapeGeometry:$id"
+    }
+    override suspend fun stickiesOf(pageId: String) =
+        rows.values.filter { it.parentId == pageId && it.type == "sticky_note" && it.deletedAt == null }
+            .sortedBy { it.order }
     override suspend fun setHeadingContent(id: String, text: String, flags: Int, width: Float, height: Float, at: Long) {
         // The DAO takes a heading level as an `Int`; the column is the family's 64-bit `flags`
         // (arc 19 retype) — SQLite widens it on the way in, and so does the fake.
@@ -119,4 +134,9 @@ class FakeSoilDao : SoilDao {
     }
     override suspend fun maxOrder(parentId: String, type: String) =
         rows.values.filter { it.parentId == parentId && it.type == type }.maxOfOrNull { it.order } ?: -1
+
+    private companion object {
+        /** Mirrors `SoilDao.liveContentIds`' kind list — the page's own loose content. */
+        val LOOSE_CONTENT = setOf("stroke", "heading", "text", "shape", "sticky_note")
+    }
 }

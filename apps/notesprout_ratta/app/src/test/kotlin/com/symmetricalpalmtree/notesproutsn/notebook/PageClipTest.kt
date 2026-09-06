@@ -232,6 +232,44 @@ class PageClipTest {
         assertEquals("", plan.rows.first { it.type == SoilSchema.TYPE_PAGE }.refId)
     }
 
+    // ── plan: arc 28's kinds ride for free ───────────────────────────────────
+
+    /**
+     * [PageClip] is deliberately **row-level, not object-level**: it copies the rows a page has
+     * without knowing what any of them mean. Arc 28's three kinds — and the sticky's own children,
+     * a level deeper than a link's — are therefore carried by the code that was already there.
+     * This is the test the plan asked for instead of new arms: it fails the moment the mapping
+     * stops being kind-agnostic.
+     */
+    @Test
+    fun `a page copy carries text, shapes, stickies and a note's content`() {
+        val extra = listOf(
+            row("t-1", pageId, SoilSchema.TYPE_TEXT, order = 3, text = "an **object**"),
+            row("sh-1", pageId, SoilSchema.TYPE_SHAPE, order = 4, width = 100f, height = 50f),
+            row("n-1", pageId, SoilSchema.TYPE_STICKY, order = 5, width = 72f, height = 72f, flags = 7L),
+            row("n-ink", "n-1", SoilSchema.TYPE_STROKE, order = 0, blob = byteArrayOf(3, 3)),
+        )
+        val env = PageClip.capture(pageRow, templateRow, content() + extra, notebookId, now)
+        val plan = PageClip.plan(env, "nb-dest", 0, PageClip.Template.Reuse(templateId), now, ids())!!
+        val newPage = plan.rows.single { it.type == SoilSchema.TYPE_PAGE }
+        val newNote = plan.rows.single { it.type == SoilSchema.TYPE_STICKY }
+
+        val sourceIds = setOf("t-1", "sh-1", "n-1", "n-ink")
+        for (type in listOf(SoilSchema.TYPE_TEXT, SoilSchema.TYPE_SHAPE, SoilSchema.TYPE_STICKY)) {
+            val copied = plan.rows.single { it.type == type }
+            assertTrue("a $type kept its source id", copied.id !in sourceIds)
+            assertEquals(newPage.id, copied.parentId)
+        }
+        // Three levels: the note's ink re-parents onto the COPIED note, columns and blob intact.
+        val ink = plan.rows.single { it.type == SoilSchema.TYPE_STROKE && it.parentId == newNote.id }
+        assertArrayEquals(byteArrayOf(3, 3), ink.blob)
+        assertEquals(7L, newNote.flags)                      // the packed content size travels
+        assertEquals("an **object**", plan.rows.single { it.type == SoilSchema.TYPE_TEXT }.text)
+        // Nine descendants now: the arc-6 five plus text, shape, sticky and the note's ink.
+        assertEquals(9, plan.contentIds.size)
+        assertTrue(ink.id in plan.contentIds)
+    }
+
     // ── plan: untrusted payloads ─────────────────────────────────────────────
 
     @Test

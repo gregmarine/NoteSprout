@@ -42,10 +42,13 @@ class AnchoredBar(
 
     val isShowing: Boolean get() = bar.visibility == View.VISIBLE
 
-    /** Add one button, left to right in call order. */
-    fun addButton(iconRes: Int, hint: String, onClick: () -> Unit) {
-        bar.addView(button(iconRes, hint, onClick))
-    }
+    /**
+     * Add one button, left to right in call order — and hand it back, so a caller whose buttons
+     * arrive phase by phase can hide the ones that would do nothing yet (J4: GONE, never
+     * disabled). Callers that offer everything they add ignore the return, as they always did.
+     */
+    fun addButton(iconRes: Int, hint: String, onClick: () -> Unit): AppCompatImageButton =
+        button(iconRes, hint, onClick).also { bar.addView(it) }
 
     /**
      * Open the bar under the anchor. Returns false — showing nothing — before the root has been

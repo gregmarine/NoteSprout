@@ -68,6 +68,19 @@
                 android:src="@drawable/ic_lasso"
                 android:contentDescription="@string/cd_tool_lasso"/>
 
+            <!-- Insert (arc 28 / H1, D4) — directly after the lasso, because what it places lands
+                 selected under the lasso the moment it appears. It opens a sub-bar rather than
+                 inserting anything itself, and it is a COMMAND, not a tool: the armed tool is
+                 unchanged by an insert. GONE in release for the whole of H1 (nothing on the bar is
+                 offered yet); the screen makes it visible in debug builds only, so the row can be
+                 measured on the Nomad before the phases that fill it. -->
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnInsert"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_plus"
+                android:visibility="gone"
+                android:contentDescription="@string/cd_insert"/>
+
             <!-- Everything above is a tool; Recents is not, so the row's free space sits here and
                  pushes it to the far edge — the same edge its panel comes in from (arc 10). -->
             <View
@@ -223,6 +236,19 @@
          under the tag button by SelectionAnchor.placeUnder. Buttons are built in code. -->
     <LinearLayout
         android:id="@+id/tagsPopup"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:background="@drawable/shape_dialog_bordered"
+        android:padding="4dp"/>
+
+    <!-- The Insert button's sub-bar (arc 28 / H1) — Sticky / Text / the six shapes, hung under the
+         Insert button by SelectionAnchor.placeUnder. Buttons are built in code, and each is GONE
+         until its own phase offers it. -->
+    <LinearLayout
+        android:id="@+id/insertBar"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|start"

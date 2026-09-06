@@ -294,7 +294,7 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   the cloud extension store is restored like any other (the host never reaches into `:ext-cloud`'s
   tables), and every restore walk is driven by hand on the Nomad against a backup made foreign by
   `GlobalRotation` — never the Manta.
-- **Arc 28 "Objects" is IN PROGRESS (wizard locked 2026-09-06; H1 ⬜ next)** — sticky notes, on-page
+- **Arc 28 "Objects" is IN PROGRESS (wizard locked 2026-09-06; H1 ✅ landed 2026-09-06 — the substrate: three row types, mappers, stores, renderers in D8 order, undo kinds, clipboard arms, the Insert bar shell; H2 ⬜ next)** — sticky notes, on-page
   Markdown text objects and six hand-placed shapes (`PARITY_BACKLOG.md` item 3), all **core** on the
   arc-3 heading pattern: three additive row types on the universal table (no `SOIL_VERSION` bump),
   a host `StickyEditorActivity` (the second second-paper-surface in one process, writing through the

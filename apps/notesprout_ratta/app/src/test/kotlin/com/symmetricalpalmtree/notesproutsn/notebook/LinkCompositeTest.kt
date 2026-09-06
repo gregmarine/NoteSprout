@@ -39,4 +39,33 @@ class LinkCompositeTest {
         val l = link(listOf(stroke(3f)))   // pad 3
         assertEquals(106 to 56, LinkComposite.sizeOf(l))
     }
+
+    // ── Arc 28 (H1): a shape's outline overhangs its geometry too ────────────
+
+    private fun shape(strokeWidth: Float) = PageShape(
+        id = "sh", type = ShapeType.RECTANGLE, cx = 50f, cy = 40f, width = 30f, height = 20f,
+        strokeWidth = strokeWidth, rotationDeg = 0f, aspectLocked = false,
+        pointCount = ShapeFlags.DEFAULT_POINTS, order = 0,
+    )
+
+    @Test
+    fun `a wrapped shape's outline width counts toward the pad`() {
+        // The widest of ink and outline decides — a shape's path is a centre line, exactly like ink.
+        assertEquals(4, LinkComposite.padOf(link(emptyList()).copy(shapes = listOf(shape(6f)))))
+        assertEquals(
+            5,
+            LinkComposite.padOf(link(listOf(stroke(8f))).copy(shapes = listOf(shape(2f)))),
+        )
+        assertEquals(
+            4,
+            LinkComposite.padOf(link(listOf(stroke(2f))).copy(shapes = listOf(shape(6f)))),
+        )
+    }
+
+    @Test
+    fun `text and sticky boxes need no pad — they carry their own`() {
+        val t = PageText(id = "t", text = "x", x = 0f, y = 0f, width = 40f, height = 20f, order = 0)
+        val n = PageSticky(id = "n", x = 0f, y = 0f, width = 72f, height = 72f, contentW = 100, contentH = 100, order = 0)
+        assertEquals(0, LinkComposite.padOf(link(emptyList()).copy(texts = listOf(t), stickies = listOf(n))))
+    }
 }

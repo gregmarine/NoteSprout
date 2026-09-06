@@ -41,6 +41,10 @@ class FamilyConstantsTest {
         assertEquals("link", SoilSchema.TYPE_LINK)
         // Arc 19: og's row type, verbatim — a `.soil` written here must read as a document there.
         assertEquals("document", SoilSchema.TYPE_DOCUMENT)
+        // Arc 28 / H1: og's row types, verbatim — same family-compat contract as the rows above.
+        assertEquals("text", SoilSchema.TYPE_TEXT)
+        assertEquals("shape", SoilSchema.TYPE_SHAPE)
+        assertEquals("sticky_note", SoilSchema.TYPE_STICKY)
         assertEquals("", SoilSchema.ROOT_PARENT)
         assertEquals("BLANK", SoilSchema.TEMPLATE_BLANK)
         assertEquals("GLOBAL", KEY_SCOPE_GLOBAL)

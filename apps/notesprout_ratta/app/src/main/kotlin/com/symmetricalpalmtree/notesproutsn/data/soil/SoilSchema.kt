@@ -5,8 +5,8 @@ package com.symmetricalpalmtree.notesproutsn.data.soil
  * **Byte-for-byte format-compatible with Paper's** (`apps/notesprout_paper/docs/data.md`): same
  * columns in the same order, same index name, same `user_version` — Room's identity hash must
  * match or a Paper-created file fails validation on open (and vice versa). SN writes only the
- * row types notebook/page/template/stroke; the `x`/`y` columns and the object/link types exist
- * in the shared table shape but SN never creates such rows.
+ * row types notebook/page/template/stroke plus its own additive object types (heading, link,
+ * document, and arc 28's text / shape / sticky_note); Paper's `object` rows are ignored.
  *
  * Room owns the `notebook` table (generated from [SoilObjectEntity]); the DDL below is the
  * *contract* those entity annotations must produce. `notebook_meta` is created by raw SQL in the
@@ -72,6 +72,39 @@ object SoilSchema {
      * carries them like any child row — a document travels with its page.
      */
     const val TYPE_DOCUMENT = "document"
+
+    /**
+     * Text object (arc 28 / H1) — the fourth additive row type, og's on-page Markdown text:
+     * `parentId` = page id · `text` = raw Markdown source, **always non-blank** (a blank text never
+     * exists — the heading rule) · `x`/`y` = the box's top-left in page px, authored ·
+     * `width`/`height` = the laid-out box, **derived** (re-measured on every page load, like a
+     * heading's) · `"order"` = z-order among the page's text rows · everything else null. No
+     * version bump, no migration; Paper ignores the rows. `OBJECTS_PLAN.md` D1.
+     */
+    const val TYPE_TEXT = "text"
+
+    /**
+     * Shape object (arc 28 / H1) — the fifth additive row type, six hand-placed outlines:
+     * `parentId` = page id · `style` = the type name (`RECTANGLE` `ELLIPSE` `TRIANGLE` `ARROW`
+     * `LINE` `STAR`; unknown → row dropped) · `x`/`y` = the **centre** in page px (the one row kind
+     * whose `x`/`y` is not a top-left) · `width`/`height` = the un-rotated local extents in page px
+     * · `strokeWidth` = the outline width in **px** · `flags` = `ShapeFlags.pack(aspectLocked,
+     * pointCount, rotationTenths)` (bit 0 · bits 8–15 · bits 16–31) · `"order"` = z-order among the
+     * page's shape rows · `text`/`color`/`blob`/`refId` null. Stroke-only, no fill. No version bump,
+     * no migration. `OBJECTS_PLAN.md` D3.
+     */
+    const val TYPE_SHAPE = "shape"
+
+    /**
+     * Sticky note (arc 28 / H1) — the sixth additive row type, og's row name verbatim:
+     * `parentId` = page id · `x`/`y`/`width`/`height` = the **icon box** in page px (72 dp square
+     * at creation) · `flags` = `StickyFlags.pack(contentW, contentH)` (bits 0–19 · bits 20–39, the
+     * note's content size in px) · `"order"` = z-order among the page's sticky rows · everything
+     * else null. The note's content is **`stroke` rows parented to the sticky id, in the note's
+     * LOCAL space** (`(0,0)` = the content's top-left) — a second grandchild branch beside a link's.
+     * Sticky content never draws on the page. No version bump, no migration. `OBJECTS_PLAN.md` D2.
+     */
+    const val TYPE_STICKY = "sticky_note"
 
     /** The notebook meta row's `parentId` (it is the root). */
     const val ROOT_PARENT = ""
