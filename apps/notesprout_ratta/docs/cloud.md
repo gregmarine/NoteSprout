@@ -434,7 +434,12 @@ Result?, problem: Problem?)` — a leg that did not run is `null`, never a zero 
 
 `BackupConfig` grew additively (`VERSION` stays 1): `cloudEnabled`, `cloudDeviceFolder`,
 `cloudStamps` (the cloud leg's **own** stamp map — never shares a field with the local leg),
-`cloudLastRunAt` / `cloudLastCopied` / `cloudLastSkipped`.
+`cloudLastRunAt` / `cloudLastCopied` / `cloudLastSkipped`. **`cloudStamps` is one of the two maps a
+global rotation clears** (`BackupStore.clearAllStamps`, arc 26 — the local leg's `stamps` is the
+other), so the run right after a rotation replaces every cloud file too rather than reading it as
+already up to date under a key that no longer opens it; a single notebook's scope or passphrase
+change clears just that notebook's entry in both maps the same way. Full model:
+[`docs/encryption.md`](encryption.md).
 
 **Device folder.** `data/backup/DeviceFolder` — og's D4 shape: sanitized `Build.MODEL` (capped at
 48 chars, charset `[a-zA-Z0-9_-]`, no dot or space — narrower than `NameRules` on purpose, because
@@ -453,12 +458,18 @@ its `-wal` as a near-atomic pair because the SAF `.part`/`.old` swap makes each 
 both land in one run; the cloud has no swap, so two uploads can tear and a fresh main paired with a
 stale `-wal` is a corrupt file that looks fine until it's needed. Before every upload,
 `SelfContainedSnapshot.of` copies the live file **and its WAL** into `cacheDir/backup/cloud/`
-(wiped before every file), opens the copy with the file's **cached raw key**
-(`KeyMaterial.peekOrLoad` — notebook id / `KeyMaterial.INDEX_FILE_ID` / `ExtensionStores.fileIdFor`
+(wiped before every file); the checkpoint that opens it **only runs when a live WAL was actually
+copied** (arc 26 / U4) — a sealed notebook has no sidecar, so the copy is already one whole file and
+**no key is needed at all**, which is what lets a locked `NOTEBOOK`-scope notebook back up like any
+other for as long as it is closed. When there is a WAL, the open uses the file's cached raw key
+(`KeyMaterial.peekVerified` — notebook id / `KeyMaterial.INDEX_FILE_ID` / `ExtensionStores.fileIdFor`
 — falling back to the session passphrase only when nothing is cached), runs `PRAGMA
 wal_checkpoint(TRUNCATE)`, and answers the file **only if** the copy's `-wal` is now absent or
-empty **and** the copy still probes `SoilFileKind.Encrypted`. Anything else is `null` — that file
-is **refused this run**, counted failed, retried next run, nothing uploaded and nothing deleted.
+empty **and** the copy still probes `SoilFileKind.Encrypted`. A `NOTEBOOK`-scope file **with** a
+leftover WAL and no key on this device fits is refused at `Slog` debug level (`LockedFile`) and
+counted failed exactly like any other unabsorbed WAL — no new status wording, since it retries next
+run the same way. Anything else is `null` — that file is **refused this run**, counted failed,
+retried next run, nothing uploaded and nothing deleted.
 
 **One listing, not one per file.** `CloudBackupLeg.run` calls `ensureFolder(["Backups", device])`
 once (fail-fast: any failure here means nowhere to write, so the leg ends before a byte moves) then

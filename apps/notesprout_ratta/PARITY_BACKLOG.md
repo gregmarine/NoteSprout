@@ -1,6 +1,6 @@
 # PARITY_BACKLOG.md — the og-parity work still wanted in Notesprout SN (branch `ratta`)
 
-**What this file is.** Arcs 1–25 are complete and frozen. On 2026-09-05 the user asked for a gap
+**What this file is.** Arcs 1–26 are complete and frozen (arc 26 closed item 1 below). On 2026-09-05 the user asked for a gap
 review of `apps/notesprout_android` (og Notesprout) against `apps/notesprout_ratta` (Notesprout SN)
 before declaring the ratta effort a success. That review found more gaps than the user wants to
 close; **this file holds the seven he chose**, in the order he named them.
@@ -15,13 +15,22 @@ written here is *what* and *why*, plus the user's own directives and the traps a
 **SN has EIGHT extension points and no NINTH may be added without an explicit user decision**
 binds every item here.
 
-**Status:** item 1 **planned** (wizard locked 2026-09-05 — arc 26 "Keys", phases U1–U7, standalone
-`ENCRYPTION_PLAN.md`; read that file, not this section, for the work). Items 2–7 not started. No
+**Status:** item 1 **DONE** (arc 26 "Keys", U1–U7 landed 2026-09-05, complete + frozen; the
+reference is `docs/encryption.md`, the plan and ledger `ENCRYPTION_PLAN.md`). Items 2–7 not started. No
 ordering has been decided — the numbering below is the order the user listed them in, not a priority.
 
 ---
 
-## 1. Full encryption implementation, matching og — PLANNED → `ENCRYPTION_PLAN.md` (arc 26 "Keys")
+## 1. Full encryption implementation, matching og — ✅ DONE (arc 26 "Keys", 2026-09-05)
+
+**Closed 2026-09-05.** Everything below landed as arc 26 "Keys" (phases U1–U7, standalone
+`ENCRYPTION_PLAN.md` with the per-phase ledger); **`docs/encryption.md` is the reference**. Built: the
+Encryption screen behind the library's lock button (Reveal / Change passphrase / Forget), `SoilRekey`
++ its interrupted-commit recovery, the journaled `GlobalRotation` with three resume paths and
+quarantine, per-notebook scope (`KeyScope` / `KeyResolver` / `NotebookPassphrasePrompt` / lock card /
+the four doors / the import chooser), `NotebookRecovery`, and the raw-path audit (`peekVerified`) that
+stands in for og's `SelfHealingKeyFactory`. The text that follows is the gap review as it stood before
+the arc, kept for the record.
 
 **User's call:** "Let's do a full encryption implementation that closely matches og."
 

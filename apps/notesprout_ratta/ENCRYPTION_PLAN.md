@@ -6,7 +6,7 @@ the root `CLAUDE.md` and `apps/notesprout_ratta/CLAUDE.md`. **Do not load `RATTA
 this arc** unless a standing trap needs checking; its protocol and traps are summarized at the end
 so this file is enough. `DRIVE_PLAN.md` is the shape this file copies.
 
-**Status:** wizard locked 2026-09-05 · U1 ✅ (2026-09-05) · U2 ✅ (2026-09-05) · U3 ✅ (2026-09-05) · U4 ✅ (2026-09-05) · U5 ✅ (2026-09-05) · U6 ✅ (2026-09-05) · U7 ⬜
+**Status:** wizard locked 2026-09-05 · U1 ✅ (2026-09-05) · U2 ✅ (2026-09-05) · U3 ✅ (2026-09-05) · U4 ✅ (2026-09-05) · U5 ✅ (2026-09-05) · U6 ✅ (2026-09-05) · U7 ✅ (2026-09-05) — **ARC COMPLETE + FROZEN 2026-09-05.** `docs/encryption.md` is the reference; any further encryption work needs a new user decision and reads this file first.
 
 ---
 
@@ -312,7 +312,7 @@ Encryption screen, once U1 lands — the debug item is gone) so no walk can lock
   a wrong passphrase ×3 → lockout text; Cancel → back at the library with the notebook intact.
 - **Questions at phase start:** none pending.
 
-### U7 ⬜ — Docs + freeze (no code, no code review)
+### U7 ✅ — Docs + freeze (no code, no code review) (2026-09-05)
 - New `docs/encryption.md` (the arc's reference: the key model, the recovery key, the screen,
   rotation's journal + three resume paths + quarantine, scope + the resolver + the open-site table,
   the doors, recovery, the failure table, traps, futures) — Sonnet on a Fable outline, Fable
@@ -675,3 +675,23 @@ Encryption screen, once U1 lands — the debug item is gone) so no walk can lock
   sheet's NOTEBOOK → GLOBAL row — recovery's silent global try covers it only when the index says
   GLOBAL; (2) the standing rule for any new raw-key user is `peekVerified`, never `peekOrLoad`;
   (3) the debug menu keeps three rekey tools (round-trip, break commit, break keying).
+
+### U7 — Outcome (2026-09-05)
+- **Written:** `docs/encryption.md` (689 lines — Sonnet on a Fable outline, Fable read-back:
+  the key model, the screen and door, `SoilRekey` + recovery, rotation's journal / three resume
+  paths / quarantine, scope + resolver + prompt + the open-site table, the doors, recovery + the
+  raw-path audit, backups under rotation and scope, the failure table incl. the Recovery row
+  (planner note 1), measured Nomad numbers, design calls, traps, debug tooling, futures, tests).
+- **Pointers:** `docs/library.md` (door, lock card, sheet rows, Key radio row), `docs/notebook.md`
+  (prompt on every open, parked hand-off, recovery offer, cover capture skipped), `docs/links.md`
+  (follow + walk-back prompt, picker lock row), `docs/export.md` (source key threading, Keep
+  label), `docs/import.md` (the chooser replaces "always re-key to global"), `docs/backup.md`
+  (compaction skip, both stamp maps, warn/offer), `docs/cloud.md` (snapshot rules), `docs/extensions.md`
+  (stores rotate with the global key).
+- **Closed:** `PARITY_BACKLOG.md` item 1 → DONE with a pointer here; app `CLAUDE.md` (doc line,
+  arc block COMPLETE + FROZEN, an encryption standing-rules bullet — resolve through `KeyResolver`,
+  `SoilRekey` or nothing, `peekVerified` never `peekOrLoad`, the notebook screen alone reads the
+  cache, `setEncryptionState` the only scope writer); root `CLAUDE.md` branch bullet (arcs 1–26
+  frozen); memory. No code, no tests changed (1077 in `:app`), no walk.
+- **State of the Nomad:** dev library all-GLOBAL under the typed passphrase recorded in memory;
+  throwaway `20260905_142626` still exists for future walks. Three debug rekey tools remain.

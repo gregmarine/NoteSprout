@@ -585,6 +585,29 @@ secret's own row — is [`docs/extensions.md`](extensions.md) § "Boundary audit
 
 ---
 
+## Encryption (arc 26)
+
+Every export needs its **source** notebook's own key before it needs anything else, and that
+happens once, up front: `ExportActivity.resolveSourceKey` runs at the head of `loadCandidates`,
+prompting (`NotebookPassphrasePrompt`) if the source is `NOTEBOOK`-scope, before a single exporter
+is even asked to `describe()`. The resolved key (`sourceKey`) then threads through every read path
+downstream instead of being re-resolved: `ExportOpen.readOnly(…, resolved)` is the shared door
+`ExportArtifact.prepare`, `ExportRender.render`, `ExportText.assemble` and `DocumentPdfRender.render`
+all stand on, and each declares its own `Guard.LOCKED` → `Problem.LOCKED` for the case a caller
+skipped the prompt. A new export path that opens the notebook itself must thread `resolved` the
+same way, or it reintroduces a silent-lock read this arc closed.
+
+`keyedArtifact` (the soil-path exporter's own read) hands `ExportKeying` the **source** file's
+passphrase — the typed value for a `NOTEBOOK` source, the session key for `GLOBAL` — because the
+keying trio above (Keep / New passphrase / Remove encryption) reads the sealed `.soil` under
+whatever key it is actually under, not the device default. The Keep row's label is
+host-substituted for a `NOTEBOOK` source: "Keep encrypted (this notebook's passphrase)" in place of
+the `GLOBAL` wording, via `optionLabel` — `:ext-soil` itself is untouched, since the exporter only
+ever sees a choice id. `notebook_meta`'s restamp (arc 15's own rule, above) now sources its scope
+from the index row rather than assuming `GLOBAL`, so a `NOTEBOOK` source's Keep copy still
+describes itself honestly. Full model, the resolver, every open site and the failure table:
+[`docs/encryption.md`](encryption.md).
+
 ## Failure table
 
 | What happened | What the user gets | Where |

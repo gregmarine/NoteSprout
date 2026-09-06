@@ -68,6 +68,13 @@ Drive` owning OAuth and the only `INTERNET` in the app, the Drive tree under its
 Backup screen's Cloud section and the inline Connect offer, the host-drawn browser, the three
 consumers — export destination, backup leg, import source — the measured `CloudTimeouts` table
 and the failure table; **no restore**, no extension is aware of the cloud) ·
+`docs/encryption.md` (arc 26 "Keys": **encryption as a feature** — the key model (one global
+recovery key or typed passphrase, per-notebook passphrases, derived raw keys), the Encryption screen
+behind the library's lock button (Reveal / Change passphrase / Forget), `SoilRekey` as the only
+key-changer on disk and its interrupted-commit recovery, the journaled `GlobalRotation` with its
+three resume paths and quarantine, `KeyScope` + the pure `KeyResolver` + the one
+`NotebookPassphrasePrompt` and the open-site table, the four scope doors over `ScopeChange`, the
+import chooser, `NotebookRecovery`, the failure table, the measured Nomad numbers and the traps) ·
 `docs/sn-screen.md` (arc 11 / J1: the shared `:sn-screen` paper-screen library — what may live
 there, what may not depend on it, and the `nonTransitiveRClass` flag that holds it together).
 
@@ -167,10 +174,11 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   **Read `DRIVE_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**)
   `gradle.properties` sets `android.nonTransitiveRClass=false` — undoing it breaks every
   `:sn-screen` resource reference from `:app`.
-- **Arc 26 "Keys" is IN PROGRESS (wizard locked 2026-09-05; U1–U6 landed 2026-09-05)** — og-parity
-  encryption (`PARITY_BACKLOG.md` item 1): the Encryption screen + library door, rotation, per-notebook
-  scope, recovery. **Read the standalone `ENCRYPTION_PLAN.md`, not `RATTA_PLAN.md`, for it** — phases
-  U1–U7, no code review, host-only, no ninth point. **U1:** `encryption/EncryptionActivity` behind
+- **Arc 26 "Keys" is COMPLETE + FROZEN (wizard locked 2026-09-05; U1–U7 landed 2026-09-05)** — og-parity
+  encryption (`PARITY_BACKLOG.md` item 1, now done): the Encryption screen + library door, rotation,
+  per-notebook scope, recovery. **`docs/encryption.md` is the reference. Read the standalone
+  `ENCRYPTION_PLAN.md`, not `RATTA_PLAN.md`, for any work on it** — phases U1–U7, no code review,
+  host-only, no ninth point. **U1:** `encryption/EncryptionActivity` behind
   the library's new `btnEncryption` (`ic_lock`, `[Backup] [Encryption] [Import]`): status (the count
   reads `keyScope`), Reveal (og's wording, Copy/Close, no re-auth), Forget on this device (ships in
   release; clears `PassphraseStore` + `KeySession` + `KeyMaterial`, then **kills the process** —
@@ -229,6 +237,9 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   verified against the file, stale dropped everywhere) — `peekOrLoad` is for "is one cached?" only;
   `KeyOpener.warm` carries `KeyMaterial.generation` so a derive queued before a rekey cannot store
   after its invalidate. Debug *Break keying* (`RekeyProbe.BROKEN_KEY`) is the walk's door.
+  **U7 (docs + freeze, 2026-09-05):** `docs/encryption.md` written, pointers in the eight docs it
+  touches, `PARITY_BACKLOG.md` item 1 closed — no code. Nomad library left all-GLOBAL under a typed
+  passphrase (the value is in the memory file, never in a doc).
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by
@@ -417,6 +428,16 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   file system, and only there).
 - **Every SQLCipher open routes through `crypto/SoilCrypto`.** Passphrases never logged,
   never in Intent extras, never in the index. Never delete a DB on corruption.
+- **Encryption standing rules (arc 26, `docs/encryption.md`):** every `.soil` open resolves through
+  `SoilDatabase.resolve` → `KeyResolver` and opens with the `Resolved` it got — `KeySession.get()` is
+  the GLOBAL passphrase only; a key change on disk is `SoilRekey` or nothing (`ScopeChange` for one
+  notebook, `GlobalRotation` for the library — never `PRAGMA rekey`, never a hand copy); every
+  raw-key read on an open path is `KeyMaterial.peekVerified`, never `peekOrLoad`; a prompt other
+  than the notebook screen's never reads `PassphraseCache`; `IndexRepository.setEncryptionState` is
+  the only scope writer and never bumps `updatedAt` (it clears the backup stamps instead);
+  `RawKeyDerivation` stays on the platform PBKDF2 with `KeyOpener.warm` serialized; a silent reader
+  never prompts and a locked notebook answers null to it; the failure of a wrong key is reported,
+  never repaired by deletion.
 - **`IndexGuard.ready(this)` first thing in every index-touching `onCreate`**;
   `BootstrapActivity` is the only index opener and is `noHistory`.
 - **g-paper 0.1.23, `gpaper-core` + `gpaper-ratta` only** (mavenLocal). No `gpaper-onyx`,

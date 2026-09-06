@@ -231,6 +231,28 @@ Both layers clean up: `NotebookSession.open` seals on any throw after the handle
 (`NonCancellable` — the scope *is* being cancelled), and `openSession`'s catch seals a session that
 opened but never reached `opened = true`, on `appScope` (`sealAbandonedOpen`).
 
+### Encryption (arc 26)
+
+Every open resolves the key first: `keyFor(alive)` reads the index row's scope, and for `GLOBAL`
+that's `SoilDatabase.resolve` handing back the cached device key; a `NOTEBOOK`-scope notebook
+prompts **every time** it is opened, no exceptions — `NotebookPassphrasePrompt.ask` (bucket = the
+notebook id), with `takeParked` tried first for the one hand-off a create or scope change just
+parked (`PassphraseCache`, `TTL_MS` = 60 s; nothing else in the app is allowed to spend it, so a
+picker drill or an Export prompt earlier can never make this open silently). Cancelling the prompt
+leaves quietly — no dialog, the last-open pointer cleared — same as any other declined open.
+`openSession()` then runs `SoilDatabase.open(…, resolved)` whole; a **RETRY** from the recovery
+offer below just re-runs that same call. A key failure (never a schema error — see
+`crypto/KeyFailure`) offers `NotebookRecovery` **once per launch** (`EXTRA_RECOVERY_ATTEMPTED` on
+the Intent): "Can't open <name>" → Try a passphrase, silently against the cached global and a
+mid-rotation marker first, then the one prompt.
+
+Two places downstream read the scope back rather than assume `GLOBAL`: `close()`'s cover capture
+(`captureCover`, both the `onStop` and the close path) is skipped outright for `NOTEBOOK` — a
+locked notebook's card is a lock glyph, never a stale or missing cover — and `refreshMeta` sources
+`keyScope` from the index row itself, never from the previous meta row, so a refresh can never
+launder a NOTEBOOK-scope file back into describing itself as globally keyed. Full model, the
+resolver, the doors and the failure table: [`docs/encryption.md`](encryption.md).
+
 ## Persistence
 
 | g-paper callback | Row effect (serial IO) |

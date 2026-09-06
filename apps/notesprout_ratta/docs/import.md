@@ -116,7 +116,8 @@ the library itself (a button on its own bar, asking nothing about what is curren
    state) and the window keeps the IME shown throughout — the Ratta rule: on Supernote a hardware
    keyboard only delivers keys while the IME is visible, so hiding it after a wrong try would strand
    a keyboard user. Backing out anywhere here ends the flow with nothing written.
-5. **Re-key to this device's global key, always.** [Keying](#keying), below.
+5. **Key it for this device — asking first if the file needed a foreign passphrase.**
+   [Keying](#keying), below.
 6. **Read the manifest, and trust none of it.** `NotebookImport.readManifest` opens the now-keyed
    file through one raw connection, requires a `notebook` table to exist at all (`Problem.NOT_A_NOTEBOOK`
    otherwise), reads the root notebook row's own id and the `notebook_meta` row if there is one — a
@@ -197,30 +198,47 @@ notebook clashing by name alone.
 
 ## Keying
 
-`ImportKeying` is `ExportKeying`'s mirror, run inward, and it is why the arc-16 wizard could drop
-og's import-keying chooser entirely: **SN only ever opens a file under this device's global key, so
-every accepted import is re-keyed to it, unconditionally** — there is no "keep encrypted under a
-different key" outcome to ask about.
+`ImportKeying` is `ExportKeying`'s mirror, run inward. Arc 16 shipped it with no chooser at all —
+**every accepted import re-keyed to this device's global key, unconditionally** — and that
+unconditional branch is still exactly what happens for a plaintext file or a same-device Keep
+export coming home, because neither one ever had a passphrase worth keeping. **Arc 26 / U5
+restores og's chooser for the one case that does**: a file that needed a genuinely *foreign*
+passphrase to open (`ImportChoice.needsChooser`). `ImportDialogs.keying` asks, right after that
+unlock and before the three placement questions, with three stacked buttons — *Keep this
+passphrase* / *Use this device's key* / *Set a new notebook passphrase* — and `ImportChoice.decide`
+turns the answer into an `Outcome(passphrase, scope)`; `ImportKeying.toScope` (the general form of
+arc 16's `toGlobal`) runs the transform against whichever key won. Plaintext and same-device files
+never see the chooser — nothing to keep.
 
 | Incoming file | What happens | Mechanism |
 |---|---|---|
-| Plaintext | encrypted to this device's global key | `ImportKeying.transform` with the plaintext ATTACH key spelled `''` |
-| Encrypted under a foreign passphrase (another device's GLOBAL export, or a NOTEBOOK-scoped rekeyed export) | re-keyed to this device's global key | `ImportKeying.transform` with the typed passphrase as the ATTACH key |
-| Encrypted, and this device's global passphrase already opens it (a same-device Keep export coming home) | passed through byte-untouched — but **integrity-verified in place** | a file already under the target key needs no transform, but it earns no free acceptance either: the pass-through opens it and requires `PRAGMA integrity_check = ok` (the I2 review's finding — a corrupt same-device export answering a Replace would otherwise have overwritten a healthy notebook), and never deletes it whatever the answer |
+| Plaintext | encrypted to this device's global key, `GLOBAL` — no chooser | `ImportKeying.toScope` with the plaintext ATTACH key spelled `''` |
+| Encrypted, and this device's global passphrase already opens it (a same-device Keep export coming home) | passed through byte-untouched — but **integrity-verified in place** — `GLOBAL`, no chooser | a file already under the target key needs no transform, but it earns no free acceptance either: the pass-through opens it and requires `PRAGMA integrity_check = ok` (the I2 review's finding — a corrupt same-device export answering a Replace would otherwise have overwritten a healthy notebook), and never deletes it whatever the answer |
+| Encrypted under a genuinely foreign passphrase — **Keep this passphrase** | stays under the typed passphrase, `NOTEBOOK` scope — unless the typed value equals the device's global, which lands `GLOBAL` instead (og's downgrade rule, `ScopeChange.scopeFor`) | `ImportKeying.toScope` with the typed passphrase as both source and destination key (still integrity-verified) |
+| Encrypted under a foreign passphrase — **Use this device's key** | re-keyed to this device's global key, `GLOBAL` — arc 16's original branch, now one of three | `ImportKeying.toScope` with the typed passphrase as the ATTACH key |
+| Encrypted under a foreign passphrase — **Set a new notebook passphrase** | re-keyed to a freshly typed passphrase (`SetPassphraseDialog`, `PassphraseRules`), `NOTEBOOK` scope (the downgrade rule applies here too) | `ImportKeying.toScope` with the new passphrase as the destination key |
 
-The mechanism is `ExportKeying`'s, run in the other direction — **literally**: both transformed
-cases call `ExportKeying.exportAndKeyToPrimary`, the shared destination-primary export-and-key
-core the export rekey also runs (one copy of a transform family with a recorded history of
-on-device traps — the I2 review's dedup finding). **Export-and-key, never `PRAGMA rekey`** (og's
-on-device finding): `sqlcipher_export` between a fresh connection created under the global key
-(always the **primary** connection) and the incoming file, attached under its own key or `''`. The two things
-`sqlcipher_export` does not do are done by hand, exactly as they are on the way out: `PRAGMA
-user_version` is copied explicitly and re-verified from the finished file (the og trap — a
-version-less import reads as garbage), and the output's `notebook_meta` row is restamped
-(`encrypted: true`, `keyScope: GLOBAL`) so the file describes its new keying rather than the
-source's. Nothing is accepted unverified — the output must probe `Encrypted`, open under the global
-passphrase, answer `PRAGMA integrity_check = ok`, and hold the source's `user_version`, or the
-transform throws and deletes only its own unaccepted sibling output (`<incoming>-keyed.soil` and its
+A `NOTEBOOK` outcome parks its passphrase (`PassphraseCache.storeOnce`, before `onImported()` fires)
+so the notebook's first open does not ask for what the person just typed, and
+`IndexRepository.setEncryptionState(NOTEBOOK)` runs **before** `NotebookImport.refreshMeta` (step
+9, below) so the meta refresh reads the real scope off the index row rather than the stale
+`GLOBAL` default. Full model and the failure table: [`docs/encryption.md`](encryption.md).
+
+The mechanism is `ExportKeying`'s, run in the other direction — **literally**: every keyed case
+calls `ExportKeying.exportAndKeyToPrimary`, the shared destination-primary export-and-key core the
+export rekey also runs (one copy of a transform family with a recorded history of on-device traps
+— the I2 review's dedup finding). **Export-and-key, never `PRAGMA rekey`** (og's on-device
+finding): `sqlcipher_export` between a fresh connection created under the **outcome's** passphrase
+(always the **primary** connection — the device global for a plaintext file or a *Use this device's
+key* answer, the typed or freshly chosen passphrase for a *Keep* or *Set a new notebook passphrase*
+answer) and the incoming file, attached under its own key or `''`. The two things `sqlcipher_export`
+does not do are done by hand, exactly as they are on the way out: `PRAGMA user_version` is copied
+explicitly and re-verified from the finished file (the og trap — a version-less import reads as
+garbage), and the output's `notebook_meta` row is restamped (`encrypted: true`, `keyScope` matching
+the outcome's — `GLOBAL` or `NOTEBOOK`) so the file describes its new keying rather than the
+source's. Nothing is accepted unverified — the output must probe `Encrypted`, open under the
+outcome's passphrase, answer `PRAGMA integrity_check = ok`, and hold the source's `user_version`, or
+the transform throws and deletes only its own unaccepted sibling output (`<incoming>-keyed.soil` and its
 sidecars) — never the incoming copy.
 
 Everything runs in the import cache. The incoming bytes are untrusted throughout: the acceptance

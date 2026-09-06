@@ -387,6 +387,23 @@ rebuilt screen is the same story.
   reopens a via-link notebook **as** via-link: the trail survives a mid-chain force-stop, and
   without the flag the restore would read as a fresh open and clear it.
 
+## Encryption (arc 26)
+
+A `NOTEBOOK`-scope target is never read silently — a follow and a walk-back are both deliberate
+acts, so `LinkFollowFlow` prompts (`NotebookPassphrasePrompt.ask`) before `foreignPageAlive`'s
+`SoilDatabase.readOnce`, on **both** paths. On walk-back a cancelled prompt ends the walk and
+**pushes the trail entry back** rather than skipping it as dead — "not now" must not cost the
+user their way home. Either path parks the typed passphrase (`PassphraseCache.storeOnce`) before
+`leaveFor`, so the hop into the target notebook costs exactly one prompt: the notebook screen's
+own open takes the parked value instead of asking again.
+
+The link picker shows a foreign notebook or its pages even when locked — a **lock row** in place
+of the cover, tapping it raises the same prompt; on success `ForeignPageSource(passphrase)` holds
+the typed value for the source's whole lifetime (surviving every `sealAsync`/reopen cycle across a
+mode switch), so only the first drill into a locked notebook prompts. `PickMode.NOTEBOOK` (link-to-
+notebook, no page drill) never prompts — nothing is opened to check. Full model, the resolver and
+the failure table: [`docs/encryption.md`](encryption.md).
+
 ## JVM tests
 
 `LinkPayloadTest` (round-trips, Paper-grammar fixtures, decode rejections, caps),

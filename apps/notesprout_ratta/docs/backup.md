@@ -186,9 +186,11 @@ predicate deciding a sidecar's fate everywhere.
 
 **Filenames** (og D5): `<notebookUuid>.soil` (+ `<name>-wal` when live) and `notesprout.db`
 (+ `-wal`) — UUID names give replace-in-place identity; display names travel inside each file's
-`notebook_meta`. Encrypted handling is a **ciphertext byte-copy, never decrypt** (og D10); SN is
-global-key-only and the raw key is cached post-unlock, so the compact pass can open every notebook
-unattended — og's NOTEBOOK-scope skip has no SN equivalent.
+`notebook_meta`. Encrypted handling is a **ciphertext byte-copy, never decrypt** (og D10); a
+`GLOBAL`-scope notebook's raw key is cached post-unlock, so the compact pass can open it
+unattended — but **arc 26 restores og's NOTEBOOK-scope skip**: `compactPass` is skipped outright
+for a `NOTEBOOK`-scope notebook (no unattended key), and the file is still copied uncompacted with
+its `-wal` alongside under the same rule above. See [Encryption](#encryption-arc-26) below.
 
 **State** is one additive index row type `backup` (the CLIPBOARD pattern — no schema change): a
 singleton row at `ListIds.BACKUP_ID`, `blob` = `BackupConfig` kotlinx JSON (`treeUri`, `lastRunAt`,
@@ -388,6 +390,29 @@ URIs are never logged (a tree URI can carry the folder's display name); file *na
 safe.
 
 ---
+
+## Encryption (arc 26)
+
+**`compactPass` is skipped for a `NOTEBOOK`-scope notebook** — og's rule, no unattended key: the
+notebook is still copied uncompacted, its `-wal` alongside per the WAL rule above, and it still
+stamps on success like any other file. A `GLOBAL`-scope notebook is unaffected — the raw key is
+already cached post-unlock.
+
+**A rotation clears both stamp maps** (`BackupStore.clearAllStamps` — `stamps` and `cloudStamps`
+together) while the index is still open, right before `GlobalRotation` closes it for its own rekey, so the very next run
+copies every file again under the new key rather than reading every notebook as "up to date" under
+one that no longer opens it. A single notebook's scope or passphrase change is narrower —
+`ScopeChange` clears just that notebook's stamp in both maps (`BackupStore.clearStamp`, the same
+arc-16 import precedent) — because a rekey never bumps `updatedAt`, and a stamp comparison that
+ignores the key change would leave an old-key copy in every backup forever.
+
+**Old backups only open under the old key** until the next run replaces them: the Encryption
+screen's change-passphrase confirm dialog warns about this before rotating, and its completion
+dialog offers **Back up now** (opens the Backup screen directly) / **Done**. `EXTRA_THEN_BACKUP` on
+the post-rotation Bootstrap intent opens the Backup screen once per cold launch when that choice
+was made — nothing runs unasked.
+
+Full model, rotation, scope, recovery and the failure table: [`docs/encryption.md`](encryption.md).
 
 ## Failure table
 

@@ -836,6 +836,17 @@ backup has one, `-shm` never, app closed, ciphertext keyed to the device that wr
 documented in [`docs/backup.md`](backup.md), and a whole-library restore screen is a `BACKLOG.md`
 item, the same answer arc 17 gave for the library itself.
 
+### Encryption (arc 26)
+
+Every `Garden/<pkg>.db` store is under the **GLOBAL key only** and rotates with it — there is no
+notebook-scoped store, because a store belongs to the extension as a whole, not to one notebook.
+`GlobalRotation` orders the rotation notebooks first, then every `ext:<pkg>` store, then the index
+last (`ExtensionStores.closeAll()` runs before the first store is touched, the same door the backup
+pass and the self-test above already call). Nothing in an extension is aware of any of this: the
+store is handed in already keyed on every bind, exactly as before the arc, and no store-taking
+point's contract changed. Full model, rotation and the failure table:
+[`docs/encryption.md`](encryption.md).
+
 ### Verification
 
 SQLCipher, `SharedMemory` and a real `Binder` cannot run on the JVM, so the store is checked

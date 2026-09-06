@@ -256,7 +256,8 @@ no folder would ever look empty again once a card had rendered.
   on every close, supersedes the placeholder anyway.
 - **Lock card** (arc 26 / U4, decision 11) → a `NOTEBOOK`-scope notebook (its own passphrase,
   `ObjectSummary.keyScope`) shows the Tabler `ic_lock` at a third of the card's width in the cover's
-  place and **nothing else**: the index holds no cover for it (`setEncryptionState` nulls the blob,
+  place and **nothing else**: the index holds no cover for it (`IndexRepository.setEncryptionState`
+  nulls the blob and leaves `updatedAt` untouched — a rekey is not an edit — and
   the seal never captures one), so the grid never fetches a thumbnail. `CardItem.Notebook.locked`.
   Tapping it opens the notebook screen, which prompts (`NotebookPassphrasePrompt`) on every open.
   **How a notebook becomes one (arc 26 / U5):** the New Notebook screen's *Key* radio row (*This
@@ -265,7 +266,7 @@ no folder would ever look empty again once a card had rendered.
   `GLOBAL` notebook redirects to the Encryption screen (global notebooks share the device key); on a
   `NOTEBOOK` one it prompts the current, asks the new, re-keys. All of it is `crypto/ScopeChange`
   over `SoilRekey` (`library/ScopeChangeFlow` is the dialogs); the notebook's own bar has no key
-  rows. Full reference at U7: `docs/encryption.md`.
+  rows. Full model, rotation, scope, recovery and the failure table: `docs/encryption.md`.
 - **Text-document cover** (arc 19) → `TextCover`'s own render of the document's opening text takes
   this slot instead, never the paper placeholder above (`LibraryCards.isTextDocument(flags)`
   branches before the placeholder is ever reached); a not-yet-rendered or undecodable one falls back
