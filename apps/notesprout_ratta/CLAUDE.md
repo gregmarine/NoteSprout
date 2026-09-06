@@ -240,7 +240,8 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   **U7 (docs + freeze, 2026-09-05):** `docs/encryption.md` written, pointers in the eight docs it
   touches, `PARITY_BACKLOG.md` item 1 closed — no code. Nomad library left all-GLOBAL under a typed
   passphrase (the value is in the memory file, never in a doc).
-- **Arc 27 "Restore" is PLANNED, not started** (wizard locked 2026-09-05) — whole-library restore,
+- **Arc 27 "Restore" is IN PROGRESS — L1 landed 2026-09-05 (`restore/` read side: manifest, staging,
+  `SafRestoreSource` + `data/backup/SafBackupReader`; no UI, no engine), L2 next** — whole-library restore,
   `PARITY_BACKLOG.md` item 2. **Read the standalone `RESTORE_PLAN.md`, not `RATTA_PLAN.md`, for any
   work on it**: phases L1–L6, host-only, no point, no API bump, version stays `0.1.0-ratta`, and
   **no `/code-review` in the arc** (L5 is a failure-injection pass instead). The four decisions that

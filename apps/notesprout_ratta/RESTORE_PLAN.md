@@ -7,7 +7,7 @@ unless a standing trap needs checking; its protocol and traps are summarized at 
 file is enough. `ENCRYPTION_PLAN.md` and `DRIVE_PLAN.md` are the shapes this file copies.
 
 **Status:** wizard locked 2026-09-05 · Fable review folded in 2026-09-05 (R1–R7, § Review
-amendments) · L1 ⬜ · L2 ⬜ · L3 ⬜ · L4 ⬜ · L5 ⬜ · L6 ⬜
+amendments) · L1 ✅ · L2 ⬜ · L3 ⬜ · L4 ⬜ · L5 ⬜ · L6 ⬜
 
 **Phase letters:** every letter A–Z is spoken for in `RATTA_PLAN.md` except **H** and **L**. This
 arc takes **L**; H stays free.
@@ -278,7 +278,7 @@ interface RestoreSource {
 
 ## Phases
 
-### ⬜ L1 — the read side: manifest, sources, staging
+### ✅ L1 — the read side: manifest, sources, staging
 
 Pure rules + the SAF source + staging. **No UI, no engine, nothing live is touched by any code in
 this phase.**
@@ -455,3 +455,34 @@ From `RATTA_PLAN.md` — assume they all still apply.
 ## Ledger
 
 *(Each phase appends its Outcome here as it closes.)*
+
+### L1 — Outcome (2026-09-05, Opus build, Fable read + fixed)
+
+**Landed, no code touches anything live.** New package `restore/`: `RestoreLeg` (LOCAL/CLOUD),
+`RestoreManifest` (D1 pure — `Listed` → `Item{name,size,kind,relativePath}`; refused-by-suffix first
+(`.part` `.old` `.rekey.tmp` `.old.bak` `-shm` `-journal`), index matched before the store rule,
+`.soil` stem `[A-Za-z0-9_-]+`, store stem via `extensionStorePackage`; a `-wal` kept only with its
+main in the same listing, every `-wal` dropped for CLOUD; order index → soils → stores, each main
+then its wal; `totalBytes` counts an unreported size as 0 and flags `hasUnknownSizes`),
+`RestoreBackup{name, notebookCount, indexModifiedAt, totalBytes, handle}` (handle = source-private
+document URI string, never shown or logged), `RestoreSource` + `RestoreProblem`
+(SourceUnreachable / ListingFailed / NotABackup / FetchFailed(fileName); L4 adds the cloud kinds) +
+`ListResult` / `FetchResult`, `RestoreStaging` (D2 — `getExternalFilesDir(null)/restore_staging/`
+with `Garden/` inside, `File`-rooted functions + `Context` overloads, `.part`-then-rename
+`writeStaged` checking both the streamed count and the landed length, `targetFor` refuses a path
+that canonicalises out of staging, `fits(total, usable, headroom = 64 MB)` pure with unknown = refuse,
+`usableBytes` via `StatFs` → -1 unknown), `SafRestoreSource` (one-level-deep enumeration, root
+named by the tree's display name, subfolders by name, an unreadable subfolder skipped not fatal;
+fetch **re-lists and re-plans** at fetch time, aborts on the first failed file, progress
+`(done, total)`). `data/backup/SafBackupReader` — the writer's read twin: `root` / `rootName` /
+`list` (+ `COLUMN_LAST_MODIFIED`) / `open`, no create/rename/delete, **never
+`takePersistableUriPermission`**.
+
+**One deliberate deviation from D6's sketch:** `fetchInto` takes the `RestoreBackup` itself, not an
+`index: Int` into the last listing — the handle rides the row, so a stale list position can never
+name the wrong folder. Fable's read fixed one thing: the `Context` overloads built a `File("")` when
+`getExternalFilesDir(null)` was null; now `checkNotNull`, the `gardenDir` shape.
+
+**Tests:** 35 new (`RestoreManifestTest` 21, `RestoreStagingTest` 14) — 1077 → **1112**, 0 failures.
+No device walk (nothing to see on a device yet); L3's walk exercises this code end to end.
+Version `0.1.0-ratta` (confirmed at phase start).
