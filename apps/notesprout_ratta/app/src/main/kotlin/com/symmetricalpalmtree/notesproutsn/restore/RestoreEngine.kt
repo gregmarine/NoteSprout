@@ -21,6 +21,7 @@ import com.symmetricalpalmtree.notesproutsn.data.index.SnIndex
 import com.symmetricalpalmtree.notesproutsn.data.indexFile
 import com.symmetricalpalmtree.notesproutsn.data.sidecarsOf
 import com.symmetricalpalmtree.notesproutsn.data.soil.SoilOpenFiles
+import com.symmetricalpalmtree.notesproutsn.data.extensionStorePackage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -43,6 +44,13 @@ import java.io.File
  *     committed. The cached global is tried silently (a same-device backup just works); otherwise
  *     the screen prompts and [proveTyped] verifies **as typed first, then normalized** (R6 — a
  *     library may carry a typed passphrase) under `AttemptLimiter("RESTORE")`. No key → no commit.
+ *  4b. [pruneOrphans] (L5) — with the key proven, the staged index says which notebooks the
+ *     backup *is*; a staged `<uuid>.soil` it has no alive row for is an orphan the writer never
+ *     deleted (og's leftover, a stale copy under a key long rotated away) and is dropped from
+ *     staging and named in the ending, never installed. A staged store that does not open under
+ *     the proven key is dead the same way (a store has no other key) and is left out too. The screen
+ *     validates the index and stores BEFORE the key and the notebooks AFTER the prune, so a
+ *     plaintext orphan is a name in the ending rather than a refusal of the whole restore.
  *  5. [commit] — the point of no return is step 8's first rename. Blind the process
  *     (`KeySession.clear()`, R2) → close every store and the index → aside by rename → install by
  *     rename, the index **last** as the commit marker → key state → discard the aside (decision 5,
@@ -104,7 +112,7 @@ object RestoreEngine {
     /** What [commit] answers. Exactly one of these, and the caller relaunches on every one. */
     sealed class Outcome {
         /** The restored library is installed and its key is this device's global. */
-        data class Committed(val notebooks: Int, val stores: Int) : Outcome()
+        data class Committed(val notebooks: Int, val stores: Int, val leftOut: List<String> = emptyList()) : Outcome()
 
         /** Refused before the point of no return; the live library was never touched. */
         data class Refused(val problem: Problem) : Outcome()
@@ -145,6 +153,23 @@ object RestoreEngine {
         return Problem.NotEnoughSpace(shortfallBytes = (need - have).coerceAtLeast(1L))
     }
 
+    /**
+     * After a failed fetch, pure: [Problem.NotEnoughSpace] when what is still to come plus the
+     * headroom no longer fits (an unknown total counts as nothing still to come — the pre-fetch
+     * gate already refused an unknown total that mattered), else [sourceProblem] unchanged.
+     */
+    fun fetchFailureProblem(
+        sourceProblem: Problem,
+        totalBytes: Long,
+        stagedBytes: Long,
+        usableBytes: Long,
+        headroom: Long = RestoreStaging.HEADROOM_BYTES,
+    ): Problem {
+        if (usableBytes < 0L) return sourceProblem // cannot measure — do not guess
+        val remaining = if (totalBytes < 0L) 0L else (totalBytes - stagedBytes).coerceAtLeast(0L)
+        return spaceProblem(remaining, usableBytes, headroom) ?: sourceProblem
+    }
+
     /** The post-stage re-measure, pure: the staged bytes already sit on the volume, so only the
      *  headroom itself must still fit. */
     fun headroomProblem(usableBytes: Long, headroom: Long = RestoreStaging.HEADROOM_BYTES): Problem? =
@@ -164,8 +189,16 @@ object RestoreEngine {
             when (val r = source.fetchInto(backup, staging, onProgress)) {
                 is FetchResult.Staged -> StageResult.Staged(r.manifest)
                 is FetchResult.Failed -> {
+                    // L5: a disk that filled mid-fetch reaches here as the source's failure (the
+                    // cloud extension reports its write error as NETWORK; a SAF copy as a failed
+                    // file). Measured while the staged bytes still sit on the volume, the disk
+                    // is named when it is the disk — the source's problem otherwise.
+                    val problem = fetchFailureProblem(
+                        Problem.Source(r.problem), backup.totalBytes,
+                        RestoreStaging.stagedBytes(staging), RestoreStaging.usableBytes(context),
+                    )
                     RestoreStaging.discard(context)
-                    StageResult.Failed(Problem.Source(r.problem))
+                    StageResult.Failed(problem)
                 }
             }
         } catch (e: Exception) {
@@ -177,10 +210,23 @@ object RestoreEngine {
 
     // ── 3. Validate ─────────────────────────────────────────────────────────
 
-    /** Probe every staged main file. Null when all are encrypted SQLite. IO. */
-    suspend fun validate(context: Context, manifest: RestoreManifest): Problem? = withContext(Dispatchers.IO) {
+    /** Every kind — [validate]'s default. */
+    val ALL_KINDS: Set<ItemKind> = ItemKind.values().toSet()
+
+    /** The index — what the screen validates before the key is proven (a bad index is "not a
+     *  backup", and nothing else can be judged without its key). */
+    val INDEX_ONLY: Set<ItemKind> = setOf(ItemKind.INDEX, ItemKind.INDEX_WAL)
+
+    /** The notebooks — validated after [pruneOrphans], so an orphan is never probed. */
+    val NOTEBOOKS: Set<ItemKind> = setOf(ItemKind.SOIL, ItemKind.SOIL_WAL)
+
+    /** The stores — judged inside [pruneOrphans] (probe + key), never by [validate]'s fail-whole. */
+    val STORES: Set<ItemKind> = setOf(ItemKind.STORE, ItemKind.STORE_WAL)
+
+    /** Probe every staged main file of a kind in [only]. Null when all are encrypted SQLite. IO. */
+    suspend fun validate(context: Context, manifest: RestoreManifest, only: Set<ItemKind> = ALL_KINDS): Problem? = withContext(Dispatchers.IO) {
         try {
-            validationProblem(RestoreStaging.dir(context), manifest, SoilCrypto::probe)
+            validationProblem(RestoreStaging.dir(context), manifest, SoilCrypto::probe, only)
         } catch (e: Exception) {
             Log.w(TAG, "validate failed", e)
             Problem.Unexpected(e.javaClass.simpleName)
@@ -193,8 +239,14 @@ object RestoreEngine {
      * no plaintext mode, so a plaintext file is either foreign or damaged and would never open.
      * WAL items are not probed (a WAL has no header of its own) but must be present.
      */
-    fun validationProblem(stagingDir: File, manifest: RestoreManifest, probe: (File) -> SoilFileKind): Problem? {
+    fun validationProblem(
+        stagingDir: File,
+        manifest: RestoreManifest,
+        probe: (File) -> SoilFileKind,
+        only: Set<ItemKind> = ALL_KINDS,
+    ): Problem? {
         for (item in manifest.items) {
+            if (item.kind !in only) continue
             val file = RestoreStaging.targetFor(stagingDir, item)
             if (!file.isFile) return Problem.InvalidFile(item.name)
             if (item.size >= 0L && file.length() != item.size) return Problem.InvalidFile(item.name)
@@ -252,19 +304,120 @@ object RestoreEngine {
         }
     }
 
+    // ── 4b. Orphans (L5) ────────────────────────────────────────────────────
+
+    /** What [pruneOrphans] answers: the manifest to commit, and the names left out of it. */
+    sealed class PruneResult {
+        data class Pruned(val manifest: RestoreManifest, val leftOut: List<String>) : PruneResult()
+        data class Failed(val problem: Problem) : PruneResult()
+    }
+
+    /**
+     * Read the staged index's alive notebook ids under [proven] (one raw open, one query — the
+     * same rows `BackupEngine` builds its work list from), drop every staged `.soil` (and its
+     * WAL) the index does not name, delete those files from staging, and answer the manifest
+     * that is left. A backup folder is an accretion — the writer never deletes, so a notebook
+     * trashed or re-keyed on the source device leaves a file behind that the index does not own;
+     * installing it would put an invisible file under a foreign key into `Garden/`, where the
+     * next rotation stops on it (the L4 walk). IO.
+     */
+    suspend fun pruneOrphans(
+        context: Context,
+        manifest: RestoreManifest,
+        proven: String,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): PruneResult = withContext(Dispatchers.IO) {
+        try {
+            val staging = RestoreStaging.dir(context)
+            val alive = aliveNotebookIds(stagedIndex(context), proven)
+            // The stores: a store opens under the global key or under nothing (there is no
+            // per-store passphrase), so one that does not open under [proven] is dead weight that
+            // the next rotation would stop on (the L4 and L5 walks, both times); one that is not
+            // an encrypted SQLite file at all is a foreign `.db` with a package-shaped name, or a
+            // damaged copy — the same dead weight. Left out and named, never a refusal: nothing
+            // names a store the way the index names a notebook, so nothing can vouch for one.
+            // One KDF each — a handful of files, unlike the notebooks, which a rotation
+            // quarantines instead.
+            val stores = manifest.items.filter { it.kind == ItemKind.STORE }
+            val deadStores = HashSet<String>()
+            stores.forEachIndexed { i, item ->
+                onProgress(i, stores.size)
+                val f = RestoreStaging.targetFor(staging, item)
+                val dead = !f.isFile || SoilCrypto.probe(f) != SoilFileKind.Encrypted || !SoilCrypto.verifyPassphrase(f, proven)
+                if (dead) deadStores.add(item.name)
+            }
+            onProgress(stores.size, stores.size)
+            val (kept, leftOut) = orphanRule(manifest, alive, deadStores)
+            for (item in manifest.items) {
+                if (item in kept.items) continue
+                val f = RestoreStaging.targetFor(staging, item)
+                if (f.exists() && !f.delete()) Log.w(TAG, "orphan ${item.name} could not be deleted from staging")
+            }
+            if (leftOut.isNotEmpty()) Log.w(TAG, "left out ${leftOut.size} orphan(s): $leftOut")
+            PruneResult.Pruned(kept, leftOut)
+        } catch (e: Exception) {
+            Log.w(TAG, "orphan prune failed", e)
+            PruneResult.Failed(Problem.Unexpected(e.javaClass.simpleName))
+        }
+    }
+
+    /**
+     * The rule, pure: every `SOIL` whose stem is not in [aliveIds] — and its `SOIL_WAL` — is left
+     * out, and so is every `STORE` named in [deadStores] (one that did not open under the proven
+     * key, or is not an encrypted SQLite file) with its `STORE_WAL`; every other item is kept in
+     * its order. The second value is the left-out main files' names, sorted. The index is never
+     * an orphan.
+     */
+    fun orphanRule(
+        manifest: RestoreManifest,
+        aliveIds: Set<String>,
+        deadStores: Set<String> = emptySet(),
+    ): Pair<RestoreManifest, List<String>> {
+        val leftOut = ArrayList<String>()
+        val kept = manifest.items.filter { item ->
+            when (item.kind) {
+                ItemKind.SOIL -> (soilStem(item.name) in aliveIds).also { if (!it) leftOut.add(item.name) }
+                ItemKind.SOIL_WAL -> soilStem(item.name.removeSuffix(WAL)) in aliveIds
+                ItemKind.STORE -> (item.name !in deadStores).also { if (!it) leftOut.add(item.name) }
+                ItemKind.STORE_WAL -> item.name.removeSuffix(WAL) !in deadStores
+                else -> true
+            }
+        }
+        return RestoreManifest(kept) to leftOut.sorted()
+    }
+
+    private const val WAL = "-wal"
+
+    private fun soilStem(name: String): String = name.removeSuffix(".soil")
+
+    /** `SELECT id FROM objects WHERE type = 'notebook' AND deletedAt IS NULL` on a raw open. */
+    private fun aliveNotebookIds(index: File, proven: String): Set<String> {
+        val db = SoilCrypto.openRaw(index, proven)
+        try {
+            val ids = HashSet<String>()
+            db.rawQuery("SELECT id FROM objects WHERE type = 'notebook' AND deletedAt IS NULL", null).use { c ->
+                while (c.moveToNext()) ids.add(c.getString(0))
+            }
+            return ids
+        } finally {
+            runCatching { db.close() }
+        }
+    }
+
     // ── 5. Commit ───────────────────────────────────────────────────────────
 
     /**
-     * D3 steps 5–10. [proven] must have opened the staged index. Runs whole under [NonCancellable]
+     * D3 steps 5–10. [proven] must have opened the staged index; [leftOut] is what
+     * [pruneOrphans] dropped, carried into [Outcome.Committed] for the ending to name. Runs whole under [NonCancellable]
      * on IO: a dying screen must not leave the library half-swapped. After a [Outcome.Committed],
      * [Outcome.RolledBack] or [Outcome.Interrupted] the index is closed and the caller's only way out is
      * `BootstrapActivity.relaunchIntent` + `finishAffinity()`.
      */
-    suspend fun commit(context: Context, manifest: RestoreManifest, proven: String): Outcome =
+    suspend fun commit(context: Context, manifest: RestoreManifest, proven: String, leftOut: List<String> = emptyList()): Outcome =
         withContext(Dispatchers.IO + NonCancellable) {
             val app = context.applicationContext
             try {
-                commitInner(app, manifest, proven)
+                commitInner(app, manifest, proven, leftOut)
             } catch (e: Exception) {
                 // Only the pre-close half can throw to here (the post-close half has its own catch
                 // below), so the index is still open and nothing live was touched. A park written
@@ -276,9 +429,11 @@ object RestoreEngine {
             }
         }
 
-    private suspend fun commitInner(app: Context, manifest: RestoreManifest, proven: String): Outcome {
+    private suspend fun commitInner(app: Context, manifest: RestoreManifest, proven: String, leftOut: List<String>): Outcome {
         val root = checkNotNull(app.getExternalFilesDir(null)) { "no external files dir" }
         val staging = RestoreStaging.dir(app)
+        val hooks = faultHooks(app, staging, manifest)
+        RestoreFaults.at(RestoreFaults.Seam.COMMIT_TOP, hooks) // L5: TEAR_STAGING fires here
 
         // Step 0 — a torn staging set (a file deleted between validate and now) must be caught
         // here, not by a rename that fails half-way through the install. The index is exempt
@@ -322,7 +477,7 @@ object RestoreEngine {
             // Step 8 — close and swap, renames only.
             ExtensionStores.closeAll()
             SnIndex.closeForRotation() // checkpoints, closes, forgets the instance; IndexGuard bounces every screen from here
-            afterClose(app, root, live, aside, staging, manifest, proven, oldPassphrase, marks)
+            afterClose(app, root, live, aside, staging, manifest, proven, oldPassphrase, marks, hooks, leftOut)
         } catch (e: Exception) {
             // The session is cleared and the index may be closed, so `Refused` would be a lie from
             // here: the caller relaunches. Whether the swap began, and whether the restored index
@@ -357,9 +512,11 @@ object RestoreEngine {
         proven: String,
         oldPassphrase: String?,
         marks: Marks,
+        hooks: RestoreFaults.Hooks,
+        leftOut: List<String>,
     ): Outcome {
         marks.swapBegun = true
-        val failedStep = swap(live, aside, staging)
+        val failedStep = swap(live, aside, staging, hooks)
         if (failedStep != null) {
             Log.e(TAG, "swap failed at step $failedStep; renaming the aside back")
             executeRecovery(root, live, aside, staging)
@@ -367,6 +524,8 @@ object RestoreEngine {
             oldPassphrase?.let { KeySession.set(it) }
             return Outcome.RolledBack(Problem.SwapFailed(failedStep))
         }
+
+        RestoreFaults.at(RestoreFaults.Seam.AFTER_E, hooks) // L5: KILL_AFTER_E / THROW_BEFORE_KEY_STATE
 
         // Step 9 — key state. The installed index is the restored library's; its key becomes this
         // device's global, acknowledged unconditionally (R7 — the person demonstrably has it).
@@ -384,17 +543,44 @@ object RestoreEngine {
         RealRekeyFs.fsyncDir(root)
 
         Slog.d(TAG) { "restore committed: ${manifest.notebookCount} notebooks, ${manifest.storeCount} stores" }
-        return Outcome.Committed(manifest.notebookCount, manifest.storeCount)
+        return Outcome.Committed(manifest.notebookCount, manifest.storeCount, leftOut)
     }
 
-    private class Live(val index: File, val garden: File)
+    internal class Live(val index: File, val garden: File)
+
+    /** L5 — what the armed plant / tear / store faults do. Inert unless a fault is armed. */
+    private fun faultHooks(app: Context, staging: File, manifest: RestoreManifest): RestoreFaults.Hooks = object : RestoreFaults.Hooks {
+        override fun plantAtGarden(): String {
+            val garden = gardenDir(app)
+            return if (garden.exists()) "FAIL — live Garden still present, nothing planted"
+            else { garden.writeText("planted by RestoreFaults"); "planted a file at ${garden.name}" }
+        }
+
+        override fun tearStaging(): String {
+            val victim = manifest.items.firstOrNull { it.kind == ItemKind.SOIL }
+                ?: return "FAIL — no staged .soil to tear"
+            val f = RestoreStaging.targetFor(staging, victim)
+            return if (f.delete()) "deleted staged ${victim.name}" else "FAIL — could not delete ${victim.name}"
+        }
+
+        override fun storeCall(): String {
+            val pkg = manifest.items.firstOrNull { it.kind == ItemKind.STORE }?.let { extensionStorePackage(it.name) }
+                ?: "probe.restore"
+            return try {
+                ExtensionStores.open(app, pkg)
+                "FAIL — ExtensionStores.open($pkg) succeeded mid-swap (R2 broken)"
+            } catch (e: Exception) {
+                "refused: ${e.javaClass.simpleName} (want SoilLockedException)"
+            }
+        }
+    }
 
     /**
      * D3 step 8 (a)–(e). Returns the letter of the rename that failed, or null when every one
      * landed. Each rename is same-volume and atomic; a directory fsync after each group shortens
      * the window before it persists. A sidecar that does not exist is simply skipped.
      */
-    private fun swap(live: Live, aside: File, staging: File): Char? {
+    private fun swap(live: Live, aside: File, staging: File, hooks: RestoreFaults.Hooks): Char? {
         val fs = RealRekeyFs
         if (aside.exists() && !aside.deleteRecursively()) return 'a'
         if (!aside.mkdirs()) return 'a'
@@ -407,14 +593,17 @@ object RestoreEngine {
             if (sidecar.exists() && !fs.rename(sidecar, File(aside, sidecar.name))) return 'a'
         }
         fs.fsyncDir(root)
+        RestoreFaults.at(RestoreFaults.Seam.AFTER_A, hooks)
 
         // (b) live Garden → aside/Garden (a missing live Garden is a fresh device — nothing to move).
         if (live.garden.exists() && !fs.rename(live.garden, File(aside, RestoreRecovery.GARDEN_NAME))) return 'b'
         fs.fsyncDir(root)
+        RestoreFaults.at(RestoreFaults.Seam.AFTER_B, hooks) // KILL_AFTER_B / PLANT_AT_C / STORE_CALL_MID_SWAP
 
         // (c) staged Garden → live.
         if (!fs.rename(File(staging, RestoreRecovery.GARDEN_NAME), live.garden)) return 'c'
         fs.fsyncDir(root)
+        RestoreFaults.at(RestoreFaults.Seam.AFTER_C, hooks)
 
         // (d) the staged index's WAL (if the backup had one, or the proof left one) beside the live
         // name; a `-shm` is rebuilt on open and is deleted rather than moved.
@@ -424,6 +613,7 @@ object RestoreEngine {
             if (sidecar.name.endsWith("-shm")) { sidecar.delete(); continue }
             if (!fs.rename(sidecar, File(root, sidecar.name))) return 'd'
         }
+        RestoreFaults.at(RestoreFaults.Seam.AFTER_D, hooks)
         // (e) the staged index → live, last: the commit marker.
         if (!fs.rename(stagedIndex, live.index)) return 'e'
         fs.fsyncDir(root)
@@ -450,7 +640,7 @@ object RestoreEngine {
         }
     }
 
-    private fun executeRecovery(root: File, live: Live, aside: File, staging: File) {
+    internal fun executeRecovery(root: File, live: Live, aside: File, staging: File) {
         val asideIndex = File(aside, live.index.name)
         val asideGarden = File(aside, RestoreRecovery.GARDEN_NAME)
         val state = RestoreRecovery.State(
@@ -462,6 +652,15 @@ object RestoreEngine {
         )
         val actions = RestoreRecovery.plan(state)
         Log.w(TAG, "restore recovery: $state → $actions")
+        // L5: when the OLD index is about to be renamed back, a sidecar sitting at the live name
+        // is the NEW index's (8(d) landed, 8(e) did not) — a WAL from another database beside
+        // the old file is exactly what SQLite would replay into it on the next open. Nothing of
+        // the old index's is at the live name (8(a) moved it all aside), so clearing is safe.
+        if (!state.liveIndex && state.asideIndex) {
+            for (sidecar in sidecarsOf(live.index)) {
+                if (sidecar.exists() && !sidecar.delete()) Log.e(TAG, "stray ${sidecar.name} could not be cleared")
+            }
+        }
         for (action in actions) {
             val ok = when (action) {
                 RestoreRecovery.Action.DeleteAside -> !aside.exists() || aside.deleteRecursively()
@@ -470,6 +669,13 @@ object RestoreEngine {
                 is RestoreRecovery.Action.RenameBack -> {
                     val from = File(aside, action.name)
                     val to = File(root, action.name)
+                    // L5: a plain file squatting on a directory's name (the PLANT_AT_C injection —
+                    // and the one shape a failed 8(c) can leave) would block the rename back
+                    // forever, launch after launch. A file where the Garden goes is never the
+                    // library's; a directory where the index goes is never the index. Clear it.
+                    if (from.exists() && to.exists() && from.isDirectory != to.isDirectory) {
+                        if (!to.deleteRecursively()) Log.e(TAG, "obstruction at ${to.name} could not be cleared")
+                    }
                     !from.exists() || RealRekeyFs.rename(from, to)
                 }
             }

@@ -836,6 +836,7 @@
     <string name="restore_progress_copying">Copying %1$d of %2$d…</string>
     <string name="restore_progress_downloading">Downloading %1$d of %2$d…</string>
     <string name="restore_progress_checking">Checking…</string>
+    <string name="restore_progress_checking_stores">Checking extension data %1$d of %2$d…</string>
     <string name="restore_progress_unlocking">Unlocking…</string>
     <string name="restore_progress_installing">Installing…</string>
     <string name="restore_progress_keep_open">Keep the app open. This can take a while.</string>
@@ -851,6 +852,8 @@
     <string name="restore_done_one_many">Restored %1$d notebook and %2$d extension stores from %3$s.</string>
     <string name="restore_done_many_one">Restored %1$d notebooks and %2$d extension store from %3$s.</string>
     <string name="restore_done_many_many">Restored %1$d notebooks and %2$d extension stores from %3$s.</string>
+    <string name="restore_done_left_out_one">One file in the backup folder was not part of this backup and was left out:</string>
+    <string name="restore_done_left_out_many">%1$d files in the backup folder were not part of this backup and were left out:</string>
     <string name="restore_restart">Restart</string>
     <string name="restore_failed_title">Restore failed</string>
     <string name="restore_failed_body">Nothing was changed. Your library is as it was. Notesprout SN will restart.</string>
@@ -880,7 +883,7 @@
     <string name="restore_problem_fetch_title">Couldn\'t copy the backup</string>
     <string name="restore_problem_fetch_body">%1$s could not be copied out of the backup, so nothing was restored. Your library is untouched.</string>
     <string name="restore_problem_invalid_title">Backup isn\'t complete</string>
-    <string name="restore_problem_invalid_body">%1$s in this backup is not a Notesprout file, or is no longer there, so nothing was restored. Your library is untouched.</string>
+    <string name="restore_problem_invalid_body">%1$s in this backup is not encrypted, is damaged, or is no longer there, so nothing was restored. Your library is untouched.</string>
     <string name="restore_problem_no_key_title">Backup not unlocked</string>
     <string name="restore_problem_no_key_body">The backup was not unlocked, so nothing was restored. Your library is untouched.</string>
     <string name="restore_problem_park_title">Couldn\'t start the restore</string>

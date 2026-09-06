@@ -495,7 +495,7 @@ class BackupActivity : AppCompatActivity() {
                     R.string.restore_problem_rotation_body,
                 )
             } else {
-                startActivity(RestoreActivity.intent(this@BackupActivity))
+                startActivity(RestoreActivity.intent(this@BackupActivity, cloudName))
             }
         }
     }

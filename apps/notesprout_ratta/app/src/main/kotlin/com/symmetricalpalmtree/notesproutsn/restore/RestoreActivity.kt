@@ -217,7 +217,7 @@ class RestoreActivity : AppCompatActivity() {
     /** The extension's label — the only name the host has for the provider without asking it, and
      *  the same one the Backup screen falls back to. Never an account label. */
     private fun providerName(): String =
-        cloudRef?.label?.toString() ?: getString(R.string.cloud_caption)
+        intent.getStringExtra(EXTRA_PROVIDER_NAME) ?: cloudRef?.label?.toString() ?: getString(R.string.cloud_caption)
 
     /** List what the picked tree holds (one level deep — D1's `dev/` rule) and show it. */
     private suspend fun adoptFolder(uri: Uri) {
@@ -351,8 +351,11 @@ class RestoreActivity : AppCompatActivity() {
             is RestoreEngine.StageResult.Staged -> staged.manifest
         }
 
+        // L5: only the index is checked before the key; the notebooks after the orphan prune
+        // (so a plaintext leftover the index does not own is named, not fatal) and the stores
+        // inside the prune itself (probe + key — nothing else can vouch for a store).
         setProgress(getString(R.string.restore_progress_checking))
-        RestoreEngine.validate(this, manifest)?.let {
+        RestoreEngine.validate(this, manifest, RestoreEngine.INDEX_ONLY)?.let {
             discardStaging()
             hideProgress()
             problemDialog(it)
@@ -377,8 +380,24 @@ class RestoreActivity : AppCompatActivity() {
             typed
         }
 
+        // L5 (4b) — with the key proven, the staged index says which notebooks the backup IS.
+        setProgress(getString(R.string.restore_progress_checking))
+        val prune = RestoreEngine.pruneOrphans(this, manifest, proven) { done, total ->
+            runOnUiThread { setProgress(getString(R.string.restore_progress_checking_stores, done, total)) }
+        }
+        val (pruned, leftOut) = when (val r = prune) {
+            is RestoreEngine.PruneResult.Failed -> { discardStaging(); hideProgress(); problemDialog(r.problem); return }
+            is RestoreEngine.PruneResult.Pruned -> r.manifest to r.leftOut
+        }
+        RestoreEngine.validate(this, pruned, RestoreEngine.NOTEBOOKS)?.let {
+            discardStaging()
+            hideProgress()
+            problemDialog(it)
+            return
+        }
+
         setProgress(getString(R.string.restore_progress_installing))
-        val outcome = RestoreEngine.commit(this, manifest, proven)
+        val outcome = RestoreEngine.commit(this, pruned, proven, leftOut)
         hideProgress()
         Slog.d(TAG) { "restore outcome: ${outcome::class.simpleName}" }
         onOutcome(outcome, backup.name)
@@ -395,7 +414,8 @@ class RestoreActivity : AppCompatActivity() {
         when (outcome) {
             is RestoreEngine.Outcome.Committed -> endDialog(
                 getString(R.string.restore_done_title),
-                getString(doneBody(outcome.notebooks, outcome.stores), outcome.notebooks, outcome.stores, backupName),
+                getString(doneBody(outcome.notebooks, outcome.stores), outcome.notebooks, outcome.stores, backupName) +
+                    leftOutText(outcome.leftOut),
             )
 
             // The swap failed and renamed itself back: the library is whole, but the index is
@@ -416,6 +436,14 @@ class RestoreActivity : AppCompatActivity() {
             // its pre-close catch), so the index is still open and the screen stays.
             is RestoreEngine.Outcome.Refused -> problemDialog(outcome.problem)
         }
+    }
+
+    /** L5 — the orphans the prune left out, named so the person can find them in the folder. */
+    private fun leftOutText(leftOut: List<String>): String {
+        if (leftOut.isEmpty()) return ""
+        val head = if (leftOut.size == 1) getString(R.string.restore_done_left_out_one)
+        else getString(R.string.restore_done_left_out_many, leftOut.size)
+        return "\n\n" + head + "\n" + leftOut.joinToString("\n")
     }
 
     private fun doneBody(notebooks: Int, stores: Int): Int = when {
@@ -672,6 +700,12 @@ class RestoreActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "RestoreActivity"
 
-        fun intent(context: Context): Intent = Intent(context, RestoreActivity::class.java)
+        /** The provider's own name, when the caller already holds one (the Backup screen's
+         *  `status()` answer) — so both screens say "Google Drive", not one of them the extension's
+         *  label. Not a secret, not user content. */
+        const val EXTRA_PROVIDER_NAME = "providerName"
+
+        fun intent(context: Context, providerName: String? = null): Intent =
+            Intent(context, RestoreActivity::class.java).apply { providerName?.let { putExtra(EXTRA_PROVIDER_NAME, it) } }
     }
 }

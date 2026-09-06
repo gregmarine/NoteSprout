@@ -7,7 +7,7 @@ unless a standing trap needs checking; its protocol and traps are summarized at 
 file is enough. `ENCRYPTION_PLAN.md` and `DRIVE_PLAN.md` are the shapes this file copies.
 
 **Status:** wizard locked 2026-09-05 · Fable review folded in 2026-09-05 (R1–R7, § Review
-amendments) · L1 ✅ · L2 ✅ · L3 ✅ · L4 ✅ · L5 ⬜ · L6 ⬜
+amendments) · L1 ✅ · L2 ✅ · L3 ✅ · L4 ✅ · L5 🧪 (code + Nomad injections done 2026-09-06; two user-gated walk items open, see the ledger) · L6 ⬜
 
 **Phase letters:** every letter A–Z is spoken for in `RATTA_PLAN.md` except **H** and **L**. This
 arc takes **L**; H stays free.
@@ -365,7 +365,7 @@ read-side twin, `CloudTimeouts.downloadBudgetMs(bytes)` — 120 s flat to 20 MiB
 gate as the local leg — L2's preflight already refuses on listing bytes + 64 MB before the first
 download, no cloud-only margin · version stays `0.1.0-ratta`.**
 
-### ⬜ L5 — hardening: failure injection on the Nomad
+### 🧪 L5 — hardening: failure injection on the Nomad
 
 **No `/code-review` in this arc** (decision 8). Instead, break it on purpose and fix what falls out.
 A debug-menu `RestoreProbe` is the door, in the `RekeyProbe` shape. At minimum:
@@ -390,6 +390,17 @@ A debug-menu `RestoreProbe` is the door, in the `RekeyProbe` shape. At minimum:
 
 **Questions to resolve at phase start:** which injections are worth a permanent debug-menu entry
 versus a one-off adb setup · whether L5's fixes may reshape L2's public surface or must stay local.
+
+**Phase-start answers (2026-09-06):** (1) **one permanent entry** — *Break a restore (debug)* arms
+ONE fault in `restore/RestoreFaults` for the next commit (kill after 8(a)/(b)/(c)/(d)/(e), throw
+before step 9, plant at the Garden name, tear staging, in-process store call mid-swap); everything
+else is adb / hand setup. (2) **Additive only** — new kinds and doors allowed, the five doors keep
+their signatures and meanings. (3) **Orphans are skipped and named** (the L3/L4 finding, asked as a
+third question): after the key is proven, a staged `.soil` the staged index has no alive row for
+is dropped from staging and listed in the *Restore complete* dialog; a staged store that is not
+encrypted SQLite or does not open under the proven key is dropped the same way (a store has no
+other key — installing it is what stopped the L4 and L5 rotations). Validate before the key now
+covers the index only; the notebooks are validated after the prune.
 
 ### ⬜ L6 — docs + freeze
 
@@ -706,3 +717,87 @@ screen's caption names the extension label (*NSE · Cloud Storage Dev*) where th
 **Tests:** 24 new (`CloudRestoreRulesTest` 10, `CloudTimeoutsTest` +6, `RestoreStagingTest` +7,
 `RestoreManifestTest` +1) — 1151 → **1175**, 0 failures. `RestoreActivity` 677 lines (under the
 threshold, no extraction). Version `0.1.0-ratta`.
+
+
+### L5 — Outcome (2026-09-06, Fable build + every injection by hand on the Nomad; 🧪 two items open)
+
+**Landed — the fault seam, the orphan prune, and four fixes the injections forced.**
+`restore/RestoreFaults` (main source, inert unless `BuildConfig.DEBUG` and a fault is armed): nine
+faults, six seams (`COMMIT_TOP`, `AFTER_A`…`AFTER_E`), consumed the moment one fires, kills by
+`Process.killProcess`, the throw an `InjectedFailure`, the plant / tear / store kinds through a
+`Hooks` object the engine builds. Debug menu: *Break a restore (debug)* — arm one, then any restore;
+the last in-process report rides the dialog title. `RestoreEngine` (622 lines): `validate(…, only)`
+with `INDEX_ONLY` / `NOTEBOOKS` / `STORES` kind sets; the new door **`pruneOrphans(context,
+manifest, proven, onProgress)`** → `PruneResult.Pruned(manifest, leftOut)` — reads
+`SELECT id FROM objects WHERE type = 'notebook' AND deletedAt IS NULL` off the staged index under
+the proven key (the same rows `BackupEngine` builds its work list from), test-opens every staged
+store (probe `Encrypted` + `verifyPassphrase`, ≈4 s each, *Checking extension data n of m…*),
+applies the pure `orphanRule(manifest, aliveIds, deadStores)` and deletes the left-out files from
+staging; `commit(…, leftOut)` carries the names into `Outcome.Committed.leftOut` and the dialog
+says *"N files in the backup folder were not part of this backup and were left out:"* + names.
+The screen's order is now stage → validate(INDEX_ONLY) → prove → prune → validate(NOTEBOOKS) →
+commit. **Fixes the injections forced:** (a) `executeRecovery` clears a non-directory squatting on
+the Garden name (and a directory on the index name) before the rename back — the `PLANT_AT_C`
+shape, which would otherwise block recovery launch after launch; (b) it deletes any index sidecar
+at the live name before the OLD index returns — after a kill between 8(d) and 8(e) the new index's
+WAL sits there and SQLite would replay it into the old file; (c) **`fetchFailureProblem`**: a disk
+that fills mid-fetch reaches the engine as the source's failure (the cloud extension reports its
+write error as `NETWORK`; the walk's dialog said *Couldn't reach Google Drive*), so `stage` now
+re-measures while the staged bytes still sit on the volume and names the disk when it is the disk
+(*needs about 80 MB more*); (d) the invalid-file wording is *"is not encrypted, is damaged, or is
+no longer there"*. Also: the Restore screen takes the Backup screen's `providerName` as an extra
+(*Backups in Google Drive*, not the extension label); the store self-test deletes its two `probe.*`
+files at the end.
+
+**The walk (Nomad, every tap Fable's; the cloud leg, `waltest4`, so no folder pick):**
+
+| Injection | Result |
+|---|---|
+| Kill after 8(a) | Android relaunched the task ~1.4 s later; recovery `liveIndex=false, asideIndex=true, liveGarden=true, asideGarden=false → [RenameBack(notesprout.db), DeleteStaging]`; library, 46 notebooks, no aside, no staging |
+| Kill after 8(b) | `→ [RenameBack(Garden), RenameBack(notesprout.db), DeleteStaging]`; library intact |
+| Kill after 8(c) / 8(d) | `liveGarden=true, asideGarden=true → [DeleteLiveGarden, RenameBack(Garden), RenameBack(notesprout.db), DeleteStaging]`; library intact both times |
+| Kill after 8(e), before step 9 | `liveIndex=true → [DeleteAside, DeleteStaging]`; relaunch to the library (same key), `destination re-applied after restore (tree=true, cloud=true)` |
+| Throw before step 9 | **Interrupted** dialog (*The backup is installed, but a last step failed (InjectedFailure)…*), Restart → library |
+| Plant a file at `Garden/` | `swap failed at step c; renaming the aside back` → **RolledBack** dialog → Restart → library, 46 notebooks, the planted file cleared by recovery |
+| Tear staging | **Refused** *Backup isn't complete — 10e8555e-….soil … is not encrypted, is damaged, or is no longer there*; screen stays on the list |
+| Store call mid-swap | committed normally; report *refused: SoilLockedException (want SoilLockedException)* — R2 holds |
+| Full disk at the gate (`fallocate` to 39 MB free) | *Not enough space — needs about 50 MB more*; nothing staged |
+| Disk fills during the download (91 MB free, 85 MB taken at file 9) | before the fix *Couldn't reach Google Drive*; after it *Not enough space — about 80 MB more*; nothing touched either time |
+| Restore while a rotation marker stands | **unreachable by design**: a kill 15 s into a rotation → the relaunch routes to Encryption with *Resume*, the back arrow leaves the app, and `BackupActivity` is not exported — the Backup-row check and `preflight`'s `RotationPending` are defense in depth only, read not walked |
+| The wrong key, three times | *That key does not open this backup.* twice (the field clears), then *Too many attempts. Try again in 26 s* with the entry row hidden; lifted; `walkpass1` → committed |
+| A store under neither key in the backup | the resumed rotation (minted key) **stopped** on `ext.drive.dev.db` again — the L4 finding, reproduced with the cloud folder handing the dead store back; hand recovery as before; then the prune left it out: *Restored 46 notebooks and 7 extension stores from waltest4. One file … was left out: com.symmetricalpalmtree.notesproutsn.ext.drive.dev.db* |
+| The destination trap (cloud) | device folder `waltest4` kept, *Never backed up* on both legs after the foreign restore |
+| A `NOTEBOOK`-scope notebook in the backup | present (Encryption says 45 of 46 use the device key) and restored; not opened in this walk |
+
+**The Nomad dev library is back under `walkpass1`, device folder `waltest4`; the minted
+`NSPT-801N-…-0W81` opens nothing. Both probe stores and the dead `ext.drive.dev.db` still sit in the
+cloud `waltest4` folder and the local `dev/` folder (the writer never deletes) — every restore from
+either names the dead one and leaves it out; the probe pair restores as stores until a backup run
+after the self-test cleanup… which never deletes them either. Harmless.**
+
+**🧪 Open — needs a hand (cannot be driven from adb):**
+1. **The salted local folder + orphans.** `Documents/Notesprout-Dev/dev/` is salted now: the
+   plaintext og `575aca61-….soil` moved back in from `stale/`, plus `….soil.part`, `.soil.old`,
+   `.soil.rekey.tmp`, `.soil.old.bak`, a lone `….soil-wal`, `notesprout.db-shm`, a plaintext
+   `foreign.db`, the dead `ext.drive.dev.db`, and the two encrypted orphans from before (Aug 9 /
+   Aug 29). Backup → *Restore from a backup…* → *From a folder…* → pick `Documents/Notesprout-Dev`
+   (the list shows `dev`). **Expected:** the count in the row includes the orphans (it is a file
+   count); no prompt (the 23:45 backup is under `walkpass1`); *Restore complete — 46 notebooks and 7
+   extension stores from dev* with **5 files left out** named (575aca61, the two encrypted orphans,
+   `foreign.db`, `ext.drive.dev.db`); none of the salted names anywhere in `Garden/` afterwards.
+   Then move `575aca61` back to `stale/` or leave it — it is skipped either way now.
+2. **A stale `-wal` in a cloud device folder (R3).** Upload any small file named `notesprout.db-wal`
+   into Drive → `Notesprout SN Dev/Backups/waltest4/` from the Drive web UI, then restore `waltest4`
+   from the cloud. **Expected:** *Downloading n of 55* (not 56), no `notesprout.db-wal` ever staged
+   (`ls restore_staging` mid-download), committed as before. `CloudRestoreRulesTest` +
+   `RestoreManifestTest` already pin the rule on the JVM.
+
+**Findings for L6 / later arcs (recorded, not decided):** a store under neither key still **stops
+a rotation** (arc 26 behaviour) — the restore now keeps one from arriving, but a rotation that
+meets one by any other route has only the hand recovery; worth an arc-26 follow-up (quarantine or
+skip-and-name for stores, as notebooks already get). A backup folder is an accretion — the doc
+must say a restore installs what the index names and the proven key opens, never "the folder".
+
+**Tests:** 19 new in `RestoreEngineTest` (validate-by-kind 3, orphan rule 5, recovery executor over
+real files 6, fetch-failure rule 4, staged bytes 1) — 1175 → **1194** per variant, 0 failures.
+`RestoreEngine` 622 lines, `RestoreActivity` 711, `DebugMenu` 579. Version `0.1.0-ratta`.

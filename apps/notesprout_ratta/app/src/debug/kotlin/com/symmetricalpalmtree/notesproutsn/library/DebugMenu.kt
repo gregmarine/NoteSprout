@@ -14,6 +14,7 @@ import com.symmetricalpalmtree.notesproutsn.R
 import com.symmetricalpalmtree.notesproutsn.core.Dialogs
 import com.symmetricalpalmtree.notesproutsn.core.Slog
 import com.symmetricalpalmtree.notesproutsn.crypto.KeyScope
+import com.symmetricalpalmtree.notesproutsn.restore.RestoreFaults
 import com.symmetricalpalmtree.notesproutsn.crypto.KeySession
 import com.symmetricalpalmtree.notesproutsn.crypto.NotebookPassphrasePrompt
 import com.symmetricalpalmtree.notesproutsn.crypto.SoilCrypto
@@ -57,6 +58,7 @@ import java.io.File
  *    → `exec` before `applySchema` refused with `STORE_SCHEMA_UNAPPLIED` → wrong uid / revoked
  *    refused → a **legacy-shaped file** (`Garden/probe.legacy.db`, built by the probe itself with a
  *    `kv` table at `user_version 1`) opens as a wipe to format version 2. Timings in the summary.
+ *    Both probe files are deleted at the end (arc 27 / L5 — they used to ride every backup).
  *  - **Cloud status** (arc 25 / V1) — the one on-device proof that a trusted cloud provider is
  *    discovered and binds: `ExtensionRegistry.cloud()` then one `CloudClient.status()`, reported in
  *    a dialog (provider, api version, provider name, configured, connected, account). Package
@@ -73,6 +75,10 @@ import java.io.File
  *  - **Break keying** ([RekeyProbe.breakKeying], arc 26 / U6) — re-key one notebook to
  *    `RekeyProbe.BROKEN_KEY` while the index keeps its scope: the next open fails on the key and
  *    `NotebookRecovery` runs (og's precedent — never a release entry point).
+ *  - **Break a restore** ([RestoreFaults], arc 27 / L5) — arm one fault for the next restore's
+ *    commit: a kill at a seam of the swap (the relaunch's `recoverInterrupted` is what is under
+ *    test), a throw before the key state, a planted file at the Garden name, a torn staging set,
+ *    or an in-process store call mid-swap. Consumed when it fires.
  *  - **WEBP encoder measurement** ([WebpProbe]) — lossless vs lossy-q100 on this device's own page
  *    size, for the open question in `BuiltInTemplates.toWebp`. Skia's encoders are the subject, so
  *    no host tool can answer it; run it on every device tier before changing the format.
@@ -105,6 +111,7 @@ object DebugMenu {
             "Rekey one notebook round-trip (debug)",
             "Break a rekey commit (debug)",
             "Break keying (debug)",
+            "Break a restore (debug)",
         )
         val actions = listOf<() -> Unit>(
             { storeSelfTest(activity) },
@@ -114,6 +121,7 @@ object DebugMenu {
             { pickNotebook(activity, "Rekey round-trip") { id -> rekeyRoundTrip(activity, id) } },
             { pickNotebook(activity, "Break a rekey commit") { id -> breakRekeyCommit(activity, id) } },
             { pickNotebook(activity, "Break keying") { id -> breakKeying(activity, id) } },
+            { breakRestore(activity) },
         )
         Dialogs.style(
             AlertDialog.Builder(activity)
@@ -170,6 +178,29 @@ object DebugMenu {
                     .create()
             ).show()
         }
+    }
+
+    /**
+     * Arc 27 / L5 — arm ONE fault in [RestoreFaults] for the next restore's commit: a kill at one
+     * of D3 step 8's seams (Bootstrap's `recoverInterrupted` is the thing under test on the
+     * relaunch), a throw before the key state (the `Interrupted` ending), a planted file at the
+     * Garden name (the rollback), a torn staging set (the refusal), or an in-process store call
+     * mid-swap (must be refused — R2). The fault is consumed when it fires; "Disarm" clears it.
+     * Then: Backup → Restore from a backup… → any backup. The cloud leg needs no folder pick.
+     */
+    private fun breakRestore(activity: AppCompatActivity) {
+        val faults = RestoreFaults.Fault.values()
+        val armed = RestoreFaults.current
+        val labels = (faults.map { (if (it == armed) "● " else "") + it.label } + "Disarm").map { it as CharSequence }.toTypedArray()
+        AlertDialog.Builder(activity)
+            .setTitle("Break a restore" + (RestoreFaults.lastReport?.let { "\nlast: $it" } ?: ""))
+            .setItems(labels) { _, which ->
+                val fault = faults.getOrNull(which)
+                RestoreFaults.arm(fault)
+                Toast.makeText(activity, if (fault == null) "Disarmed" else "Armed: ${fault.name} — now restore", Toast.LENGTH_LONG).show()
+            }
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     /** Arc 26 / U6 — re-key one notebook to [RekeyProbe.BROKEN_KEY] behind the index's back so the
@@ -502,6 +533,12 @@ object DebugMenu {
         val legacyStore = ExtensionStoreBinder(legacy, android.os.Process.myUid())
         check(legacyStore.schemaVersion() == 0) { "wiped store schemaVersion != 0" }
         legacyStore.revoke()
+
+        // L5 chore: the probe's two files used to ride every backup and restore as stores (and
+        // every rotation re-keyed them). Close and delete them — the next run recreates both.
+        ExtensionStores.closeAll()
+        deleteWithSidecars(file)
+        deleteWithSidecars(legacyFile)
 
         return "open ${openMs}ms · 5 000 rows in ${batchMs}ms · read back $chunks chunks in ${readMs}ms · legacy wipe ${wipeMs}ms · ${file.name}"
     }

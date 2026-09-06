@@ -64,6 +64,11 @@ object RestoreStaging {
         if (!dir(root).deleteRecursively()) Log.w(TAG, "staging discard was incomplete")
     }
 
+    /** Bytes sitting under [stagingDir] right now — `.part` files included (they occupy the
+     *  volume too). Zero for a missing directory. */
+    fun stagedBytes(stagingDir: File): Long =
+        stagingDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+
     /** [discard] for this device's library volume. */
     fun discard(context: Context) = discard(libraryRoot(context))
 
