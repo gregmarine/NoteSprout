@@ -154,7 +154,7 @@ skill (`.claude/skills/device-build-install/SKILL.md`) — invoked automatically
   `apps/notesprout_ratta/docs/encryption.md`; for any work on it read the standalone
   `apps/notesprout_ratta/ENCRYPTION_PLAN.md` (not `RATTA_PLAN.md`) — no code review, host-only,
   no ninth point. **Arcs 1–26 are all complete and frozen.** **Arc 27 "Restore" (whole-library
-  restore, PARITY_BACKLOG item 2) is IN PROGRESS — L1 + L2 landed 2026-09-05, L3 next; its
+  restore, PARITY_BACKLOG item 2) is IN PROGRESS — L1 + L2 + L3 landed 2026-09-05, L4 next; its
   reference is the standalone `apps/notesprout_ratta/RESTORE_PLAN.md` (not `RATTA_PLAN.md`),
   phases L1–L6, host-only, no code review in the arc.** **No NINTH extension point
   and no other arc without another user decision. Read `apps/notesprout_ratta/RATTA_PLAN.md`

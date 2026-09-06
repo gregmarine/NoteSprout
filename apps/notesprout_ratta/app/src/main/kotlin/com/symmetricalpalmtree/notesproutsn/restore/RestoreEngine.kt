@@ -112,6 +112,12 @@ object RestoreEngine {
         /** The swap failed and was renamed back; the live library is whole; the process is blind
          *  (the index is closed) and must relaunch. */
         data class RolledBack(val problem: Problem) : Outcome()
+
+        /** The restored index **landed** (the commit marker is live) but something threw before
+         *  the key state finished. The aside is discarded — there is no going back — and the
+         *  relaunch may stop at Unlock, where the backup's key opens it and the parked destination
+         *  is applied (the L2 kill-after-8e path). The caller relaunches. */
+        data class Interrupted(val problem: Problem) : Outcome()
     }
 
     // ── 1. Pre-flight ───────────────────────────────────────────────────────
@@ -250,8 +256,8 @@ object RestoreEngine {
 
     /**
      * D3 steps 5–10. [proven] must have opened the staged index. Runs whole under [NonCancellable]
-     * on IO: a dying screen must not leave the library half-swapped. After a [Outcome.Committed] or
-     * [Outcome.RolledBack] the index is closed and the caller's only way out is
+     * on IO: a dying screen must not leave the library half-swapped. After a [Outcome.Committed],
+     * [Outcome.RolledBack] or [Outcome.Interrupted] the index is closed and the caller's only way out is
      * `BootstrapActivity.relaunchIntent` + `finishAffinity()`.
      */
     suspend fun commit(context: Context, manifest: RestoreManifest, proven: String): Outcome =
@@ -260,7 +266,12 @@ object RestoreEngine {
             try {
                 commitInner(app, manifest, proven)
             } catch (e: Exception) {
-                Log.e(TAG, "commit threw", e)
+                // Only the pre-close half can throw to here (the post-close half has its own catch
+                // below), so the index is still open and nothing live was touched. A park written
+                // in step 5 is taken back, as every other pre-close refusal does.
+                Log.e(TAG, "commit threw before the index closed", e)
+                runCatching { RestoreDestination.clearPark(app) }
+                runCatching { RestoreStaging.discard(app) }
                 Outcome.Refused(Problem.Unexpected(e.javaClass.simpleName))
             }
         }
@@ -304,12 +315,50 @@ object RestoreEngine {
         val oldPassphrase = KeySession.get()
         KeySession.clear()
 
-        // Step 8 — close and swap, renames only.
-        ExtensionStores.closeAll()
-        SnIndex.closeForRotation() // checkpoints, closes, forgets the instance; IndexGuard bounces every screen from here
-
         val live = Live(indexFile(app), gardenDir(app))
         val aside = File(root, ASIDE_DIR)
+        val marks = Marks()
+        return try {
+            // Step 8 — close and swap, renames only.
+            ExtensionStores.closeAll()
+            SnIndex.closeForRotation() // checkpoints, closes, forgets the instance; IndexGuard bounces every screen from here
+            afterClose(app, root, live, aside, staging, manifest, proven, oldPassphrase, marks)
+        } catch (e: Exception) {
+            // The session is cleared and the index may be closed, so `Refused` would be a lie from
+            // here: the caller relaunches. Whether the swap began, and whether the restored index
+            // then landed (the commit marker is live), decides what the person is told; D5's
+            // idempotent plan settles the files either way, and Bootstrap re-runs it on launch.
+            Log.e(TAG, "commit threw after the session was cleared (swap begun: ${marks.swapBegun})", e)
+            val landed = marks.swapBegun && live.index.isFile
+            runCatching { executeRecovery(root, live, aside, staging) }
+                .onFailure { Log.e(TAG, "in-process recovery threw; the next launch finishes it", it) }
+            val problem = Problem.Unexpected(e.javaClass.simpleName)
+            if (landed) {
+                Outcome.Interrupted(problem)
+            } else {
+                runCatching { RestoreDestination.clearPark(app) }
+                oldPassphrase?.let { KeySession.set(it) }
+                Outcome.RolledBack(problem)
+            }
+        }
+    }
+
+    /** What the post-close half has done so far — read by its catch. */
+    private class Marks(var swapBegun: Boolean = false)
+
+    /** D3 steps 8 (the swap) to 10 — everything that runs with the index closed. */
+    private fun afterClose(
+        app: Context,
+        root: File,
+        live: Live,
+        aside: File,
+        staging: File,
+        manifest: RestoreManifest,
+        proven: String,
+        oldPassphrase: String?,
+        marks: Marks,
+    ): Outcome {
+        marks.swapBegun = true
         val failedStep = swap(live, aside, staging)
         if (failedStep != null) {
             Log.e(TAG, "swap failed at step $failedStep; renaming the aside back")

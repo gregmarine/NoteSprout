@@ -18,6 +18,7 @@ import com.symmetricalpalmtree.notesproutsn.core.IndexGuard
 import com.symmetricalpalmtree.notesproutsn.core.RecognizingOverlay
 import com.symmetricalpalmtree.notesproutsn.core.Slog
 import com.symmetricalpalmtree.notesproutsn.core.TopGuard
+import com.symmetricalpalmtree.notesproutsn.crypto.GlobalRotation
 import com.symmetricalpalmtree.notesproutsn.data.backup.BackupEngine
 import com.symmetricalpalmtree.notesproutsn.data.backup.BackupStore
 import com.symmetricalpalmtree.notesproutsn.data.backup.CloudBackupRules
@@ -34,6 +35,7 @@ import com.symmetricalpalmtree.notesproutsn.extension.ExtensionCallException
 import com.symmetricalpalmtree.notesproutsn.extension.ProviderRef
 import com.symmetricalpalmtree.notesproutsn.library.NameDialog
 import com.symmetricalpalmtree.notesproutsn.library.NameRules
+import com.symmetricalpalmtree.notesproutsn.restore.RestoreActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -135,6 +137,7 @@ class BackupActivity : AppCompatActivity() {
         TooltipCompat.setTooltipText(binding.btnBack, binding.btnBack.contentDescription)
         binding.btnChoose.setOnClickListener { onChooseTap() }
         binding.btnRun.setOnClickListener { onRunTap() }
+        binding.btnRestore.setOnClickListener { onRestoreTap() }
         // Registered here and nowhere else: a launcher may not be registered after STARTED.
         cloud = CloudConnectEntry(this) { lifecycleScope.launch { renderCloud() } }
         binding.btnCloudConnect.setOnClickListener { onCloudButtonTap() }
@@ -470,6 +473,30 @@ class BackupActivity : AppCompatActivity() {
                     result.storesFailed,
                 )
             )
+        }
+    }
+
+    // ── Restore (arc 27 / L3) ────────────────────────────────────────────────
+
+    /**
+     * The Restore door (decision 7). The one thing asked here rather than on the other screen is
+     * the rotation marker: it names files a restore is about to delete, so a restore is refused
+     * while one stands. A refusal is a dialog pointing at the Encryption screen's Resume, never a
+     * disabled row — on e-ink that is invisible.
+     */
+    private fun onRestoreTap() {
+        lifecycleScope.launch {
+            val pending = withContext(Dispatchers.IO) { GlobalRotation.hasMarker(applicationContext) }
+            if (isFinishing || isDestroyed) return@launch
+            if (pending) {
+                Dialogs.problem(
+                    this@BackupActivity,
+                    R.string.restore_problem_rotation_title,
+                    R.string.restore_problem_rotation_body,
+                )
+            } else {
+                startActivity(RestoreActivity.intent(this@BackupActivity))
+            }
         }
     }
 

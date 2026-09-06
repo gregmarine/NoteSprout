@@ -7,7 +7,7 @@ unless a standing trap needs checking; its protocol and traps are summarized at 
 file is enough. `ENCRYPTION_PLAN.md` and `DRIVE_PLAN.md` are the shapes this file copies.
 
 **Status:** wizard locked 2026-09-05 · Fable review folded in 2026-09-05 (R1–R7, § Review
-amendments) · L1 ✅ · L2 ✅ · L3 ⬜ · L4 ⬜ · L5 ⬜ · L6 ⬜
+amendments) · L1 ✅ · L2 ✅ · L3 ✅ · L4 ⬜ · L5 ⬜ · L6 ⬜
 
 **Phase letters:** every letter A–Z is spoken for in `RATTA_PLAN.md` except **H** and **L**. This
 arc takes **L**; H stays free.
@@ -324,7 +324,7 @@ on the library volume + rename-only commit (R1); session cleared before the swap
 relaunches rather than reopening (R4); per-item recovery (R5); typed-then-normalized prompt (R6);
 acknowledgement set unconditionally (R7).)*
 
-### ⬜ L3 — the screen, the Backup row, and the local walk
+### ✅ L3 — the screen, the Backup row, and the local walk
 
 - `restore/RestoreActivity` — source pick → backup list (name · N notebooks · date) → confirm
   ("Replace your library?", naming the backup, warning that the backup's own recovery key will be
@@ -342,7 +342,10 @@ acknowledgement set unconditionally (R7).)*
 
 **Questions to resolve at phase start:** whether the source pick is a dialog or two rows on the
 Restore screen · progress granularity (per file vs. per phase) · whether the report names the
-extension stores separately, as the backup report does (W5's call).
+extension stores separately, as the backup report does (W5's call). **Answered 2026-09-05: two rows on the
+Restore screen (the cloud row in the layout, `GONE` until L4) · one non-cancelable dialog, per phase
+with a per-file counter during staging · the report names the stores separately · version stays
+`0.1.0-ratta`.**
 
 ### ⬜ L4 — the cloud source and its walk
 
@@ -555,3 +558,83 @@ gives up (`Problem.NoKey`) → `commit` → report → `relaunchIntent(thenBacku
 `finishAffinity()` on **every** `Outcome`. Discard staging (`RestoreStaging.discard`) when the loop
 is abandoned before `commit` — the engine only discards on its own refusals. The proven passphrase
 lives in the screen's memory between the proof and `commit`, never in a Bundle.
+
+### L3 — Outcome (2026-09-05, Opus build, Fable read + engine fix + the walk by hand)
+
+**Landed — the screen, the door, and the first real restore on the Nomad.** `restore/RestoreActivity`
+(561 lines, `activity_restore.xml` + `item_restore_backup.xml`, manifest `exported="false"`):
+sources pane (caption + *From a folder…*; the cloud row is in the layout and `GONE` until L4) →
+`OpenDocumentTree` with **no** `takePersistableUriPermission` (the grant lives for the showing —
+decision 3) → `SafRestoreSource.listBackups()` under a *Reading folder…* dialog → one bordered row per
+backup (name · "N notebooks · size · index date time"; the folder named by its document-id path,
+never the URI) + *Choose another folder…* → *Replace your library?* (the only cancelable dialog:
+names the backup, says replace-all cannot be brought back, that the backup's own passphrase or
+recovery key may be needed, and that this device's destination is kept) → one non-cancelable,
+button-less progress dialog through `preflight` → `stage` (*Copying n of m…*) → `validate`
+(*Checking…*) → `proveCached` (*Unlocking…*) → the key loop → `commit` (*Installing…*). The key prompt
+inflates `dialog_notebook_passphrase.xml` (body/hint/error swapped), keeps the IME up, hides the
+entry row under the `RESTORE_KEY` lockout with the countdown ticking, calls only
+`RestoreEngine.proveTyped` (which records the attempt), and Cancel discards staging. The proven
+passphrase is one local `val`. Four endings, all dialogs: **Committed** (counts, stores named
+separately, one action *Restart*), **RolledBack** (*Restore failed* / nothing changed, *Restart*),
+**Interrupted** (new — below), **Refused** (a named problem dialog, the screen stays on the list).
+Restart = `BootstrapActivity.relaunchIntent(thenBackup = false)` + `finishAffinity()`. Every
+`Problem` and `RestoreProblem` kind has its own title + body; no toast anywhere. The Backup screen
+gained a *Restore* caption + *Restore from a backup…* row under the Cloud section (711 → 738 lines);
+the tap checks `GlobalRotation.hasMarker` off Main and refuses with a dialog pointing at the
+Encryption screen's Resume.
+
+**Fable's read-back fixed one L2 contract hole, found by the Opus agent:** `commit`'s top-level
+catch answered `Refused(Unexpected)` for *any* throw, including one after `closeForRotation` — and
+`Refused` promises "index open, nothing touched". The commit is now two halves: the pre-close half's
+catch un-parks, discards staging and answers `Refused` (true); the post-close half (`afterClose`,
+under its own catch with a `Marks.swapBegun` flag) runs D5's plan in-process and answers
+**`RolledBack`** when the restored index did not land (aside back, old session restored) or the new
+**`Outcome.Interrupted`** when it did (the marker is live, the aside is gone, the key step threw —
+the relaunch may stop at Unlock, where the backup's key opens it and the park is applied). A throw
+from `closeAll`/`closeForRotation` itself is `RolledBack` with the swap never begun.
+
+**The walk (Nomad, by hand — Fable drove every tap; the SAF pick was the user's):** local backup of
+the dev library (4 copied, 43 skipped, 7 stores, both legs) → `GlobalRotation` `walkpass1` →
+`walkpass2` (45 notebooks, 53 files, ~3.5 min) → Backup → *Restore from a backup…* → *From a folder…*
+→ picker → `Documents/Notesprout-Dev` → the list showed **"dev — 49 notebooks · 24 MB · Sep 5, 2026
+10:26 PM"** → Replace → **first run refused at validate**: *"Backup isn't complete —
+`575aca61-….soil` in this backup is not a Notesprout file…, so nothing was restored. Your library is
+untouched."* That file is a **plaintext** `.soil` dated 2026-08-09 that og Notesprout Dev left in the
+same folder before this app existed; the writer never deletes, so it sat there, and the manifest
+takes every `<uuid>.soil` by name. The refusal was exactly L2's "fail whole, by name" — the library
+was untouched, staging discarded. Moved that one file into a `stale/` sibling (nothing deleted) →
+Replace again → staged 59 files → **the cached `walkpass2` was refused silently and the prompt
+appeared** (*Unlock the backup — Enter the passphrase or recovery key of the library this backup
+came from*) → `wrongkey1`/`2`/`3` → *That key does not open this backup.* twice, then **"Too many
+attempts. Try again in 25 s"** with the entry row hidden → lifted → `walkpass1` → *Installing…* →
+**"Restore complete — Restored 48 notebooks and 8 extension stores from dev."** → on disk: no
+`restore_replaced/`, no `restore_staging/`, index installed, 58 files in `Garden/` → Restart →
+Bootstrap → **the library, not Unlock** (log: `destination re-applied after restore (tree=true,
+cloud=true)`) → the Backup screen names **`Documents/Notesprout-Dev` and the cloud folder `waltest`
+as before, the account still connected from its restored store, both status lines "Never backed
+up"** (stamps cleared — decision 3, the whole point) → *Back up now* copied **everything**: 46
+copied, 1 skipped, 8 stores, on both legs (110 files) → Encryption screen: key set, 45 notebooks →
+a notebook opened with no prompt. **The Nomad dev library is back under `walkpass1`.**
+
+**Walk findings for L5 / L6 (recorded, not decided here):**
+1. **A stale orphan in the backup folder is fatal.** A backup destination shared with og (or any
+   file the writer never deleted) can hold a `<uuid>.soil` the backup's index does not name; a
+   plaintext one refuses the whole restore by name. The refusal is honest and safe, but the person
+   has to find and move the file by hand. L5 should decide whether an orphan (no row in the staged
+   index) may be skipped-and-named rather than fatal; the restored `48` also carried two encrypted
+   orphans (Aug 9 / Aug 29) into `Garden/` as invisible files, and the L3 list's **"49 notebooks"**
+   counted files, not index rows — the count is the listing's, and the doc should say so.
+2. The dialog wording "is not a Notesprout file" is wrong for a plaintext og file — it *is* one,
+   just unencrypted. Reword in L5 to say "is not encrypted, or is damaged".
+3. `probe.legacy.db` / `probe.test.db` (the extension-store self-test's leftovers in `Garden/`) ride
+   every backup and restore as stores, and the rotation re-keys them — the `8 extension stores`
+   includes them and the pre-rename `ext.drive.dev.db`. Harmless; the self-test should clean up
+   (a debug-only chore).
+4. **SAF picker on the Nomad:** breadcrumb taps DO register from adb, folder items do NOT — the
+   standing trap holds for the pick itself. The system folder "Document" (Supernote's) is not
+   "Documents" (Android's) — the backup folder is under the latter.
+
+**Tests:** 1151 (unchanged — the screen's only pure logic is exhaustive `when`s over resource ids).
+No new files over 800 lines. Version `0.1.0-ratta`.
+

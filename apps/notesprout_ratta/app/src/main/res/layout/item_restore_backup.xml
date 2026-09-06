@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One backup row (arc 27 / L3): the folder's name, then the one line that tells two backups
+     apart — "N notebooks · size · when the index was last written".
+
+     A 1dp inkBlack bordered box rather than a separator line: this row is a tap that replaces the
+     whole library, so it reads as a thing to press, not as an entry in a list. The bordered
+     background is also what keeps a ripple off it. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/restoreRow"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="8dp"
+    android:minHeight="@dimen/toolbar_button_size"
+    android:orientation="vertical"
+    android:background="@drawable/shape_bordered"
+    android:focusable="true"
+    android:padding="12dp">
+
+    <TextView
+        android:id="@+id/restoreRowName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="@color/inkBlack"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:singleLine="true"
+        android:ellipsize="middle" />
+
+    <!-- Secondary text stays inkBlack and gets smaller — inkLight is reserved for text meant NOT
+         to be read, and this line is how the person picks the right backup. -->
+    <TextView
+        android:id="@+id/restoreRowDetail"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textColor="@color/inkBlack"
+        android:textSize="13sp" />
+</LinearLayout>

@@ -810,4 +810,74 @@
     <string name="import_keying_device">Use this device\'s key</string>
     <string name="import_keying_new">Set a new notebook passphrase</string>
     <string name="export_keying_keep_notebook">Keep encrypted (this notebook\'s passphrase)</string>
+
+    <!-- Restore (arc 27 / L3) — whole-library restore: the source pick, the backup list, the
+         replace confirmation, the key prompt and every outcome. Every one of those is a dialog and
+         never a toast: this screen exists to answer "is my library back". -->
+    <string name="restore_title">Restore</string>
+    <string name="restore_open">Restore from a backup…</string>
+    <string name="restore_caption">A restore replaces everything on this device with a backup.</string>
+    <string name="restore_from_folder">From a folder…</string>
+    <string name="restore_from_cloud">From the cloud…</string>
+    <string name="restore_folder_caption">Backups in</string>
+    <string name="restore_choose_another">Choose another folder…</string>
+    <string name="restore_reading">Reading folder…</string>
+    <string name="restore_row_detail">%1$s · %2$s · %3$s</string>
+    <string name="restore_notebooks_one">1 notebook</string>
+    <string name="restore_notebooks_many">%1$d notebooks</string>
+
+    <string name="restore_confirm_title">Replace your library?</string>
+    <string name="restore_confirm_body">\"%1$s\" — %2$s, %3$s.\n\nEverything on this device now — every notebook, folder, tag, calendar, scratch pad and setting — will be replaced by this backup, and cannot be brought back.\n\nYou may need the passphrase or recovery key of the library this backup came from.\n\nThis device\'s own backup destination is kept as it is.</string>
+    <string name="restore_confirm_replace">Replace</string>
+
+    <string name="restore_progress_title">Restoring</string>
+    <string name="restore_progress_copying">Copying %1$d of %2$d…</string>
+    <string name="restore_progress_checking">Checking…</string>
+    <string name="restore_progress_unlocking">Unlocking…</string>
+    <string name="restore_progress_installing">Installing…</string>
+    <string name="restore_progress_keep_open">Keep the app open. This can take a while.</string>
+
+    <string name="restore_key_title">Unlock the backup</string>
+    <string name="restore_key_body">Enter the passphrase or recovery key of the library this backup came from.</string>
+    <string name="restore_key_hint">Passphrase or recovery key</string>
+    <string name="restore_key_wrong">That key does not open this backup.</string>
+    <string name="restore_key_unlock">Unlock</string>
+
+    <string name="restore_done_title">Restore complete</string>
+    <string name="restore_done_one_one">Restored %1$d notebook and %2$d extension store from %3$s.</string>
+    <string name="restore_done_one_many">Restored %1$d notebook and %2$d extension stores from %3$s.</string>
+    <string name="restore_done_many_one">Restored %1$d notebooks and %2$d extension store from %3$s.</string>
+    <string name="restore_done_many_many">Restored %1$d notebooks and %2$d extension stores from %3$s.</string>
+    <string name="restore_restart">Restart</string>
+    <string name="restore_failed_title">Restore failed</string>
+    <string name="restore_failed_body">Nothing was changed. Your library is as it was. Notesprout SN will restart.</string>
+    <string name="restore_interrupted_title">Restore didn\'t finish</string>
+    <string name="restore_interrupted_body">The backup is installed, but a last step failed (%1$s). Notesprout SN will restart; if it asks, unlock it with the passphrase or recovery key of the library this backup came from.</string>
+
+    <string name="restore_problem_rotation_title">Finish the key change first</string>
+    <string name="restore_problem_rotation_body">A passphrase change is part-way through. Open Encryption and finish it with Resume, then restore. Nothing has been changed.</string>
+    <string name="restore_problem_held_title">A notebook is open</string>
+    <string name="restore_problem_held_body">A notebook is still open in the app. Close it and try again. Nothing has been changed.</string>
+    <string name="restore_problem_space_title">Not enough space</string>
+    <string name="restore_problem_space_body">This backup needs about %1$s more free space on this device. Nothing has been changed.</string>
+    <string name="restore_problem_unreachable_title">Folder unavailable</string>
+    <string name="restore_problem_unreachable_body">That folder is no longer there, or Notesprout SN has lost access to it. Choose it again. Nothing has been changed.</string>
+    <string name="restore_problem_listing_title">Couldn\'t read that folder</string>
+    <string name="restore_problem_listing_body">That folder could not be read. Nothing has been changed — try again, or choose another folder.</string>
+    <string name="restore_problem_not_backup_title">No backup here</string>
+    <string name="restore_problem_not_backup_body">A backup is a folder holding notesprout.db, or a folder whose subfolders hold one. Nothing here is one — choose the folder your backups were written to.</string>
+    <string name="restore_problem_fetch_title">Couldn\'t copy the backup</string>
+    <string name="restore_problem_fetch_body">%1$s could not be copied out of the backup, so nothing was restored. Your library is untouched.</string>
+    <string name="restore_problem_invalid_title">Backup isn\'t complete</string>
+    <string name="restore_problem_invalid_body">%1$s in this backup is not a Notesprout file, or is no longer there, so nothing was restored. Your library is untouched.</string>
+    <string name="restore_problem_no_key_title">Backup not unlocked</string>
+    <string name="restore_problem_no_key_body">The backup was not unlocked, so nothing was restored. Your library is untouched.</string>
+    <string name="restore_problem_park_title">Couldn\'t start the restore</string>
+    <string name="restore_problem_park_body">This device\'s backup settings could not be set aside first, so nothing was changed.</string>
+    <string name="restore_problem_swap_title">Restore failed</string>
+    <string name="restore_problem_swap_body">The library could not be replaced (step %1$s). Nothing was changed — your library is as it was.</string>
+    <string name="restore_problem_unexpected_title">Restore didn\'t finish</string>
+    <string name="restore_problem_unexpected_body">Something went wrong (%1$s) and nothing was restored. Your library is untouched.</string>
+    <string name="restore_no_picker_title">No folder picker</string>
+    <string name="restore_no_picker_body">This device has no app for choosing a folder, so a backup folder cannot be chosen here.</string>
 </resources>

@@ -124,6 +124,14 @@
             android:exported="false"
             android:screenOrientation="portrait" />
 
+        <!-- Restore (arc 27 / L3, decision 7): whole-library restore, reached only from the
+             Backup screen's Restore row. Carries no extras — the source is picked on the screen
+             and the tree grant is never persisted (a restore never sets a destination). -->
+        <activity
+            android:name=".restore.RestoreActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
         <activity
             android:name=".library.FolderPickerActivity"
             android:exported="false"

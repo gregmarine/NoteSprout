@@ -247,8 +247,12 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   `RestoreEngine.recoverInterrupted` as **the first line of `BootstrapActivity.boot()`**; pure
   `RestoreDestination.merge` + the `SecurePrefs` park applied by Bootstrap and Unlock on the first
   open after the relaunch; `SnIndex.closeForRotation` now serves "rotation or restore";
-  `AttemptLimiter.RESTORE_KEY`; `SoilOpenFiles.anyOpen()`; **nothing calls `commit` yet — no UI**),
-  L3 next** — whole-library restore,
+  `AttemptLimiter.RESTORE_KEY`; `SoilOpenFiles.anyOpen()`), **L3 landed 2026-09-05**
+  (`restore/RestoreActivity` — sources pane → folder pick with **no persisted grant** → backup list →
+  *Replace your library?* → one progress dialog → the key prompt under `RESTORE_KEY` → four endings
+  (Committed / RolledBack / **Interrupted** — the index landed but the key step threw / Refused),
+  all dialogs; the Backup screen's *Restore from a backup…* row; the first real restore walked on
+  the Nomad against a rotation-made foreign backup), L4 (cloud source) next** — whole-library restore,
   `PARITY_BACKLOG.md` item 2. **Read the standalone `RESTORE_PLAN.md`, not `RATTA_PLAN.md`, for any
   work on it**: phases L1–L6, host-only, no point, no API bump, version stays `0.1.0-ratta`, and
   **no `/code-review` in the arc** (L5 is a failure-injection pass instead). The four decisions that
