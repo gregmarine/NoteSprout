@@ -545,8 +545,9 @@ calls `commit` yet (that is L3's screen).** New in `restore/`:
 invariants over all 48 states incl. idempotency through a file-system model; `RestoreDestinationTest`
 8; `RestoreEngineTest` 17 — both gates and the validation rule over a real temp staging dir) —
 1112 → **1151**, 0 failures. Files: `RestoreEngine` 430 lines, `RestoreRecovery` 91,
-`RestoreDestination` 124. Debug build installed on the Nomad for a cold-launch check of the two new
-Bootstrap lines (no restore performed — nothing calls `commit` yet). Version `0.1.0-ratta`.
+`RestoreDestination` 124. Debug build installed on the Nomad; the user opened it by hand and it came up into the
+library as before — the two new Bootstrap lines cost nothing visible (no restore performed —
+nothing calls `commit` yet). Version `0.1.0-ratta`.
 
 **Read-back notes for L3:** the screen's order is preflight → stage → validate → `proveCached`,
 else loop `AttemptLimiter.check(RESTORE_KEY)` → prompt → `proveTyped` until a key opens or the person
