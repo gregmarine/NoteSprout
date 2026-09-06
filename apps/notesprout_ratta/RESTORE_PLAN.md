@@ -7,7 +7,7 @@ unless a standing trap needs checking; its protocol and traps are summarized at 
 file is enough. `ENCRYPTION_PLAN.md` and `DRIVE_PLAN.md` are the shapes this file copies.
 
 **Status:** wizard locked 2026-09-05 · Fable review folded in 2026-09-05 (R1–R7, § Review
-amendments) · L1 ✅ · L2 ✅ · L3 ✅ · L4 ✅ · L5 🧪 (code + Nomad injections done 2026-09-06; two user-gated walk items open, see the ledger) · L6 ⬜
+amendments) · L1 ✅ · L2 ✅ · L3 ✅ · L4 ✅ · L5 🧪 (code + Nomad injections done 2026-09-06; the salted-folder walk passed; ONE item open — the stale cloud `-wal`, see the ledger) · L6 ⬜
 
 **Phase letters:** every letter A–Z is spoken for in `RATTA_PLAN.md` except **H** and **L**. This
 arc takes **L**; H stays free.
@@ -775,8 +775,14 @@ cloud `waltest4` folder and the local `dev/` folder (the writer never deletes) �
 either names the dead one and leaves it out; the probe pair restores as stores until a backup run
 after the self-test cleanup… which never deletes them either. Harmless.**
 
+**Walked by the user 2026-09-06 11:27 (read back from the Nomad's log):** the salted local folder
+— 59 files staged, **4 left out and named** (`575aca61` plaintext, `d5607758` encrypted orphan,
+`foreign.db`, `ext.drive.dev.db`; the other encrypted "orphan" from L3's note is the alive
+`NOTEBOOK`-scope row, so it restores — the rule is the index, not the file's age), committed,
+none of the salted names in `Garden/` afterwards. Item 1 below is ✅.
+
 **🧪 Open — needs a hand (cannot be driven from adb):**
-1. **The salted local folder + orphans.** `Documents/Notesprout-Dev/dev/` is salted now: the
+1. ✅ **The salted local folder + orphans.** `Documents/Notesprout-Dev/dev/` is salted now: the
    plaintext og `575aca61-….soil` moved back in from `stale/`, plus `….soil.part`, `.soil.old`,
    `.soil.rekey.tmp`, `.soil.old.bak`, a lone `….soil-wal`, `notesprout.db-shm`, a plaintext
    `foreign.db`, the dead `ext.drive.dev.db`, and the two encrypted orphans from before (Aug 9 /
