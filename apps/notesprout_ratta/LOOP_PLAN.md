@@ -6,7 +6,7 @@ cross-session memory for the arc: read it whole at every phase start, together w
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this file
 is enough. `OBJECTS_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — wizard locked 2026-09-06.** LE1 🧪 · LE2 ⬜ · LE3 ⬜ · LE4 ⬜.
+**Status: 🔄 IN PROGRESS — wizard locked 2026-09-06.** LE1 ✅ · LE2 ⬜ · LE3 ⬜ · LE4 ⬜.
 
 **Phase code:** **LE** — the first two-letter code; every single letter A–Z is spoken for in
 `RATTA_PLAN.md` (H and L went to arcs 28 and 27).
@@ -206,7 +206,7 @@ precedent being the lasso's own re-tap popup.
 
 ## Phases
 
-### 🧪 LE1 — The engine tool (Fable; g-paper 0.1.28; SN re-pin)
+### ✅ LE1 — The engine tool (Fable; g-paper 0.1.28; SN re-pin)
 
 **Questions to resolve at phase start:** app version (stays `0.1.0-ratta`?).
 
@@ -314,3 +314,23 @@ explain, wait, then ask.
 ## Ledger
 
 *(one Outcome entry per phase as it closes)*
+
+### LE1 — Outcome (2026-09-06) ✅ (g-paper `a0796d1` = 0.1.28 · SN `f0ffe408`)
+
+- **Engine:** `Tool.LASSO_ERASER`, `PaperListener.onLassoErased(strokeIds, contentIds)` with the
+  forwarding default, `CanvasPaperView.completeLassoErase` on the scribble-consume recipe over the
+  shared `outlineHits` (selection builder + eraser now hit-test through one function), tool setter
+  drops a standing selection when the eraser is armed. Ratta: `SupernoteInk.Pen.CROSS` at
+  `LASSO_TRAIL_EMR`, contact marked as an outline so the lift runs `releaseGestureTrace`. Onyx:
+  `capturesOutline` widening, lasso trail style, **not hardware-tested**. g-paper docs (`api.md`
+  tool + listener tables + "Lasso eraser (0.1.28)" section, `host-responsibilities.md` undo row +
+  host-content sentence, `PLAN.md` Phase 16).
+- **Host:** pin 0.1.27 → 0.1.28; the debug eraser re-tap door in `NotebookToolbar` (LE2 removes
+  it). All JVM suites green (`./gradlew test`, exit 0).
+- **Walk (by hand on the Nomad, the user, 2026-09-06): all nine items passed** — x-trail live and
+  retracted, one-frame erase, whole-object for heading / shape / sticky / link, undo in place, no
+  paste on a bare tap, empty loop leaves nothing, barrel point-erases, arming drops a selection,
+  return to point eraser and pen clean.
+- **Next:** LE2 — `EraserBar` in `:sn-screen`, `PaperToolbar` + `NotebookToolbar` re-tap and icon
+  swap, `Action.LassoErased` + `EraseKind`, the notebook and sticky editor overrides.
+
