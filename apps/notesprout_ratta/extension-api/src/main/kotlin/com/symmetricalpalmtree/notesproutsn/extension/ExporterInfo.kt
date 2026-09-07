@@ -10,10 +10,13 @@ import android.os.Parcelable
  * rule), and a descriptor that fails them drops that exporter with a log line, never a crash.
  *
  * Wire form: `String formatLabel · String fileExtension · String mimeType ·
- * typed OptionDescriptor[] · int sourceKind` — the last is the arc-18 compatible tail: an
- * old-shape descriptor ends after the option list and reads as [ExporterContract.SOURCE_SOIL]
- * (the tail changed nothing for existing exporters), and an old reader stops before it. A further
- * tail may be appended in a later version; readers of this version stop after `sourceKind`.
+ * typed OptionDescriptor[] · int sourceKind · int bundleVersion` — the last two are compatible
+ * tails. `sourceKind` is arc 18's: an old-shape descriptor ends after the option list and reads
+ * as [ExporterContract.SOURCE_SOIL]. `bundleVersion` is arc 28's (D7): the highest
+ * [PageBundle] version a [ExporterContract.SOURCE_PAGES] exporter reads, absent = 1, so a host
+ * facing an exporter that never heard of endnotes writes the version-1 bundle it always did. An
+ * old reader stops before whichever tail it does not know; readers of this version stop after
+ * `bundleVersion`. Neither tail moved `API_VERSION`.
  */
 class ExporterInfo(
     val formatLabel: String,
@@ -21,9 +24,11 @@ class ExporterInfo(
     val mimeType: String,
     val options: List<OptionDescriptor>,
     val sourceKind: Int = ExporterContract.SOURCE_SOIL,
+    val bundleVersion: Int = PageBundle.VERSION_1,
 ) : Parcelable {
 
     init {
+        require(bundleVersion >= PageBundle.VERSION_1) { "bundle version $bundleVersion < 1" }
         require(
             sourceKind == ExporterContract.SOURCE_SOIL ||
                 sourceKind == ExporterContract.SOURCE_PAGES ||
@@ -52,6 +57,7 @@ class ExporterInfo(
         dest.writeString(mimeType)
         dest.writeTypedList(options)
         dest.writeInt(sourceKind)
+        dest.writeInt(bundleVersion)
     }
 
     override fun describeContents(): Int = 0
@@ -66,7 +72,9 @@ class ExporterInfo(
             // parcel simply runs out here and the absent tail means SOURCE_SOIL.
             val sourceKind =
                 if (parcel.dataAvail() > 0) parcel.readInt() else ExporterContract.SOURCE_SOIL
-            return ExporterInfo(formatLabel, fileExtension, mimeType, options, sourceKind)
+            val bundleVersion =
+                if (parcel.dataAvail() > 0) parcel.readInt() else PageBundle.VERSION_1
+            return ExporterInfo(formatLabel, fileExtension, mimeType, options, sourceKind, bundleVersion)
         }
 
         @JvmField

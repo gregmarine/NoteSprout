@@ -7,8 +7,8 @@ whole at every phase start, together with the root `CLAUDE.md` and `apps/notespr
 traps are summarized at the end so this file is enough. `RESTORE_PLAN.md`, `ENCRYPTION_PLAN.md` and
 `DRIVE_PLAN.md` are the shapes this file copies.
 
-**Status: H5 ✅ landed 2026-09-06 — H6 ⬜ next.** H1 ✅ · H2 ✅ · H3 ✅ · H4 ✅ · H5 ✅ · H6 ⬜ ·
-H7 ⬜. When the arc closes, `docs/objects.md` is the reference.
+**Status: H6 ✅ landed 2026-09-06 (2830 JVM tests green; walked by hand on the Nomad — every
+item passes) — H7 ⬜ next.** H1 ✅ · H2 ✅ · H3 ✅ · H4 ✅ · H5 ✅ · H6 ✅ · H7 ⬜. When the arc closes, `docs/objects.md` is the reference.
 
 **Phase letter:** **H** — the last free letter in `RATTA_PLAN.md`'s A–Z (L went to arc 27). After
 this arc every letter is spoken for; the next arc picks a two-letter code.
@@ -402,7 +402,7 @@ on the walk** (Back already saves-and-closes; a centred "Sticky Note" title took
 content mark** — but the icon's interior is painted **white** under the outline (the template must
 never bleed through the glyph); the outline itself stays the Tabler outlined form.
 
-### ⬜ H6 — PDF endnotes + `/code-review` on the arc range + fixes (Fable review · Opus fixes · Sonnet tests)
+### ✅ H6 — PDF endnotes (the `/code-review` was waived by the user at phase start)
 
 - D7 as written: `PageBundle` v2 + reader compatibility tests (v1 stream through a v2 reader; a v2
   trailer round-trip; a v1 write when `linkCount == 0`) · `ExporterInfo.bundleVersion` tail ·
@@ -714,4 +714,52 @@ and an `AskUserQuestion` never share one turn — explain, wait, then ask.
   is once-only, so an Activity recreate (not just a process death) finishes empty-handed —
   accepted, the editor is portrait-locked with `keyboard|keyboardHidden` in `configChanges`.
 - **Open for H6:** nothing new. The endnote render reads `StickyStore.content` after a drain.
+
+### H6 — Outcome (2026-09-06)
+
+- **Phase-start answers:** version stays `0.1.0-ratta`; **no code review this phase** (the user's
+  call at phase start — the arc-range `/code-review high` is dropped, H7 stays docs-only); caption
+  = og's wording verbatim (`Note N — from page P`), the notebook is not named.
+- **`PageBundle` v2** (`extension-api`): `VERSION = 2`, `VERSION_1 = 1`, `MAX_LINKS = 65536`,
+  `Link(fromPage, l, t, r, b, toPage)` (1-based pages, from-page px, non-empty finite rect —
+  validated in the constructor). `Writer(out, pageCount, links = emptyList())` writes **v1
+  byte-for-byte when `links` is empty** (`writer.version` says which) and the trailer in `close()`;
+  every link is checked against `pageCount` up front. `Reader` accepts 1 or 2 (`reader.version`);
+  `readLinks()` after the last page (before = `IOException`; v1 = empty; count capped before any
+  allocation; page numbers checked; truncation named). 11 `PageBundleTest`s (v1 bytes identical
+  with and without an explicit empty list · v1 through the v2 reader · trailer round-trip ·
+  writer refusals · four bad-trailer shapes incl. a v2 stream with no trailer at all).
+- **`ExporterInfo.bundleVersion: Int = 1`** — the second compatible tail after `sourceKind`
+  (`dataAvail()`-gated read, `require(>= 1)`); **no `API_VERSION` bump.**
+- **`:ext-pdf`:** `PdfDescriptor.info()` declares `bundleVersion = PageBundle.VERSION`; pure
+  `PdfLinks.annotations(links, pageHeights)` does the one conversion (0-based pages, `lly = pageH −
+  b`, `ury = pageH − t`; a link off the page list is refused, never dropped); `PdfAssembly` reads
+  the trailer after the pages, and — only when it is non-empty — adds one borderless
+  `PDAnnotationLink` + `PDActionGoTo` + `PDPageFitDestination` per entry in a `"linking the
+  endnotes"` stage **before** `protect()`. A sticky-free bundle is v1 → empty trailer → the
+  annotation pass never runs → byte-identical PDF (pinned by `PdfLinksTest.noLinksMeansNoAnnotations`
+  + the v1-bytes test on the writer).
+- **Host:** `SoilDao.stickyIdsWithContent()` (one notebook-wide JOIN — a note with no live stroke
+  gets no endnote; `FakeSoilDao` mirrors it). Pure `export/Endnotes` (`plan(sources, pageCount)`:
+  numbering = page order then z-order, loose before link-wrapped; note page = `pageCount + N`;
+  content size from the row's `flags`, **the source page's size when the row carries none**, clamped
+  to `MAX_DIMENSION_PX` with the 60 px caption; two links per note — icon → note, caption strip →
+  source; a zero-area icon gets no icon link). `ExportRender.render(..., bundleVersion)` plans the
+  endnotes **before** the first page (the writer declares count + links up front), walks the pages,
+  recycles the template, then bakes each note: strokes clipped to the content area, a 1 px rule,
+  `Note N — from page P` in 32 px sans at a 16 px inset, WEBP q100 like a page, one bitmap alive at
+  a time; progress counts the notes. `ExportActivity` passes `c.info.bundleVersion`, reads
+  `hasStickyContent` on the **same** `readOnce` as `hasDocument` (a Pair), and shows the one-line
+  `export_endnotes_unavailable` caption under the options when
+  `ExportDocumentRules.endnotesUnavailable(sourceKind, bundleVersion, hasStickyContent,
+  documentSource)` — a v1 page exporter with notes to lose, pages (not the document) being drawn.
+  `DocumentPdfRender` untouched (no links → v1). Tests: `EndnotesTest` (8),
+  `ExportRenderEndnotesTest` (2, over the fake DAO — order, skip-empty, wrapped, size fallback),
+  `ExportDocumentRulesTest` +1. **1470 :app tests · 2830 across the modules, all green.**
+- **Traps learned:** zsh globs a bare `====` echo separator (use quoted strings in shell
+  one-liners); `PageBundle.Link` must be built from the plan side only after the size clamp, or a
+  capped page refuses its own caption link.
+- **Walk:** by hand on the Nomad (host + `:ext-pdf` debug APKs) — all six items pass: endnote
+  pages + captions, icon → note and caption → page links both ways, the protected PDF keeps them,
+  a sticky-free notebook exports as before, an empty note gets no page, the page draws icons only.
 

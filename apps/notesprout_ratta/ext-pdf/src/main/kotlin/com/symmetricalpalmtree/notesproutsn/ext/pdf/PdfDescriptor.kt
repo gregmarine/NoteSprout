@@ -3,6 +3,7 @@ package com.symmetricalpalmtree.notesproutsn.ext.pdf
 import com.symmetricalpalmtree.notesproutsn.extension.ExporterContract
 import com.symmetricalpalmtree.notesproutsn.extension.ExporterInfo
 import com.symmetricalpalmtree.notesproutsn.extension.OptionDescriptor
+import com.symmetricalpalmtree.notesproutsn.extension.PageBundle
 
 /**
  * What this exporter answers `describe()` with — lifted out of the service so the shape is pinned
@@ -23,6 +24,10 @@ import com.symmetricalpalmtree.notesproutsn.extension.OptionDescriptor
  *
  * The labels are the exporter's own words, which is the point of a declarative descriptor: the host
  * draws them with its e-ink widgets and never has to know what they mean.
+ *
+ * `bundleVersion` = [PageBundle.VERSION] (arc 28 / D7): this assembly reads the link trailer and
+ * turns it into PDF link annotations, so the host may send the endnote pages. A host older than
+ * the tail stops reading before it and sends version 1, which this reader accepts unchanged.
  */
 internal object PdfDescriptor {
 
@@ -51,5 +56,6 @@ internal object PdfDescriptor {
         mimeType = "application/pdf",
         options = options,
         sourceKind = ExporterContract.SOURCE_PAGES,
+        bundleVersion = PageBundle.VERSION,
     )
 }

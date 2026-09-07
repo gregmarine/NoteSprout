@@ -242,6 +242,9 @@
     <string name="export_source_caption">Source</string>
     <string name="export_source_pages">Notebook pages</string>
     <string name="export_source_document">Document</string>
+    <!-- Arc 28 / D7: shown under the options when the chosen page exporter reads only the
+         version-1 bundle and the notebook has sticky notes with content. -->
+    <string name="export_endnotes_unavailable">Sticky notes will appear as icons only — this exporter does not support endnotes.</string>
     <string name="export_assembling">Assembling the document…</string>
     <string name="export_no_document_body">Nothing has been written in this notebook yet, so there is no document to export. Nothing was exported and your notebook is untouched.</string>
 

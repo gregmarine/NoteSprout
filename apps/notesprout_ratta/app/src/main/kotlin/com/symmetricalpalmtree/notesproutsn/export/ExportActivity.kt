@@ -166,6 +166,13 @@ class ExportActivity : AppCompatActivity() {
      *  "cannot answer" is not an answer worth remembering. */
     private var documentAnswer: Boolean? = null
 
+    /** Whether this notebook holds a sticky note with content (arc 28 / D7) — read with
+     *  [documentAnswer] on the same open and remembered for the same reason. It decides one line:
+     *  a page exporter that reads only the version-1 bundle gets the notes as icons, and the
+     *  screen says so before the tap rather than after. */
+    private var hasStickyContent = false
+    private var stickyAnswer: Boolean? = null
+
     /** The host's own Source answer for a [ExporterContract.SOURCE_PAGES] exporter: false = the
      *  notebook's pages (what this screen has always exported), true = the document laid out on
      *  paper. Saved and restored like the pick, and forced back to false whenever the row that
@@ -401,10 +408,18 @@ class ExportActivity : AppCompatActivity() {
     private suspend fun loadCandidates(): List<Candidate> {
         if (!resolveSourceKey()) return emptyList()
         loadCloud()
-        hasDocument = documentAnswer
-            ?: SoilDatabase.readOnce(this, notebookId, sourceKey!!) { it.hasLiveDocument() }
-                ?.also { documentAnswer = it }
-            ?: false
+        if (documentAnswer == null || stickyAnswer == null) {
+            // One open answers both questions (the M11 finding: a SQLCipher open per boolean).
+            val answers = SoilDatabase.readOnce(this, notebookId, sourceKey!!) {
+                it.hasLiveDocument() to it.stickyIdsWithContent().isNotEmpty()
+            }
+            if (answers != null) {
+                documentAnswer = answers.first
+                stickyAnswer = answers.second
+            }
+        }
+        hasDocument = documentAnswer ?: false
+        hasStickyContent = stickyAnswer ?: false
         val refs = ExtensionRegistry.exporters(this)
         val kept = ArrayList<Candidate>(refs.size)
         for (ref in refs) {
@@ -600,6 +615,16 @@ class ExportActivity : AppCompatActivity() {
                 }
                 // No other kind reaches here: an exporter declaring one was dropped at discovery.
             }
+        }
+
+        // Arc 28 / D7: the one line a version-1 page exporter owes the user when the notebook has
+        // notes with content — they go out as icons only, and the endnotes need a newer exporter.
+        // Not shown for the Document source, which draws no page and so no icon.
+        if (ExportDocumentRules.endnotesUnavailable(
+                c.info.sourceKind, c.info.bundleVersion, hasStickyContent, documentSource && hasDocument,
+            )
+        ) {
+            binding.options.addView(panel.caption(getString(R.string.export_endnotes_unavailable)))
         }
 
         // Where the finished file goes (arc 25 / V3) — the host's second question, after everything
@@ -1019,7 +1044,10 @@ class ExportActivity : AppCompatActivity() {
                     c.info.sourceKind == ExporterContract.SOURCE_DOCUMENT -> assembledDocument(c)
                     c.info.sourceKind != ExporterContract.SOURCE_PAGES -> keyedArtifact(c)
                     documentSource && hasDocument -> renderedDocumentPages()
-                    else -> renderedPages(includeTemplate = ExportOptions.includeTemplate(c.info, values))
+                    else -> renderedPages(
+                        includeTemplate = ExportOptions.includeTemplate(c.info, values),
+                        bundleVersion = c.info.bundleVersion,
+                    )
                 }
                 val streamFile = when (prepared) {
                     is StreamSource.Failed -> {
@@ -1207,9 +1235,14 @@ class ExportActivity : AppCompatActivity() {
      * [includeTemplate] is the one option the **host** executes for this source kind (D2): off, the
      * page bakes on white ground. It has to be answered here because there is no paper left in the
      * bundle for an extension to add or remove afterwards.
+     *
+     * [bundleVersion] is the exporter's declared ceiling (arc 28 / D7): the sticky-note endnotes
+     * and their link trailer go out only to an exporter that said it reads version 2.
      */
-    private suspend fun renderedPages(includeTemplate: Boolean): StreamSource {
-        val outcome = ExportRender.render(applicationContext, notebookId, includeTemplate, pageProgress(), sourceKey)
+    private suspend fun renderedPages(includeTemplate: Boolean, bundleVersion: Int): StreamSource {
+        val outcome = ExportRender.render(
+            applicationContext, notebookId, includeTemplate, pageProgress(), sourceKey, bundleVersion,
+        )
         return when (outcome) {
             is ExportRender.Outcome.Ready -> StreamSource.Ready(outcome.file)
             is ExportRender.Outcome.Failed -> StreamSource.Failed(getString(ExportMessages.of(outcome.problem)))

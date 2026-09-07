@@ -19,6 +19,8 @@ class PdfDescriptorTest {
         assertEquals("application/pdf", info.mimeType)
         // A PDF exporter can never receive the .soil: no key crosses the seam.
         assertEquals(ExporterContract.SOURCE_PAGES, info.sourceKind)
+        // Arc 28 / D7: this assembly annotates the link trailer, so it asks for the v2 bundle.
+        assertEquals(com.symmetricalpalmtree.notesproutsn.extension.PageBundle.VERSION, info.bundleVersion)
         // Declaration order is panel order — the paper question before the password one.
         assertEquals(
             listOf(ExporterContract.OPTION_PAGE_TEMPLATE, ExporterContract.OPTION_PROTECT),

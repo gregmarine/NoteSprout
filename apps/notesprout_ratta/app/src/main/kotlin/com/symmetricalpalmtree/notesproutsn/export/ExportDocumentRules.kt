@@ -2,6 +2,7 @@ package com.symmetricalpalmtree.notesproutsn.export
 
 import com.symmetricalpalmtree.notesproutsn.extension.ExporterContract
 import com.symmetricalpalmtree.notesproutsn.extension.ExporterInfo
+import com.symmetricalpalmtree.notesproutsn.extension.PageBundle
 import com.symmetricalpalmtree.notesproutsn.markdown.MarkdownText
 
 /**
@@ -86,4 +87,21 @@ object ExportDocumentRules {
      *  [ExporterContract.SOURCE_PAGES] exporter, and only when there is a document to offer. */
     fun sourceRowVisible(hasDocument: Boolean, sourceKind: Int): Boolean =
         hasDocument && sourceKind == ExporterContract.SOURCE_PAGES
+
+    /**
+     * Arc 28 / D7: does the screen owe the one-line endnote notice? Yes when a page exporter that
+     * reads only the version-1 [com.symmetricalpalmtree.notesproutsn.extension.PageBundle] is the
+     * live choice, the notebook holds a note with content, and the pages (not the document) are
+     * what will be drawn — the notes then go out as icons only.
+     */
+    fun endnotesUnavailable(
+        sourceKind: Int,
+        bundleVersion: Int,
+        hasStickyContent: Boolean,
+        documentSource: Boolean,
+    ): Boolean =
+        sourceKind == ExporterContract.SOURCE_PAGES &&
+            bundleVersion < PageBundle.VERSION &&
+            hasStickyContent &&
+            !documentSource
 }

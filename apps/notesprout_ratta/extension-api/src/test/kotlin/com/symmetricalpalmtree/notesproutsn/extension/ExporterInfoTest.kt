@@ -82,4 +82,16 @@ class ExporterInfoTest {
         assertThrows(IllegalArgumentException::class.java) { info(options = many) }
         assertThrows(IllegalArgumentException::class.java) { info(options = listOf(keying, keying)) }
     }
+
+    @Test
+    fun bundleVersionDefaultsToOneAndRejectsZero() {
+        // Arc 28 / D7: the tail's absence means the arc-18 bundle, exactly as an old-shape parcel
+        // reads; an exporter claiming version 0 is malformed.
+        assertEquals(PageBundle.VERSION_1, info().bundleVersion)
+        val v2 = ExporterInfo("PDF document", "pdf", "application/pdf", emptyList(), ExporterContract.SOURCE_PAGES, PageBundle.VERSION)
+        assertEquals(PageBundle.VERSION, v2.bundleVersion)
+        assertThrows(IllegalArgumentException::class.java) {
+            ExporterInfo("PDF document", "pdf", "application/pdf", emptyList(), ExporterContract.SOURCE_PAGES, 0)
+        }
+    }
 }

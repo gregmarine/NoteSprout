@@ -139,4 +139,19 @@ class ExportDocumentRulesTest {
         assertFalse(ExportDocumentRules.sourceRowVisible(hasDocument = true, sourceKind = ExporterContract.SOURCE_SOIL))
         assertFalse(ExportDocumentRules.sourceRowVisible(hasDocument = true, sourceKind = ExporterContract.SOURCE_DOCUMENT))
     }
+
+    @Test
+    fun theEndnoteNoticeShowsOnlyForAVersionOnePageExporterWithNotesToLose() {
+        val pages = ExporterContract.SOURCE_PAGES
+        assertTrue(ExportDocumentRules.endnotesUnavailable(pages, 1, hasStickyContent = true, documentSource = false))
+        // A v2 exporter carries the endnotes — nothing to say.
+        assertFalse(ExportDocumentRules.endnotesUnavailable(pages, 2, hasStickyContent = true, documentSource = false))
+        // No notes with content — nothing to lose.
+        assertFalse(ExportDocumentRules.endnotesUnavailable(pages, 1, hasStickyContent = false, documentSource = false))
+        // The document source draws no page and so no icon.
+        assertFalse(ExportDocumentRules.endnotesUnavailable(pages, 1, hasStickyContent = true, documentSource = true))
+        // Only a page exporter renders pages at all.
+        assertFalse(ExportDocumentRules.endnotesUnavailable(ExporterContract.SOURCE_SOIL, 1, hasStickyContent = true, documentSource = false))
+        assertFalse(ExportDocumentRules.endnotesUnavailable(ExporterContract.SOURCE_DOCUMENT, 1, hasStickyContent = true, documentSource = false))
+    }
 }

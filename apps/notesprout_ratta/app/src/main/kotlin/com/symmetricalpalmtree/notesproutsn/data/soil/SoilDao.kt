@@ -143,6 +143,16 @@ interface SoilDao {
     )
     suspend fun hasLiveDocument(): Boolean
 
+    /** Ids of every live sticky note that holds at least one live stroke — the notes the PDF
+     *  endnotes (arc 28 / D7) render; an empty note has nothing to show and gets no page. Asked
+     *  once per bake, notebook-wide, so the page walk never opens a note's blobs to find out. */
+    @Query(
+        "SELECT DISTINCT s.id FROM notebook s JOIN notebook c ON c.parentId = s.id " +
+            "WHERE s.type = 'sticky_note' AND s.deletedAt IS NULL " +
+            "AND c.type = 'stroke' AND c.deletedAt IS NULL",
+    )
+    suspend fun stickyIdsWithContent(): List<String>
+
     /**
      * Every live link row as `id → its page`: the Contents gather's one link → page hop. A wrap
      * re-parents its children page → link but leaves their **coordinates page-absolute**, so this

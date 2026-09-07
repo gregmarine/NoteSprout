@@ -15,6 +15,10 @@ import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
 import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
 import com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory
+import com.tom_roush.pdfbox.pdmodel.interactive.action.PDActionGoTo
+import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink
+import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDBorderStyleDictionary
+import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.destination.PDPageFitDestination
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.FilterOutputStream
@@ -43,6 +47,13 @@ import java.io.OutputStream
  * failure, not a page to skip.** The host corroborates what it is told; a PDF quietly short of a
  * page — or holding one drawn at the wrong scale — would be reported as a success. So both are an
  * [IllegalStateException] naming the page number and the sizes; sizes are not content.
+ *
+ * **Endnote links (arc 28 / D7).** A version-2 bundle ends in a link trailer — the host's
+ * sticky-note endnotes: the icon on a page jumps to the note's page at the back, the note's caption
+ * jumps home. Each becomes a borderless `Link` annotation with a `GoTo` fit-page destination
+ * ([PdfLinks] does the flip into PDF space), added **before** the document is protected so the
+ * password path encrypts them with everything else. A version-1 bundle has no trailer and the
+ * pass adds nothing — a sticky-free PDF is byte-identical to the arc-18 one.
  *
  * Every `IOException` is re-thrown as an [IllegalStateException] naming the stage — reading the
  * bundle, writing the PDF, or protecting it — and never a path, a payload or a secret, because only
@@ -77,15 +88,23 @@ internal object PdfAssembly {
         var secret = exportSecret
         val document = PDDocument()
         try {
+            var links: List<PageBundle.Link> = emptyList()
+            val heights = ArrayList<Int>()
             ParcelFileDescriptor.AutoCloseInputStream(source).use { input ->
                 stage("reading the page bundle") {
                     PageBundle.Reader(input).use { reader ->
                         pages = reader.pageCount
                         for (number in 1..reader.pageCount) {
-                            addPage(document, reader.readPage(), number, reader.pageCount)
+                            val page = reader.readPage()
+                            heights += page.heightPx
+                            addPage(document, page, number, reader.pageCount)
                         }
+                        links = reader.readLinks()
                     }
                 }
+            }
+            if (links.isNotEmpty()) {
+                stage("linking the endnotes") { annotate(document, PdfLinks.annotations(links, heights)) }
             }
             written = if (secret == null) {
                 stage("writing the PDF") { deliver(document, destination, tag) }
@@ -154,6 +173,26 @@ internal object PdfAssembly {
             PDPageContentStream(document, pdfPage).use { content ->
                 content.drawImage(image, 0f, 0f, page.widthPx.toFloat(), page.heightPx.toFloat())
             }
+        }
+    }
+
+    /**
+     * The bundle's links as PDF annotations (D7): one borderless `Link` rectangle per entry, whose
+     * action is a `GoTo` that fits the target page. Runs after every page is in the document (the
+     * targets must exist) and before any protection (so they are encrypted with the rest).
+     */
+    private fun annotate(document: PDDocument, annotations: List<PdfLinks.Annotation>) {
+        for (a in annotations) {
+            val page = document.getPage(a.pageIndex)
+            val link = PDAnnotationLink()
+            link.rectangle = PDRectangle(a.llx, a.lly, a.urx - a.llx, a.ury - a.lly)
+            // Border width 0: the page already draws the icon and the caption; a reader's default
+            // link outline would be chrome on paper.
+            link.borderStyle = PDBorderStyleDictionary().apply { width = 0f }
+            val destination = PDPageFitDestination()
+            destination.page = document.getPage(a.targetIndex)
+            link.action = PDActionGoTo().apply { setDestination(destination) }
+            page.annotations.add(link)
         }
     }
 

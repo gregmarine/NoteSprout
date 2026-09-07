@@ -6,8 +6,11 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.Typeface
 import android.util.Log
 import androidx.appcompat.content.res.AppCompatResources
+import com.symmetricalpalmtree.gpaper.core.model.Stroke
+import com.symmetricalpalmtree.gpaper.core.render.StrokeRasterizer
 import com.symmetricalpalmtree.notesproutsn.R
 import com.symmetricalpalmtree.notesproutsn.crypto.KeyResolver
 import com.symmetricalpalmtree.notesproutsn.core.Bitmaps
@@ -22,6 +25,8 @@ import com.symmetricalpalmtree.notesproutsn.notebook.NotebookSession
 import com.symmetricalpalmtree.notesproutsn.notebook.PageContent
 import com.symmetricalpalmtree.notesproutsn.notebook.PagePreview
 import com.symmetricalpalmtree.notesproutsn.notebook.PageReads
+import com.symmetricalpalmtree.notesproutsn.notebook.StickyRows
+import com.symmetricalpalmtree.notesproutsn.notebook.StrokeRows
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -65,6 +70,13 @@ import java.io.IOException
  * WEBP lossy q100 ([BuiltInTemplates.toWebp] — the app's one measured encoder, the F5 finding),
  * at the **page's own** size and scale 1: a page authored on another panel keeps its own edge, and
  * the screen's size never enters this file.
+ *
+ * **Endnotes (arc 28 / D7).** For an exporter that reads the version-2 bundle, every sticky note
+ * with content becomes one more page after the notebook's: its strokes on white at the note's
+ * content size, a caption strip under them, and two links in the bundle's trailer (icon → note,
+ * caption → source page). [Endnotes] decides the numbering, sizes and links; this file draws
+ * them, one page at a time like every other. Facing a version-1 exporter the pages carry their
+ * icons and nothing more — the bundle written is exactly the arc-18 one.
  */
 object ExportRender {
 
@@ -122,6 +134,10 @@ object ExportRender {
      * [includeTemplate] false bakes the ink on white ground (the arc-18 / D2 toggle). It is the
      * host's answer to give because the bundle carries finished pixels: once a page is baked there
      * is no paper left in it for an extension to take out.
+     *
+     * [bundleVersion] is the exporter's own ceiling (`ExporterInfo.bundleVersion`): at
+     * [PageBundle.VERSION] and above the sticky notes go out as endnotes; below it they stay
+     * icons and the bundle is version 1.
      */
     suspend fun render(
         context: Context,
@@ -129,12 +145,13 @@ object ExportRender {
         includeTemplate: Boolean,
         progress: suspend (Int, Int) -> Unit,
         resolved: KeyResolver.Resolved? = null,
+        bundleVersion: Int = PageBundle.VERSION_1,
     ): Outcome = withContext(Dispatchers.IO) {
         // The bake's own failures are caught inside the open, not around it: they mean the *render*
         // failed, which is a different sentence from the file not opening — and the seal still runs.
         val opened = ExportOpen.readOnly(context, notebookId, "render", resolved) { db ->
             try {
-                bake(context, db, notebookId, includeTemplate, progress)
+                bake(context, db, notebookId, includeTemplate, bundleVersion, progress)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -197,6 +214,7 @@ object ExportRender {
         db: SoilDatabase,
         notebookId: String,
         includeTemplate: Boolean,
+        bundleVersion: Int,
         progress: suspend (Int, Int) -> Unit,
     ): Outcome {
         val dao = db.dao()
@@ -206,6 +224,15 @@ object ExportRender {
         // would blame memory or space for a data problem (the D3 review).
         val pages = plan(rows) ?: return Outcome.Failed(Problem.DAMAGED)
         if (pages.size > PageBundle.MAX_PAGES) return Outcome.Failed(Problem.TOO_LONG)
+        // The endnotes are planned before the first page is drawn: the bundle declares its page
+        // count and its links up front, and both include the notes (D7).
+        val endnotes = if (bundleVersion >= PageBundle.VERSION) {
+            Endnotes.plan(endnoteSources(dao, pages), pages.size)
+        } else {
+            Endnotes.Plan(emptyList(), emptyList())
+        }
+        val total = pages.size + endnotes.notes.size
+        if (total > PageBundle.MAX_PAGES) return Outcome.Failed(Problem.TOO_LONG)
 
         val bundle = File(ExportArtifact.freshDir(context), "$notebookId.pages")
 
@@ -228,7 +255,7 @@ object ExportRender {
         // leave the fd open with nothing left holding it.
         val out = FileOutputStream(bundle)
         val bundleWriter = try {
-            PageBundle.Writer(out, pages.size)
+            PageBundle.Writer(out, total, endnotes.links)
         } catch (e: Throwable) {
             runCatching { out.close() }
             throw e
@@ -236,7 +263,7 @@ object ExportRender {
         try {
             bundleWriter.use { writer ->
                 pages.forEachIndexed { index, page ->
-                    progress(index + 1, pages.size)
+                    progress(index + 1, total)
                     // White ground is the *absence* of the decode, not a decoded bitmap thrown
                     // away: a template the page will not carry must not cost the page's worth of
                     // memory on the way past (the one-page-at-a-time rule cuts both ways).
@@ -252,13 +279,90 @@ object ExportRender {
                     )
                     writer.writePage(page.widthPx, page.heightPx, image)
                 }
+                // The template is done with before the first note: a note has no paper.
+                template?.recycle()
+                template = null
+                for (note in endnotes.notes) {
+                    progress(note.page, total)
+                    val strokes = dao.childrenOfType(note.stickyId, SoilSchema.TYPE_STROKE)
+                        .mapNotNull { StrokeRows.toStroke(it) }
+                    val image = bakeEndnote(note, strokes)
+                    writer.writePage(note.widthPx, note.heightPx, image)
+                }
             }
         } finally {
             template?.recycle()
         }
         val bytes = bundle.length()
-        Slog.d(TAG) { "rendered ${pages.size} page(s) into $bytes bytes" }
+        Slog.d(TAG) { "rendered ${pages.size} page(s) + ${endnotes.notes.size} endnote(s) into $bytes bytes" }
         return Outcome.Ready(bundle, bytes)
+    }
+
+    /**
+     * Every sticky note with content, in **page order then z-order** — loose on the page first,
+     * then each link's wrapped ones in link order (the draw order's walk, [PagePreview.drawContent]).
+     * Icon-only rows: the notes' strokes are read one note at a time when its page is drawn,
+     * never here. A note with no content ([SoilDao.stickyIdsWithContent]) gets no endnote.
+     */
+    internal suspend fun endnoteSources(dao: SoilDao, pages: List<PageBake>): List<Endnotes.Source> {
+        val withContent = dao.stickyIdsWithContent().toHashSet()
+        if (withContent.isEmpty()) return emptyList()
+        val sources = ArrayList<Endnotes.Source>()
+        pages.forEachIndexed { index, page ->
+            val rows = ArrayList<SoilObjectEntity>(dao.stickiesOf(page.id))
+            for (link in dao.linksOf(page.id)) rows += dao.childrenOfType(link.id, SoilSchema.TYPE_STICKY)
+            for (row in rows) {
+                if (row.id !in withContent) continue
+                val sticky = StickyRows.toSticky(row) ?: continue
+                sources += Endnotes.Source(
+                    stickyId = sticky.id,
+                    fromPage = index + 1,
+                    iconL = sticky.x, iconT = sticky.y,
+                    iconR = sticky.x + sticky.width, iconB = sticky.y + sticky.height,
+                    contentW = sticky.contentW, contentH = sticky.contentH,
+                    pageW = page.widthPx, pageH = page.heightPx,
+                )
+            }
+        }
+        return sources
+    }
+
+    /**
+     * One endnote page: the note's strokes (local space — `(0,0)` is the content's top-left, which
+     * is the bitmap's) on white, a hairline, then the caption strip. Same pixel recipe as a page
+     * (RGB_565, WEBP q100), same recycle-before-the-next rule.
+     */
+    private fun bakeEndnote(note: Endnotes.Note, strokes: List<Stroke>): ByteArray {
+        val w = note.widthPx
+        val h = note.heightPx
+        val bitmap = try {
+            Bitmap.createBitmap(w, h, Bitmap.Config.RGB_565)
+        } catch (e: OutOfMemoryError) {
+            throw IOException("a ${w}x$h endnote would not allocate", e)
+        }
+        return try {
+            bitmap.eraseColor(Color.WHITE)
+            val canvas = Canvas(bitmap)
+            canvas.save()
+            canvas.clipRect(0, 0, w, note.contentH)
+            StrokeRasterizer.draw(canvas, strokes)
+            canvas.restore()
+            val top = note.contentH.toFloat()
+            canvas.drawRect(0f, top, w.toFloat(), top + 1f, captionPaint)
+            val metrics = captionPaint.fontMetrics
+            val baseline = top + Endnotes.CAPTION_PX / 2f - (metrics.ascent + metrics.descent) / 2f
+            canvas.drawText(Endnotes.caption(note.number, note.fromPage), Endnotes.CAPTION_INSET_PX, baseline, captionPaint)
+            BuiltInTemplates.toWebp(bitmap)
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    /** The caption strip's text and rule: black sans at [Endnotes.CAPTION_TEXT_PX]. */
+    private val captionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.BLACK
+        textSize = Endnotes.CAPTION_TEXT_PX
+        typeface = Typeface.SANS_SERIF
     }
 
     /** The page's paper, or null for blank — and null again when the row has gone or will not
