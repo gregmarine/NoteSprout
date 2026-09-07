@@ -12,15 +12,17 @@ class SelectionModesTest {
     private val headings = setOf("h1", "h2")
     private val links = setOf("l1", "l2")
     private val texts = setOf("t1", "t2")
+    private val shapes = setOf("s1", "s2")
 
-    /** Everything the screen would answer off its working copies — shapes and stickies are simply
-     *  in none of the three sets, exactly as an unknown id would be. */
+    /** Everything the screen would answer off its working copies — a sticky is simply in none of
+     *  the four sets, exactly as an unknown id would be. */
     private fun classify(strokes: Int, vararg contentIds: String): SelectionMode =
         SelectionModes.classify(
             strokes, contentIds.toList(),
             isHeading = { it in headings },
             isLink = { it in links },
             isText = { it in texts },
+            isShape = { it in shapes },
         )
 
     // ── The lone kinds ───────────────────────────────────────────────────────
@@ -36,6 +38,11 @@ class SelectionModesTest {
     }
 
     @Test
+    fun `one shape alone is SHAPE`() {
+        assertEquals(SelectionMode.SHAPE, classify(0, "s1"))
+    }
+
+    @Test
     fun `one link alone is LINK`() {
         assertEquals(SelectionMode.LINK, classify(0, "l1"))
     }
@@ -46,6 +53,7 @@ class SelectionModesTest {
         // to report and the stroke would ride any act performed on it.
         assertEquals(SelectionMode.MIXED, classify(1, "h1"))
         assertEquals(SelectionMode.MIXED, classify(1, "t1"))
+        assertEquals(SelectionMode.MIXED, classify(1, "s1"))
         assertEquals(SelectionMode.MIXED_WITH_LINK, classify(1, "l1"))
     }
 
@@ -93,18 +101,30 @@ class SelectionModesTest {
         assertEquals(SelectionMode.MIXED_WITH_LINK, classify(0, "l1", "l2"))
     }
 
-    // ── The kinds whose modes have not landed yet (H4, H5) ───────────────────
+    @Test
+    fun `two shapes are MIXED — lone means exactly one`() {
+        assertEquals(SelectionMode.MIXED, classify(0, "s1", "s2"))
+    }
 
     @Test
-    fun `a lone shape or sticky is MIXED until its own phase`() {
+    fun `a shape beside a text is MIXED`() {
+        assertEquals(SelectionMode.MIXED, classify(0, "s1", "t1"))
+    }
+
+    // ── The kind whose mode has not landed yet (H5) ──────────────────────────
+
+    @Test
+    fun `a lone sticky is MIXED until its own phase`() {
         // Deliberate, and pinned: MIXED's row (Snap / Copy / Cut / Delete + a link-free Link) is
         // the honest offer for a kind whose own verbs do not exist yet.
-        assertEquals(SelectionMode.MIXED, classify(0, "shape-1"))
         assertEquals(SelectionMode.MIXED, classify(0, "sticky-1"))
     }
 
     @Test
     fun `a shape beside a link still takes the link away`() {
-        assertEquals(SelectionMode.MIXED_WITH_LINK, classify(0, "shape-1", "l1"))
+        // The no-nesting rule outranks the lone-kind rule: a shape wrapped with a link in the same
+        // selection has no Transform to offer, because the mode transforms exactly one object.
+        assertEquals(SelectionMode.MIXED_WITH_LINK, classify(0, "s1", "l1"))
+        assertEquals(SelectionMode.MIXED_WITH_LINK, classify(0, "sticky-1", "l1"))
     }
 }

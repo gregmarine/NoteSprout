@@ -158,7 +158,7 @@ skill (`.claude/skills/device-build-install/SKILL.md`) — invoked automatically
   for any work on it read the standalone `apps/notesprout_ratta/RESTORE_PLAN.md` (not
   `RATTA_PLAN.md`) — host-only, no code review in the arc, no ninth point. **Arcs 1–27 are all
   complete and frozen.** **Arc 28 "Objects" (sticky notes, text objects, six hand-placed shapes —
-  PARITY_BACKLOG item 3) is IN PROGRESS: wizard locked 2026-09-06, **H1 ✅ + H2 ✅ + H3 ✅ landed 2026-09-06 (H3 = g-paper transform mode, SN pinned to g-paper 0.1.27), H4 ⬜ (shapes on the page) next**; read the standalone
+  PARITY_BACKLOG item 3) is IN PROGRESS: wizard locked 2026-09-06, **H1 ✅ + H2 ✅ + H3 ✅ + H4 ✅ landed 2026-09-06 (H3 = g-paper transform mode, SN pinned to g-paper 0.1.27; H4 = shapes on the page: Insert → six shapes, `SelectionMode.SHAPE`, the bar's Transform + floating aspect/Done bar), H5 ⬜ (sticky notes) next**; read the standalone
   `apps/notesprout_ratta/OBJECTS_PLAN.md` (not `RATTA_PLAN.md`) for any work on it** — core on the
   heading pattern, a g-paper transform mode, a host sticky editor, PDF endnotes; no ninth point.
   **No NINTH extension point

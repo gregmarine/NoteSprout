@@ -256,6 +256,19 @@
         android:background="@drawable/shape_dialog_bordered"
         android:padding="4dp"/>
 
+    <!-- The shape transform bar (arc 28 / H4) — the aspect latch and Done, floating beside the
+         shape for as long as g-paper's transform mode has it. Placed by ShapeTransformBar off the
+         shape's box grown by the overlay's reach; buttons are built in code. -->
+    <LinearLayout
+        android:id="@+id/transformBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:background="@drawable/shape_dialog_bordered"
+        android:padding="4dp"/>
+
     <include
         android:id="@+id/openingOverlay"
         layout="@layout/overlay_opening"

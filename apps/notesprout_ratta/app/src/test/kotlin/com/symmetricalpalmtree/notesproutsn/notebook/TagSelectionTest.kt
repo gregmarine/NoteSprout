@@ -45,6 +45,12 @@ class TagSelectionTest {
         assertEquals(TagFlow.NONE, TagSelection.flowFor(SelectionMode.TEXT))
     }
 
+    @Test
+    fun `a lone shape has nothing to make a tag of`() {
+        // Arc 28 / H4: it carries no words at all — recognizing a rectangle would recognize nothing.
+        assertEquals(TagFlow.NONE, TagSelection.flowFor(SelectionMode.SHAPE))
+    }
+
     // ── Whether it is offered ────────────────────────────────────────────────
 
     @Test
@@ -62,6 +68,7 @@ class TagSelectionTest {
         assertFalse(TagSelection.offered(SelectionMode.MIXED_WITH_LINK, tagsAvailable = true))
         assertFalse(TagSelection.offered(SelectionMode.LINK, tagsAvailable = true))
         assertFalse(TagSelection.offered(SelectionMode.TEXT, tagsAvailable = true))
+        assertFalse(TagSelection.offered(SelectionMode.SHAPE, tagsAvailable = true))
     }
 
     // ── Is it a tag as it stands (the silent gate) ───────────────────────────

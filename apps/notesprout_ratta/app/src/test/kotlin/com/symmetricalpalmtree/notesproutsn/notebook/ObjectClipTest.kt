@@ -424,6 +424,36 @@ class ObjectClipTest {
         assertEquals(300f + 25f + 2f, seen!!.bottom, 0.01f)
     }
 
+    /**
+     * The same rule with the shape turned (arc 28 / H4): a rotated star is placed by the **rotated**
+     * outline's box ([ShapeGeometry.tightBounds] grown by half its own stroke — the density-free
+     * pad, since a clipboard payload is measured in page px and not on any one device's screen),
+     * never by the un-rotated box its four columns describe. A paste placed from the columns would
+     * land the star out by however far the rotation carried its points, and rotation is exactly
+     * what H4 gave the user.
+     */
+    @Test
+    fun `a rotated shape is placed by its rotated outline`() {
+        var seen: Bounds? = null
+        val star = PageShape(
+            id = "st-1", type = ShapeType.STAR, cx = 300f, cy = 300f, width = 100f, height = 50f,
+            strokeWidth = 4f, rotationDeg = 37f, aspectLocked = false,
+            pointCount = ShapeFlags.DEFAULT_POINTS, order = 0,
+        )
+        val env = ObjectClip.capture(
+            listOf(ShapeRows.toRow(star, srcPage, now)), emptyList(), notebookId, now,
+        )!!
+        val p = plan(env, place = { seen = it; ObjectPlacement.Offset.NONE })!!
+        val expected = ShapeGeometry.tightBounds(star).inflated(star.strokeWidth / 2f)
+        assertEquals(expected.left, seen!!.left, 0.01f)
+        assertEquals(expected.top, seen!!.top, 0.01f)
+        assertEquals(expected.right, seen!!.right, 0.01f)
+        assertEquals(expected.bottom, seen!!.bottom, 0.01f)
+        // …and the angle itself survives the trip through the packed flags word.
+        assertEquals(37f, p.shapes.single().rotationDeg, 0f)
+        assertEquals(ShapeType.STAR, p.shapes.single().type)
+    }
+
     @Test
     fun `a note's content travels with fresh ids, un-shifted, re-parented onto the copy`() {
         val p = plan(objectEnvelope(), place = { ObjectPlacement.Offset(25f, -10f) })!!

@@ -911,4 +911,18 @@
     <string name="insert_line">Line</string>
     <string name="insert_arrow">Arrow</string>
     <string name="insert_star">Star</string>
+
+    <!-- Shapes on the page (arc 28 / H4). Transform is the lasso bar's button on a lone shape;
+         the rest are the floating transform bar's two controls. The aspect latch names the state
+         the shape is IN, not what a tap would make it — the same way an armed tool's border does
+         (ShapeTransformLabels holds the table and the reasoning). -->
+    <string name="shape_transform_action">Transform</string>
+    <string name="shape_transform_done">Done</string>
+    <string name="shape_lock_hint">Aspect lock</string>
+    <string name="shape_lock_circle">Circle</string>
+    <string name="shape_lock_oval">Oval</string>
+    <string name="shape_lock_square">Square</string>
+    <string name="shape_lock_rect">Rect</string>
+    <string name="shape_lock_1_1">1:1</string>
+    <string name="shape_lock_free">Free</string>
 </resources>

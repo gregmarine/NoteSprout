@@ -23,9 +23,10 @@ import com.symmetricalpalmtree.notesproutsn.R
  *
  * **Every button is [offer]ed by its own phase, and hidden until then** (J4: GONE, never disabled
  * — a control that does nothing does not exist, and on e-ink a greyed control is invisible anyway).
- * H2 offers [Kind.TEXT] in every build; H4 brings the six shapes and H5 [Kind.STICKY]. Until then
- * those seven are offered in **debug builds only**, which is how the eight-button bar's width goes
- * on being measurable on the Nomad without a release build growing controls that do nothing.
+ * H2 offered [Kind.TEXT] in every build and H4 the six shapes ([shapeType] is the mapping); only
+ * [Kind.STICKY] is still waiting for H5, and until then it is offered in **debug builds only**,
+ * which is how the eight-button bar's width goes on being measurable on the Nomad without a
+ * release build growing a control that does nothing.
  *
  * The screen owns *when* it closes — a pick, another bar button, a tool switch, a page swap, a
  * finger gesture, an outside tap — and unions [rects] into the exclusion rects and the
@@ -79,11 +80,25 @@ class InsertBar(
 
     fun contains(x: Int, y: Int): Boolean = bar.contains(x, y)
 
-    private companion object {
+    companion object {
+
+        /**
+         * Which [ShapeType] a kind places, or null for the two that are not shapes — the mapping
+         * the screen routes an insert through, here because the enum is this class's.
+         */
+        fun shapeType(kind: Kind): ShapeType? = when (kind) {
+            Kind.STICKY, Kind.TEXT -> null
+            Kind.RECTANGLE -> ShapeType.RECTANGLE
+            Kind.ELLIPSE -> ShapeType.ELLIPSE
+            Kind.TRIANGLE -> ShapeType.TRIANGLE
+            Kind.LINE -> ShapeType.LINE
+            Kind.ARROW -> ShapeType.ARROW
+            Kind.STAR -> ShapeType.STAR
+        }
 
         /** Tabler, all of them already in `drawable/` — checked before drawing anything (the
          *  arc's standing trap: og has these icons and SN copied them at H1). */
-        fun iconOf(kind: Kind): Int = when (kind) {
+        private fun iconOf(kind: Kind): Int = when (kind) {
             Kind.STICKY -> R.drawable.ic_sticker_2
             Kind.TEXT -> R.drawable.ic_text_recognition
             Kind.RECTANGLE -> R.drawable.ic_shape_rectangle
@@ -95,7 +110,7 @@ class InsertBar(
         }
 
         /** Icon-only with a long-press hint, the recipe every floating bar in this screen follows. */
-        fun hintOf(kind: Kind): Int = when (kind) {
+        private fun hintOf(kind: Kind): Int = when (kind) {
             Kind.STICKY -> R.string.insert_sticky
             Kind.TEXT -> R.string.insert_text
             Kind.RECTANGLE -> R.string.insert_rectangle

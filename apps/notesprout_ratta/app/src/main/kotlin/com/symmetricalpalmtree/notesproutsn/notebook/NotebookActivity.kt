@@ -23,6 +23,7 @@ import com.symmetricalpalmtree.gpaper.core.PaperView
 import com.symmetricalpalmtree.gpaper.core.Tool
 import com.symmetricalpalmtree.gpaper.core.engine.GPaper
 import com.symmetricalpalmtree.gpaper.core.model.Bounds
+import com.symmetricalpalmtree.gpaper.core.model.OrientedBox
 import com.symmetricalpalmtree.gpaper.core.model.Selection
 import com.symmetricalpalmtree.gpaper.core.model.SelectionMove
 import com.symmetricalpalmtree.gpaper.core.model.Stroke
@@ -137,6 +138,10 @@ class NotebookActivity : AppCompatActivity() {
     /** The Insert button's sub-bar (arc 28 / H1) — Sticky, Text and the six shapes. */
     private lateinit var insertBar: InsertBar
 
+    /** The shape transform mode's floating bar (arc 28 / H4) — up only while
+     *  `paper.transformingContentId != null`, torn down by the one `onTransformEnded`. */
+    private lateinit var transformBar: ShapeTransformBar
+
     /** Insert, convert and edit for text objects (arc 28 / H2) — out of this file, on the
      *  [LinkPickFlow] pattern, because H1's ledger asked the per-kind flows to stop landing here.
      *  The selection state and the working copies stay private: the flow reaches them only through
@@ -156,6 +161,40 @@ class NotebookActivity : AppCompatActivity() {
         override fun armLassoForLanding() = this@NotebookActivity.armLassoForLanding()
         override fun armPendingSelection(select: () -> Unit) { pendingSelection = select }
         override fun drainPendingSelection() { pendingSelection?.let { pendingSelection = null; it() } }
+    })
+
+    /** Insert and transform for shapes (arc 28 / H4) — [TextFlow]'s neighbour, out of this file for
+     *  the same reason and reaching the screen through the same kind of narrow [ShapeFlow.Host].
+     *  Two of its verbs exist only because g-paper's transform mode dismisses the selection without
+     *  a callback ([ShapeFlow.Host.dismissSelectionChrome]) and leaves nothing selected at the exit
+     *  ([ShapeFlow.Host.restoreToolAfterLanding]) — both are chrome this screen alone owns. */
+    private val shapeFlow = ShapeFlow(object : ShapeFlow.Host {
+        override val alive: Boolean get() = opened && !closing
+        override val session: NotebookSession get() = this@NotebookActivity.session
+        override val pageId: String get() = displayedPageId
+        override val objects: PageObjects get() = pageObjects
+        override val paper: PaperView get() = this@NotebookActivity.paper
+        override val density: Float get() = resources.displayMetrics.density
+        override fun record(action: Action) = undo.record(action)
+        override fun selectAsShape(shape: PageShape) = this@NotebookActivity.selectAsShape(shape)
+        override fun armLassoForLanding() = this@NotebookActivity.armLassoForLanding()
+        override fun restoreToolAfterLanding() = restoreToolAfterTransferPaste()
+        override fun dismissSelectionChrome() {
+            selectionActive = false
+            currentSelection = null
+            selectionToolbar.hide()
+        }
+        override fun showTransformBar(shape: PageShape) {
+            transformBar.show(shape)
+            pushExclusions()
+        }
+        override fun relabelTransformBar(shape: PageShape) = transformBar.relabel(shape)
+        override fun transformBarCovers(shape: PageShape) = transformBar.coveredBy(shape)
+        override fun hideTransformBar() {
+            if (!::transformBar.isInitialized || !transformBar.isShowing) return
+            transformBar.hide()
+            pushExclusions()
+        }
     })
     private val repo by lazy { IndexRepository() }
 
@@ -450,6 +489,9 @@ class NotebookActivity : AppCompatActivity() {
             // Resolved at tap time, never captured: the selection can move, die or change kind
             // between the bar going up and a button landing.
             onTextConvert = { currentSelection?.let { textFlow.convert(it) } },
+            // Resolved at tap time for the same reason, and by id: the flow re-reads the working
+            // copy, which is the only place the shape's current geometry lives.
+            onTransform = { loneSelectedShapeId()?.let { shapeFlow.beginTransform(it) } },
             onCopy = { cut -> doObjectCopy(cut) },
             isSnapOn = { paper.snapToGuides },
             onToggleSnap = { toggleSnap() },
@@ -467,13 +509,28 @@ class NotebookActivity : AppCompatActivity() {
             // startup.
             isTagAvailable = { ::tagEntry.isInitialized && tagEntry.isAvailable },
         )
+        // The transform mode's own floating bar (arc 28 / H4). It is not part of the selection
+        // toolbar: the mode is not a selection, and the two are never up at the same time.
+        transformBar = ShapeTransformBar(
+            root = binding.root,
+            paperView = paper.asView(),
+            bar = binding.transformBar,
+            band = { chromeBand() },
+            // Ungated, like every other bar handler here: the pen that tapped it is still hovering.
+            releaseRender = { paper.releaseRender() },
+            onToggleLock = { shapeFlow.toggleAspectLock() },
+            onDone = { shapeFlow.done() },
+        )
         binding.notebookName.text = name
         binding.pageIndicator.text = ""
 
         pageGestures = PageGestures(
             host = paper.asView(),
             isPenActive = { paper.isPenActive },
-            standDown = { selectionActive },
+            // H3's one finding, met on the Nomad in g-paper's own demo: a host finger handler that
+            // goes on consuming while the transform mode is up swallows the handle drags and the
+            // tap that ends the mode. The gate is the selection's, widened to cover it.
+            standDown = { selectionActive || paper.transformingContentId != null },
             overChrome = { overChrome(it) },
             listener = gestureListener,
         )
@@ -518,7 +575,9 @@ class NotebookActivity : AppCompatActivity() {
             button = binding.btnScratchPad,
             // The notebook is the one caller that can be sent to, so the pad shows its Send buttons.
             sendEnabled = true,
-            beforeLaunch = { paper.releaseForHandoff() },
+            // The transform mode first: `releaseForHandoff` is a silent release, and a mode still
+            // running when the pipeline goes over would take its geometry with it (H4).
+            beforeLaunch = { endTransformIfRunning(); paper.releaseForHandoff() },
             onSent = { onPadSent() },
             onDrained = { drained -> pasteFromPad(drained) },
             onClosed = { onPadClosed(it) },
@@ -536,7 +595,7 @@ class NotebookActivity : AppCompatActivity() {
             button = binding.btnCalendar,
             // The notebook is the one caller that can be sent to, so the calendar shows its Send buttons.
             sendEnabled = true,
-            beforeLaunch = { paper.releaseForHandoff() },
+            beforeLaunch = { endTransformIfRunning(); paper.releaseForHandoff() },
             onSent = { onCalendarSent() },
             onDrained = { drained -> pasteFromCalendar(drained) },
             onClosed = { onCalendarClosed(it) },
@@ -651,13 +710,22 @@ class NotebookActivity : AppCompatActivity() {
             // lesson). H1 gated it because nothing on the bar could fire.
             releaseRender = { paper.releaseRender() },
             // Insert is a command, not a tool: the armed tool is untouched and what lands, lands
-            // selected (D4). The other seven are debug-only offers until H4 and H5 wire them.
-            onInsert = { kind -> hideInsertBar(); if (kind == InsertBar.Kind.TEXT) textFlow.insertAtCentre() },
+            // selected (D4). Sticky is the one kind still waiting for its phase.
+            onInsert = { kind ->
+                hideInsertBar()
+                val shape = InsertBar.shapeType(kind)
+                when {
+                    shape != null -> shapeFlow.insertAtCentre(shape)
+                    kind == InsertBar.Kind.TEXT -> textFlow.insertAtCentre()
+                }
+            },
         )
-        // Text in every build; the remaining seven stay debug-only so the EIGHT-button bar's width
-        // can still be measured against the Nomad (D4) and so release sees only what works.
+        // Text (H2) and the six shapes (H4) in every build; Sticky stays debug-only so the
+        // EIGHT-button bar's width can still be measured against the Nomad (D4) and so release
+        // sees only what works.
         InsertBar.Kind.entries.forEach {
-            insertBar.offer(it, it == InsertBar.Kind.TEXT || BuildConfig.DEBUG)
+            val landed = it == InsertBar.Kind.TEXT || InsertBar.shapeType(it) != null
+            insertBar.offer(it, landed || BuildConfig.DEBUG)
         }
         binding.btnInsert.setOnClickListener {
             if (!opened || closing) return@setOnClickListener
@@ -1297,6 +1365,25 @@ class NotebookActivity : AppCompatActivity() {
             }
             restoreToolAfterTransferPaste()
         }
+        /**
+         * The transform mode's live box (arc 28 / H4, g-paper 0.1.27): the working copy follows it
+         * and **nothing else happens** — no store write, and above all no `notifyContentChanged()`,
+         * because the engine repaints the transform layer through `ShapeRenderer.drawObject` the
+         * moment this returns. A frame per sample would be an EPD refresh per sample.
+         */
+        override fun onTransformChanged(contentId: String, box: OrientedBox) {
+            if (!opened) return
+            shapeFlow.onTransformChanged(contentId, box)
+        }
+        /**
+         * The mode's **one** teardown — it fires on every exit, the bar's own Done included, so
+         * the persist, the undo entry and the chrome all live on the other side of this one call
+         * ([ShapeFlow.onTransformEnded]). Ungated on `opened`: a close or a page swap ends the
+         * mode by hand precisely so this runs and the geometry is not dropped.
+         */
+        override fun onTransformEnded(contentId: String, before: OrientedBox, after: OrientedBox) {
+            shapeFlow.onTransformEnded(contentId, before, after)
+        }
         override fun onToolChanged(tool: Tool) { toolbar.sync(tool) }
     }
 
@@ -1527,6 +1614,15 @@ class NotebookActivity : AppCompatActivity() {
         // (only possible when the target is the displayed page — an undo replay's refresh) is
         // persisted yet absent from the read, and loadStrokes would silently take it off the glass
         // until the next flip. onStrokeCommitted buffers such commits; they merge into the rebuild.
+        // An in-flight transform is ended by hand FIRST — before the row reads below. `loadStrokes`
+        // would end it too, but only after those reads, so a refresh onto the very page the mode
+        // began on would paint the geometry it started from. The drain is what makes the read
+        // downstream of the write the exit just enqueued; `release` being silent is why the mode is
+        // ended at all rather than left to die with the swap.
+        if (paper.transformingContentId != null) {
+            endTransformIfRunning()
+            session.store.drain()
+        }
         val targetId = session.pages[index.coerceIn(0, session.pages.lastIndex)].id
         val lateCommits = mutableListOf<Stroke>()
         loadingCommits = targetId to lateCommits
@@ -1915,8 +2011,8 @@ class NotebookActivity : AppCompatActivity() {
      *
      * **Arc 28:** the rule itself moved to [SelectionModes] at H2, so the D5 table is a table a
      * test can read; what stays here is the three predicates, which are answered off *this
-     * screen's working copies* rather than trusted from the engine's id set. A lone shape or
-     * sticky is still [SelectionMode.MIXED] — their own modes arrive with H4 and H5.
+     * screen's working copies* rather than trusted from the engine's id set. A lone **sticky** is
+     * still [SelectionMode.MIXED] — its own mode arrives with H5.
      */
     private fun showSelectionToolbar(sel: Selection) {
         val lone = sel.strokeIds.isEmpty() && sel.contentIds.size == 1
@@ -1926,6 +2022,7 @@ class NotebookActivity : AppCompatActivity() {
             isHeading = { liveHeadings.containsKey(it) },
             isLink = { liveLinks.containsKey(it) },
             isText = { pageObjects.texts.containsKey(it) },
+            isShape = { pageObjects.shapes.containsKey(it) },
         )
         selectionToolbar.show(sel.bounds, mode, loneHeading?.level)
     }
@@ -2097,6 +2194,28 @@ class NotebookActivity : AppCompatActivity() {
         selectionActive = true
         currentSelection = Selection(emptySet(), setOf(t.id), t.bounds)
         selectionToolbar.show(t.bounds, SelectionMode.TEXT, null)
+    }
+
+    /**
+     * The same twin for a shape (arc 28 / H4) — [ShapeFlow] asks for it after an insert and after a
+     * transform's **Done**, which by contract leaves nothing selected. The box is the padded AABB
+     * [ShapeGeometry] reports as the hit target, so what the lasso frames is exactly what a lasso
+     * would have caught (a rotated shape is hit by its box — D3's accepted caveat).
+     */
+    private fun selectAsShape(s: PageShape) {
+        val bounds = ShapeGeometry.aabb(s, resources.displayMetrics.density)
+        paper.setSelection(emptySet(), setOf(s.id), bounds)
+        selectionActive = true
+        currentSelection = Selection(emptySet(), setOf(s.id), bounds)
+        selectionToolbar.show(bounds, SelectionMode.SHAPE, null)
+    }
+
+    /** The single selected shape's id, or null — [loneSelectedLink]'s rule and its reason: the
+     *  selection can move, die or change kind between the bar going up and a button landing. */
+    private fun loneSelectedShapeId(): String? {
+        val sel = currentSelection ?: return null
+        if (sel.strokeIds.isNotEmpty() || sel.contentIds.size != 1) return null
+        return sel.contentIds.first().takeIf { pageObjects.shapes.containsKey(it) }
     }
 
     // ── Links (K1/K2) ────────────────────────────────────────────────────────
@@ -2731,10 +2850,24 @@ class NotebookActivity : AppCompatActivity() {
         toolbar.sync(Tool.LASSO)
     }
 
+    /**
+     * End a running transform mode by hand (arc 28 / H4). Every caller wants the same thing: the
+     * geometry **persisted and recorded** through `onTransformEnded` rather than dropped, which is
+     * what would happen on the silent `release` path. Idempotent and safe before `onCreate` has
+     * built the surface.
+     */
+    private fun endTransformIfRunning() {
+        if (!::paper.isInitialized) return
+        if (paper.transformingContentId != null) paper.endTransform()
+    }
+
     /** Open the clipboard popup, or keep P1's silent no-op when there is nothing of ours to offer. */
     private fun showLassoPopup() {
         if (!opened || closing) return
         if (!SnClipboard.hasObjects) return
+        // Another bar taking this one's place ends the mode — the same rule the floating bars
+        // already apply to each other, and the transform bar is one of them.
+        endTransformIfRunning()
         if (lassoPopup.show()) pushExclusions()
     }
 
@@ -2755,6 +2888,7 @@ class NotebookActivity : AppCompatActivity() {
      */
     private fun showTagsPopup() {
         if (!opened || closing || !canvasShown) return
+        endTransformIfRunning()
         if (tagsPopup.show()) pushExclusions()
     }
 
@@ -2774,6 +2908,7 @@ class NotebookActivity : AppCompatActivity() {
      */
     private fun showInsertBar() {
         if (!opened || closing || !canvasShown) return
+        endTransformIfRunning()
         hideLassoPopup()
         hideTagsPopup()
         if (insertBar.show()) pushExclusions()
@@ -3167,7 +3302,8 @@ class NotebookActivity : AppCompatActivity() {
         val paperLoc = IntArray(2).also { paper.asView().getLocationInWindow(it) }
         val rects = (
             listOfNotNull(rectOf(binding.topBar), rectOf(binding.bottomStrip)) +
-                selectionToolbar.rects() + lassoPopup.rects() + tagsPopup.rects() + insertBar.rects()
+                selectionToolbar.rects() + lassoPopup.rects() + tagsPopup.rects() +
+                insertBar.rects() + transformBar.rects()
             )
             .map { Rect(it.left - paperLoc[0], it.top - paperLoc[1], it.right - paperLoc[0], it.bottom - paperLoc[1]) }
         paper.setExclusionRects(rects)
@@ -3282,7 +3418,8 @@ class NotebookActivity : AppCompatActivity() {
             (::selectionToolbar.isInitialized && selectionToolbar.contains(x, y)) ||
             (::lassoPopup.isInitialized && lassoPopup.contains(x, y)) ||
             (::tagsPopup.isInitialized && tagsPopup.contains(x, y)) ||
-            (::insertBar.isInitialized && insertBar.contains(x, y))
+            (::insertBar.isInitialized && insertBar.contains(x, y)) ||
+            (::transformBar.isInitialized && transformBar.contains(x, y))
     }
 
     private fun rectOf(v: View): Rect? {
@@ -3355,6 +3492,10 @@ class NotebookActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        // Same rule as close()'s, one step earlier: a screen going into the background with the
+        // transform mode still up must persist that geometry through `onTransformEnded` — and
+        // before the cover is captured below, so the snapshot shows the shape as it now is.
+        endTransformIfRunning()
         if (!opened || closing || !session.isOpen) return
         // Cheap durability point while backgrounded: cover + last-open page. Ink is already in rows.
         val p = paper; val s = session; val id = notebookId
@@ -3383,6 +3524,10 @@ class NotebookActivity : AppCompatActivity() {
      */
     private fun close(andThen: (() -> Unit)? = null) {
         if (closing) return
+        // Before `closing` and before the history goes: a transform still running is persisted and
+        // recorded through `onTransformEnded`, never dropped (`release` is silent). The undo entry
+        // it writes dies with the stack a line below, which is correct — the row does not.
+        endTransformIfRunning()
         closing = true
         undo.clear()   // in-memory history dies with the screen
         // A Dialog outliving its finishing Activity is a window leak — take both panels down now.

@@ -7,7 +7,7 @@ whole at every phase start, together with the root `CLAUDE.md` and `apps/notespr
 traps are summarized at the end so this file is enough. `RESTORE_PLAN.md`, `ENCRYPTION_PLAN.md` and
 `DRIVE_PLAN.md` are the shapes this file copies.
 
-**Status: H3 ✅ landed 2026-09-06 — H4 ⬜ next.** H1 ✅ · H2 ✅ · H3 ✅ · H4 ⬜ · H5 ⬜ · H6 ⬜ ·
+**Status: H4 ✅ landed 2026-09-06 — H5 ⬜ next.** H1 ✅ · H2 ✅ · H3 ✅ · H4 ✅ · H5 ⬜ · H6 ⬜ ·
 H7 ⬜. When the arc closes, `docs/objects.md` is the reference.
 
 **Phase letter:** **H** — the last free letter in `RATTA_PLAN.md`'s A–Z (L went to arc 27). After
@@ -359,7 +359,7 @@ visible on the EPD, rotate knob, snap, tap-outside exit).
 **Questions to resolve at phase start:** app version · g-paper version number (default 0.1.25 — became 0.1.27) ·
 whether the rotate knob is offered for `LINE`/`ARROW` only or every type (default: every type).
 
-### ⬜ H4 — Shapes on the page (Opus code on a Fable brief · Fable review · walk by hand)
+### ✅ H4 — Shapes on the page (Opus code on a Fable brief · Fable review · walk by hand)
 
 - `ShapeRenderer` (D3, `drawObject` for the live drag and the live transform) · Insert → the six
   shape buttons with og's default sizes, landing selected · `SelectionMode.SHAPE` + the bar's
@@ -609,3 +609,52 @@ and an `AskUserQuestion` never share one turn — explain, wait, then ask.
   which also fires for the bar's own Done; nothing is selected afterwards, so Done re-`setSelection`s
   the shape with `ShapeGeometry.aabb`; `setTransformAspectLocked` is the bar's toggle; a
   rotated shape's lasso hit stays the AABB (D3).
+
+### H4 — Outcome (2026-09-06)
+
+- **Phase-start answers:** version stays `0.1.0-ratta`; star point count **fixed at 5**
+  (`ShapeFlags.DEFAULT_POINTS`) — a bar control is a backlog item.
+- **Landed:** `ShapeDefaults` (pure — og's insert numbers: closed shapes 72 dp square, locked for
+  rectangle / ellipse / star, triangle free; line and arrow ½ page width × 1 px, free;
+  `MIN_SIZE_DP` 24) · `ShapeBox` (pure `PageShape` ↔ `OrientedBox`, rotation normalised through
+  `ShapeFlags.normalizeDeg`) · `ShapeTransformLabels` (pure: Circle/Oval · Square/Rect · 1:1/Free —
+  the label names the **current** state) · `ShapeFlow` + `ShapeFlow.Host` (insert + the whole
+  transform lifecycle, out of the activity on `TextFlow`'s pattern) · `ShapeTransformBar` (a
+  floating bar of its own — a word-labelled aspect latch wearing the selected border when locked,
+  plus ✓ Done — placed off the shape's AABB grown by the overlay's reach (36 + 14 + 22 dp) so it
+  never sits under the knob, and re-placed **only** when the live overlay reaches it) ·
+  `ic_resize` (Tabler) for the lasso bar's **Transform**, directly after Text, `SHAPE` only ·
+  `SelectionMode.SHAPE` (`SelectionModes.classify(isShape)`; a lone sticky stays `MIXED` until
+  H5; `TagSelection` refuses SHAPE; Link offered) · the six shapes offered on the Insert bar in
+  every build (Sticky stays debug-only) · `PageGestures.standDown` widened to
+  `selectionActive || paper.transformingContentId != null` (H3's finding) · `transformBar` in
+  the exclusion rects and `overChrome` · `endTransformIfRunning()` at **eight** sites — `close()`,
+  `onStop`, `navigateTo` (at the top, then `drain()`, so a same-page refresh reads the written
+  geometry), both extension `beforeLaunch` handoffs (`releaseForHandoff` is a silent release),
+  and the three other floating bars' `show`s (another bar taking its place ends the mode).
+- **The host contract as built (binds H5+ and any later shape work):** `beginTransform` after
+  `armLassoForLanding()` and after `dismissSelectionChrome()` by hand (the engine dismisses
+  without `onSelectionDismissed`); a declined `beginTransform` (id not adopted) rolls back and
+  re-selects, since no `onTransformEnded` will come; `onTransformChanged` → working copy only
+  (`objects.put`), never a frame; `onTransformEnded` compares **`PageShape`s** (a lock flip with no
+  drag is an entry), persists + records `ShapeTransformed(pageId captured at begin)`, and then
+  **Done re-selects** while every other exit calls `restoreToolAfterTransferPaste()`; the
+  working-copy / selection half is guarded on `alive && pageId == host.pageId`, the row write is
+  not.
+- **Nomad (by hand, the user, 2026-09-06):** all nine checklist items pass first time — insert ×6,
+  drag, handles + knob legible, aspect labels per type, star at 37°, line snapped vertical,
+  tap-outside exit, undo/redo incl. a lock-only entry, fingers idle in the mode, eraser + scribble,
+  copy/paste across a flip, link-wrap/unlink, close-reopen, PDF stroke-only.
+- **Tests:** `:app` 1369 → **1393** (+24: `ShapeDefaultsTest`, `ShapeBoxTest`,
+  `ShapeTransformLabelsTest`, `InsertBarKindsTest`, SHAPE rows in `SelectionModesTest` /
+  `TagSelectionTest`, a lock-only `ShapeTransformed` in `NotebookUndoTest`, a rotated star through
+  `ObjectClipTest`); `:sn-screen` 69; every module green.
+- **`NotebookActivity`:** 3531 → 3676 (+145: the `Host` object, `selectAsShape`,
+  `loneSelectedShapeId`, `endTransformIfRunning` and its call sites, the two listener overrides).
+- **Planner calls recorded:** `ObjectClip.payloadBounds` uses the density-free
+  `ShapeGeometry.tightBounds` + `strokeWidth/2` for a shape (a payload is page px, not one
+  screen's), not `aabb(shape, density)` — the plan's D6 wording is corrected by this entry;
+  `InsertBar.shapeType(kind)` is the one routing table (tested); the lock button is styled field by
+  field (a style cannot be applied to a code-built view — `ExportPanel`'s finding).
+- **Open for H5:** nothing new; H5's sticky insert follows `ShapeFlow.insertAtCentre`'s one-block
+  shape and calls `armLassoForLanding()` before `selectAsSticky`.

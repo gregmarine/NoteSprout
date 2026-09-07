@@ -4,6 +4,8 @@ import com.symmetricalpalmtree.gpaper.core.model.Stroke
 import com.symmetricalpalmtree.gpaper.core.model.StrokePoint
 import com.symmetricalpalmtree.notesproutsn.notebook.NotebookUndo.Action
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -199,6 +201,26 @@ class NotebookUndoTest {
         assertEquals(0f, transformed.before.rotationDeg, 0f)
         assertEquals(37f, transformed.after.rotationDeg, 0f)
         assertEquals(120f, transformed.after.width, 0f)
+    }
+
+    /**
+     * A transform whose only change is the aspect **lock** (arc 28 / H4): the user opened the mode,
+     * tapped Circle→Oval and left without dragging. It changes no geometry at all, and it is still
+     * a change the user made and can undo — which is why [ShapeFlow] compares whole [PageShape]s at
+     * the exit rather than the [com.symmetricalpalmtree.gpaper.core.model.OrientedBox]es the engine
+     * reports, and why replay writes the whole flags word back ([ShapeStore.transform]).
+     */
+    @Test
+    fun `a transform can carry nothing but the aspect lock`() {
+        val was = shape("s1")
+        val after = was.copy(aspectLocked = !was.aspectLocked)
+        val entry = Action.ShapeTransformed("p", was, after)
+        assertNotEquals(entry.before, entry.after)
+        assertEquals(entry.before.width, entry.after.width, 0f)
+        assertEquals(entry.before.height, entry.after.height, 0f)
+        assertEquals(entry.before.rotationDeg, entry.after.rotationDeg, 0f)
+        assertTrue(entry.before.aspectLocked)
+        assertFalse(entry.after.aspectLocked)
     }
 
     /**

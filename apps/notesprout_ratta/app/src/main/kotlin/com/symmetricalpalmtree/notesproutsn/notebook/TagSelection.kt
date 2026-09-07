@@ -29,8 +29,8 @@ enum class TagFlow {
  * a button that is not there.
  *
  * A link-bearing selection is not offered either, for the same reason — a link is content with a
- * payload, not ink — and neither is a lone text object, which makes the offered set exactly
- * [SelectionMode.HEADING] and [SelectionMode.STROKES].
+ * payload, not ink — and neither is a lone text object or a lone shape, which makes the offered set
+ * exactly [SelectionMode.HEADING] and [SelectionMode.STROKES].
  *
  * **What is not gated here: the recognizer.** The Tag button stands or falls with the *tag* extension
  * only. A missing recognizer is explained by the same problem dialog the H button beside it already
@@ -45,8 +45,10 @@ object TagSelection {
         SelectionMode.STROKES -> TagFlow.RECOGNIZE
         // A lone text object (arc 28 / H2) is not offered either, and for the mixed selection's
         // reason turned around: it carries words already, but they are a paragraph rather than a
-        // title — there is no one line in it a tag could honestly be made of.
-        SelectionMode.TEXT,
+        // title — there is no one line in it a tag could honestly be made of. A lone shape
+        // (arc 28 / H4) is the plainest case of all: it carries no words at all, and recognizing
+        // a rectangle would be recognizing nothing.
+        SelectionMode.TEXT, SelectionMode.SHAPE,
         SelectionMode.LINK, SelectionMode.MIXED, SelectionMode.MIXED_WITH_LINK -> TagFlow.NONE
     }
 

@@ -20,6 +20,7 @@ import com.symmetricalpalmtree.notesproutsn.R
  * [HEADING] exactly one heading and nothing else (re-levelable, so its current level is the
  * selected button) · [TEXT] exactly one text object and nothing else (arc 28 / H2 — no button of
  * its own: a stylus tap inside the box opens its dialog, which is why the mode exists at all) ·
+ * [SHAPE] exactly one shape and nothing else (arc 28 / H4 — the only mode that offers Transform) ·
  * [LINK] exactly one link and nothing else (the only mode that offers Edit / Unlink) · [MIXED] ink
  * plus headings, more than one heading, or one of the arc-28 kinds that has no lone mode yet — no
  * single sensible level to write, but still wrappable · [MIXED_WITH_LINK] a selection containing a
@@ -31,7 +32,7 @@ import com.symmetricalpalmtree.notesproutsn.R
  *
  * Which selection is which mode is [SelectionModes]'s, not this file's.
  */
-enum class SelectionMode { STROKES, HEADING, TEXT, LINK, MIXED, MIXED_WITH_LINK }
+enum class SelectionMode { STROKES, HEADING, TEXT, SHAPE, LINK, MIXED, MIXED_WITH_LINK }
 
 /**
  * The selection's context toolbar: a small bordered bar that floats over the paper for as long as a
@@ -48,7 +49,10 @@ enum class SelectionMode { STROKES, HEADING, TEXT, LINK, MIXED, MIXED_WITH_LINK 
  * bar's armed tool wears) · **Copy** and **Cut** (always — arc 8) · **H** (a level is only writable
  * on ink or on one heading) · **Text** (arc 28 / H2 — ink only, and directly
  * after H because it is the *same* act with a different result: both read the lassoed handwriting
- * and replace it with words, one as a title and one as a paragraph) · **Link** (any link-free
+ * and replace it with words, one as a title and one as a paragraph) · **Transform** (arc 28 / H4
+ * — a lone shape, and their neighbour for the same reason they are each other's: it is the one verb
+ * a shape has that nothing else does, and it hands the object straight to g-paper's transform mode)
+ * · **Link** (any link-free
  * selection — K1) · **Edit** and **Unlink** (a
  * lone link, the only selection with one payload to act on) · **Pad** (arc 11 / J5 — the narrowest
  * of them all: only on a pure-ink selection, and only while a trusted scratch-pad extension is
@@ -99,6 +103,9 @@ class SelectionToolbar(
     private val onUnlink: () -> Unit,
     /** Turn this ink selection into a text object (arc 28 / H2) — H's neighbour and its twin. */
     private val onTextConvert: () -> Unit = {},
+    /** Hand the lone selected shape to g-paper's transform mode (arc 28 / H4). Which shape that is
+     *  is the screen's to resolve at tap time — the bar knows only that the button was tapped. */
+    private val onTransform: () -> Unit = {},
     /** Put this selection on the clipboard (arc 8) — `cut = true` deletes it afterwards. */
     private val onCopy: (cut: Boolean) -> Unit,
     /** Whether snap-to-guide is armed (arc 9) — read on every [show] and after every toggle, so
@@ -127,6 +134,7 @@ class SelectionToolbar(
 
     private val headingButton: AppCompatImageButton
     private val textButton: AppCompatImageButton
+    private val transformButton: AppCompatImageButton
     private val linkButton: AppCompatImageButton
     private val editButton: AppCompatImageButton
     private val unlinkButton: AppCompatImageButton
@@ -178,6 +186,14 @@ class SelectionToolbar(
             onTextConvert()
         }
         bar.addView(textButton)
+
+        // A lone shape's one verb, directly after Text so the two kind-specific buttons sit
+        // together and the link trio keeps the place it has always had.
+        transformButton = button(R.drawable.ic_resize, ctx.getString(R.string.shape_transform_action)) {
+            releaseRender()
+            onTransform()
+        }
+        bar.addView(transformButton)
 
         linkButton = button(R.drawable.ic_link, ctx.getString(R.string.link_action)) {
             releaseRender()
@@ -252,10 +268,15 @@ class SelectionToolbar(
     fun show(bounds: Bounds, mode: SelectionMode, currentLevel: Int?) {
         val band = band() ?: return
         val levelable = mode == SelectionMode.STROKES || mode == SelectionMode.HEADING
-        val wrappable = levelable || mode == SelectionMode.MIXED || mode == SelectionMode.TEXT
+        // A link may wrap any of the arc-28 kinds (D5), so a lone shape is wrappable too.
+        val wrappable = levelable || mode == SelectionMode.MIXED ||
+            mode == SelectionMode.TEXT || mode == SelectionMode.SHAPE
         headingButton.visibility = if (levelable) View.VISIBLE else View.GONE
         // Ink alone: a conversion consumes the strokes, so there has to be nothing else in the set.
         textButton.visibility = if (mode == SelectionMode.STROKES) View.VISIBLE else View.GONE
+        // The one verb a shape has, and only when it is the whole selection: the mode transforms
+        // exactly one object, so a shape with anything beside it has nothing to hand over.
+        transformButton.visibility = if (mode == SelectionMode.SHAPE) View.VISIBLE else View.GONE
         linkButton.visibility = if (wrappable) View.VISIBLE else View.GONE
         val lone = if (mode == SelectionMode.LINK) View.VISIBLE else View.GONE
         editButton.visibility = lone
