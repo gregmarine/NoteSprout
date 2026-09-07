@@ -68,13 +68,15 @@ app's debug build consumes the library's debug variant, so the gate means exactl
 | `notebook/UndoRedoStack<A>` | the generic LIFO history plus its `generation` counter. The notebook's fourteen action kinds stay in `:app` as `NotebookUndo.Action` |
 | `notebook/PaperToolbar` | back + the three tool buttons, **binding-free** |
 | `notebook/PaperChrome` | exclusion rects and the over-chrome hit test, with the host-specific parts as suppliers |
-| `notebook/FloatingSelectionBar` | an extension screen's floating selection bar (arc 23 / Y1 — the pad's own, shared so the calendar's is not a sibling copy): a row of buttons built to the one recipe, placed by `SelectionAnchor` next to the lasso box; the consumer says which buttons |
+| `notebook/FloatingSelectionBar` | an extension screen's floating selection bar (arc 23 / Y1 — the pad's own, shared so the calendar's is not a sibling copy): a row of buttons built to the one recipe, placed by `SelectionAnchor` next to the lasso box; the consumer says which buttons. `buttonAt(index)` (arc 28 / H5) hands back one built button for a consumer whose button carries **state** the bar itself cannot know — the sticky editor's Snap latch, which wears the selected border and re-words its hint exactly as the notebook's own Snap button does |
 | `notebook/PenIdle` | arc 23 / Y4 — the two pen-activity gates every paper-hosting screen writes against: `whenIdle` (the frame-silence gate, re-posting at `PaperView.PEN_ACTIVE_TAIL_MS` while the pen is active) and `releaseRenderIfIdle` (`PaperView.releaseRender`'s own pen-gated contract); one copy rather than the four that had grown across the pad's and the calendar's toolbars and screens — `PaperToolbar` is trimmed to call it too |
 | `notebook/InkSelectionBar` | arc 23 / Y4 — the ONE Send-then-Delete floating bar an ink-on-paper extension screen puts over a lasso selection, replacing the pad's and the calendar's own `*SelectionToolbar` copies; built on `FloatingSelectionBar`, Send absent (never disabled) with no notebook behind the caller |
 
 Resources: `values/{colors,dimens,styles,themes}`, `values-sw720dp/dimens`,
-`values-sw960dp/dimens` (the Manta's card-grid minimum only — see `docs/library.md` § The grid), 56
-chrome `ic_*.xml` (grown one arc at a time since J1's move; the latest is arc 24 / Z5b's
+`values-sw960dp/dimens` (the Manta's card-grid minimum only — see `docs/library.md` § The grid), 58
+chrome `ic_*.xml` (grown one arc at a time since J1's move; the latest is arc 28 / H4's
+`ic_resize` (Tabler, the lasso bar's **Transform** button — a lone selected shape's one verb, D9);
+before it arc 24 / Z5b's
 `ic_backspace` — Tabler's own, the keypad's rub-out key — before it arc 24 / Z2's
 `ic_calendar_event` (Tabler `calendar-event`, the calendar's own Events door), and before that arc
 23 / Y4's `ic_calendar_star`, `ic_calendar_month`, `ic_calendar_week` and `ic_calendar_day` (Tabler
@@ -106,6 +108,13 @@ host's identity, not shared chrome; the Scratch Pad extension draws its own.
   where it is, and adopting the helper in the notebook was explicitly not arc 11's business. What
   the two share is the *shape*, so the host-specific parts arrive as `extraRects` /
   `extraContains` / `blockAll` suppliers.
+
+**Test count.** `:sn-screen`'s own JVM suite sits at **69** tests as of arc 28 — the pure geometry
+(`PageMathTest`, `SelectionAnchorTest`, `SwipeMathTest`) and `PageGestures`'/`ListSwipe`'s pure
+rules, unchanged by the arc. Arc 28's own additions here are small and structural rather than
+tested in this module: `FloatingSelectionBar.buttonAt` and the `ic_resize` glyph above — the three
+new object kinds themselves, their stores and their JVM suites, are core, in `:app` — see
+[`docs/objects.md`](objects.md) and [`docs/notebook.md`](notebook.md).
 
 ## When you change something here
 

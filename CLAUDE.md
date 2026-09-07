@@ -158,9 +158,12 @@ skill (`.claude/skills/device-build-install/SKILL.md`) — invoked automatically
   for any work on it read the standalone `apps/notesprout_ratta/RESTORE_PLAN.md` (not
   `RATTA_PLAN.md`) — host-only, no code review in the arc, no ninth point. **Arcs 1–27 are all
   complete and frozen.** **Arc 28 "Objects" (sticky notes, text objects, six hand-placed shapes —
-  PARITY_BACKLOG item 3) is IN PROGRESS: wizard locked 2026-09-06, **H1 ✅ + H2 ✅ + H3 ✅ + H4 ✅ + H5 ✅ + H6 ✅ landed 2026-09-06 (H3 = g-paper transform mode, SN pinned to g-paper 0.1.27; H4 = shapes on the page; H5 = sticky notes: core `StickyEditorActivity` on its own g-paper surface writing through the notebook's `SoilWriter` via `StickyEditorTransfer`, `StickyFlow`, finger-tap reopen, `SelectionMode.STICKY`; H6 = PDF endnotes via `PageBundle` v2 + `ExporterInfo.bundleVersion`, code review waived), H7 ⬜ (docs/freeze, no code) next**; read the standalone
-  `apps/notesprout_ratta/OBJECTS_PLAN.md` (not `RATTA_PLAN.md`) for any work on it** — core on the
-  heading pattern, a g-paper transform mode, a host sticky editor, PDF endnotes; no ninth point.
+  PARITY_BACKLOG item 3) is COMPLETE + FROZEN (H1–H7 landed 2026-09-06)**: the reference is
+  `apps/notesprout_ratta/docs/objects.md`; for any work on it read the standalone
+  `apps/notesprout_ratta/OBJECTS_PLAN.md` (not `RATTA_PLAN.md`) — all core on the heading pattern
+  (three additive row types, no `.soil` version bump), a g-paper transform mode (SN pinned to
+  g-paper 0.1.27), a host sticky editor, PDF endnotes over `PageBundle` v2; no ninth point, no API
+  bump, code review waived by the user. **Arcs 1–28 are all complete and frozen.**
   **No NINTH extension point
   and no other arc without another user decision. Read `apps/notesprout_ratta/RATTA_PLAN.md`
   first for ANY other work there** — it holds the working protocol, model recipe, standing

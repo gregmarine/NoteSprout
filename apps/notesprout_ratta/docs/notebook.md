@@ -58,6 +58,12 @@ deliberate differences are listed at the end.
 | `TagTargets` (arc 21 / W2) | pure: a page's 1-based number in the live page list (or null — a page briefly missing from it names nothing), and the pages a MANAGE showing may carry, capped at `TagShowing.MAX_PAGES`. JVM-tested |
 | `TagSelection` (arc 21 / W3) | pure: which selections offer the lasso's Tag button and which of the two flows a tap takes (`TagFlow.SILENT` / `RECOGNIZE` / `NONE`), plus the prefill cut for an over-cap heading title. JVM-tested; see [Tag](#tag-arc-21) below |
 | `TagManagerEntry` (arc 21 / W1) | the host's one door for every tag surface — library sheet, notebook toolbar, lasso — the `ScratchPadEntry` shape: availability, the busy latch, the "Opening…" wait, a held showing's bind life, and (W3) the silent `assign` call with its own "Tagging…" wait |
+| **Text objects (arc 28)** | `TextRows`/`TextStore` (rows + store on the shared `SoilWriter`) · `TextRenderer` (draw + the one `measure()` creation/edit/`remeasureForDevice` share) · `TextEditDialog` (plain Markdown box, `HeadingEditDialog`'s shape) · `TextLines` (pure: `normalize` for recognized ink, `typed` for the dialog) · `TextPlacement` (pure centring) · `TextFlow`/`TextFlow.Host` (insert / convert / edit, out of the activity) — full detail in [`docs/objects.md`](objects.md) |
+| **Shape objects (arc 28)** | `ShapeRows`/`ShapeStore` · `ShapeGeometry` (pure `outline`/`tightBounds`/`aabb`) · `ShapeRenderer` · `ShapeDefaults` (pure insert sizes) · `ShapeBox` (pure `PageShape` ⇄ `OrientedBox`) · `ShapeTransformBar` + `ShapeTransformLabels` (the lasso bar's Transform, the aspect-lock wording) · `ShapeFlow`/`ShapeFlow.Host` (insert + the whole g-paper transform lifecycle) — [`docs/objects.md`](objects.md) |
+| **Sticky notes (arc 28)** | `StickyRows`/`StickyStore` (icon row; children in the note's local space) · `StickyRenderer` (`ic_sticker_2`, white-filled interior) · `StickyDefaults` · `StickyFlow`/`StickyFlow.Host` (insert → editor at once, finger-tap reopen) · `StickyEditorActivity` (the core second paper surface) · `StickyEditorTransfer` (the process-local singleton the editor writes host-side rows through) · `StickyInk`/`StickyClip` (pure editor ink + clipboard rules) — [`docs/objects.md`](objects.md) |
+| `InsertBar` (arc 28 / H1, D4) | the `btnInsert` sub-bar: Sticky · Text · Rectangle · Ellipse · Triangle · Line · Arrow · Star, placed by `AnchoredBar`; a command, not a tool — lands the new object selected and remembers nothing between openings |
+| `SelectionModes` (arc 28 / H2, D5) | pure `classify()` — the `when` that decides `SelectionMode.TEXT`/`SHAPE`/`STICKY`/`MIXED` from a selection's content, pulled out of the activity so the table is testable |
+| `PageObjects` (arc 28 / H1) | the three renderers (`textRenderer`/`shapeRenderer`/`stickyRenderer`) + their working copies, held together as one small view-model beside the activity; draw order and the repaint are the caller's (D8) |
 
 ## Layout (`activity_notebook.xml`)
 
@@ -148,6 +154,20 @@ remembered.**
   the panels entirely**, which removes the first suspect's mechanism altogether; the exclusion rects
   now only change when the selection toolbar appears or moves. Never reproduced through R4–R6 — if
   it returns, instrument `onStrokeCommitted` vs. the overlay and fix in g-paper.
+
+### Insert (arc 28)
+
+`btnInsert` (`ic_plus`) sits directly after the lasso in the top bar's left-packed row. A tap opens
+`InsertBar`, a floating eight-button sub-bar (`AnchoredBar`'s placement — the arc-8 lasso popup's
+and the arc-21 tag popup's shape) holding **Sticky · Text · Rectangle · Ellipse · Triangle · Line ·
+Arrow · Star**, left to right, always — one row on the Nomad at `toolbar_button_size` (D4's two-row
+wrap was measured for but never needed). **Insert is a command, not a tool**: a pick places the
+object at the page centre and lands it selected under the lasso (`armLassoForLanding()` runs first —
+see Selection below); the armed tool is exactly what it was before the tap, and nothing about the
+bar is remembered between openings. Dismisses on a pick, another bar's button, a tool change, a page
+swap, or an outside touch, and unions its bounds into the exclusion rects and `overChrome` while up,
+like every other floating bar. Full data-model detail for what each button creates is
+[`docs/objects.md`](objects.md).
 
 ## Open
 
@@ -401,6 +421,33 @@ counts proximity + a 350 ms tail), so an idle gate would deliver the bar long af
 belongs to — the R3 panel lesson. It is safe because the engine has *already* presented the
 selection box on this same boundary: this frame is part of that presentation, not a repaint during
 writing. See the frame-silence section for the full list.
+
+### Objects — text, shapes and stickies (arc 28)
+
+`SelectionModes.classify` (pure, JVM-tested) is the `when` `showSelectionToolbar` used to run by
+hand: a lone content object with no ink takes its own mode — `HEADING`, `TEXT`, `SHAPE` or
+`STICKY` — ahead of the link/mixed fallbacks. Per mode, `SelectionToolbar.show` offers:
+
+- **`TEXT`** (a lone text object) — the base row (Snap · Copy · Cut · a link-free Link · Delete)
+  and nothing of its own: the object's one verb is a **stylus tap inside the box**, which
+  `onSelectionTapped` hands to `TextEditDialog` after the heading lookup misses. **Text** itself
+  (the convert button, directly after **H**) is offered only on `STROKES` — ink alone, never a lone
+  text object, which already has words.
+- **`SHAPE`** (a lone shape) — the base row plus **Transform** (`ic_resize`, directly after Text),
+  the one button this mode adds: it hands the shape straight to g-paper's transform mode (D9,
+  [`docs/objects.md`](objects.md)).
+- **`STICKY`** (a lone sticky) — the base row and nothing else: a note's one verb is a **finger tap
+  on its icon**, which opens `StickyEditorActivity` (Gestures below), not a bar button.
+- **Pad / Calendar / Tag are gone in all three modes** — Pad and Calendar are gated on `STROKES`
+  alone, and `TagSelection.offered` explicitly refuses `TEXT`/`SHAPE`/`STICKY`: a note or a shape
+  has no ink to send and no words to tag.
+- **Link** stays offered on every link-free selection, the new kinds included — a link may wrap a
+  text, a shape or a sticky exactly as it wraps ink or a heading ([`docs/links.md`](links.md)).
+
+**Draw order (D8):** headings · text · shapes · links · stickies · strokes, all
+`ContentLayer.BELOW_STROKES` — texts and shapes sit under links so a wrap changes nothing about how
+content looks, and stickies sit over links so an icon dropped on a link is what a finger tap catches
+(Gestures below). `PagePreview.drawContent` and `LinkComposite.build` mirror the same order exactly.
 
 ### Send to Calendar (arc 23)
 
@@ -1102,7 +1149,15 @@ sequence whose DOWN lands on chrome or comes from a stylus is ignored whole.
 **Stand-down.** `standDown()` is `{ selectionActive }` — the detector refuses to arm, and cancels
 mid-sequence, while a lasso selection is up (g-paper claims finger input then). It was
 `selectionActive || toolbar.panelOpen` in R4–R6; P1 removed the panels and the clause with them,
-which puts it back on Paper v0's rule.
+which puts it back on Paper v0's rule. Widened again at arc 28 / H4 to
+`{ selectionActive || paper.transformingContentId != null }` (a Nomad finding from H3's demo walk):
+a live transform mode claims finger input from g-paper exactly as a lasso selection does, and the
+notebook's own detectors must yield to it the same way.
+
+**Objects (arc 28).** A one-finger tap hit-tests **stickies before links** — `StickyFlow.openAt`
+runs first inside `onFingerTap`, because the icon draws above the link layer (D8): a note dropped
+over a link is what the finger is on, and a hit opens `StickyEditorActivity`. Stylus taps stay ink,
+the same rule a link follow has always had.
 
 **Deliberate delta from Paper v0:** no BOOX `ACTION_CANCEL` special case. On BOOX the Onyx SDK
 intercepts 3-finger touches and cancels the sequence, so the reference counted an armed, stationary
@@ -1138,7 +1193,13 @@ and survives it — [`docs/links.md`](links.md)).
 | `LinkCreated` (K1) | the picker's OK on a create ([`docs/links.md`](links.md)) | `links.unlink` | `links.relink` |
 | `LinkUnlinked` (K1) | the selection toolbar's Unlink | `links.relink` | `links.unlink` |
 | `LinkEdited` (K2) | the picker's OK on an edit | write `before`'s payload | write `after`'s payload |
-| `Page` | insert / delete (`Structural` snapshot, whose `objectIds` are type-agnostic — strokes, headings and links all) | `reconcile(before)`, **restoring** `objectIds` | `reconcile(after)`, deleting them |
+| `TextCreated` (arc 28 / H2) | an Insert-bar text (`strokeIds` empty) or a lasso→Text conversion (`strokeIds` = the ink it replaced) | erase the text row, revive `strokeIds` in place | restore the text row, re-delete `strokeIds` |
+| `TextEdited` (arc 28 / H2) | the text dialog's Save | write `before`'s content | write `after`'s content |
+| `ShapeInserted` (arc 28 / H4) | an Insert-bar shape | `store.remove` | `store.restore` |
+| `ShapeTransformed` (arc 28 / H4) | one finished transform-mode drag (`onTransformEnded`'s whole before/after geometry) | write `before`'s geometry | write `after`'s geometry |
+| `StickyInserted` (arc 28 / H5) | an Insert-bar sticky (the icon row only — the editor has not run yet) | `StickyStore.remove` (takes any children with it) | `StickyStore.restore` |
+| `StickyContentEdited` (arc 28 / H5) | one **showing** of the sticky editor that changed the note, recorded once from the result callback | `StickyStore.setContent(stickyId, before)` | `StickyStore.setContent(stickyId, after)` |
+| `Page` | insert / delete (`Structural` snapshot, whose `objectIds` are type-agnostic — strokes, headings, links and, since arc 28, texts/shapes/stickies too) | `reconcile(before)`, **restoring** `objectIds` | `reconcile(after)`, deleting them |
 | `PagePasted` (B1) | a paste — the same `Structural` shape, its own kind because `objectIds` runs the **opposite direction** (rows the paste *created*) | `reconcile(before)`, **deleting** `objectIds` | `reconcile(after)`, restoring them |
 | `TemplateChanged` (arc 12) | a pick in the template library — the two template ids the page moved between (`""` = blank). No drain: it writes one page row and never touches the stroke writer | `applyTemplate(from)` | `applyTemplate(to)` |
 | `ObjectsPasted` (O1) | an object paste — `Deleted` run in reverse, its own kind for `PagePasted`'s reason (a link travels as a `PageLink` snapshot, so undo takes its wrapped children down with it); a transfer paste from the Scratch Pad or (arc 23 / Y3) the Calendar is a strokes-only object paste and records here too, through the one shared `pasteTransferred` body (below) rather than a fifteenth kind | `store.remove` + `headings.erase` + `links.remove` | `store.revive` + `headings.restore` + `links.restore` |
@@ -1171,6 +1232,22 @@ its own side — the history never silently loses a step, and because the store 
 `reconcile` is idempotent, retrying converges. And `doUndo` snapshots `undo.generation` (bumped by
 every `record`) before reverting: if a pen-up lands mid-replay and records a fresh edit — which
 clears redo — the undone entry is *not* pushed onto redo afterwards, so record-clears-redo holds.
+
+**The three older multi-kind entries widened at arc 28 / H1.** `Deleted`, `ScribbleErased` and
+`Moved` all gained `textIds`/`shapeIds` (ids only — the heading rule: a soft-deleted row keeps every
+column and revives in place) and `ObjectsPasted` gained the same pair for the paste direction;
+stickies ride all four as whole `PageSticky` snapshots **with their content**
+(`StickyStore.withContent`), never ids, because an icon alone would come back an empty note. Both
+replay `when`s stay exhaustive, so a new kind that misses one arm is a compile error, not a silent
+no-op — the standing trap this arc tests against on every kind.
+
+**A sticky's delete snapshot suspends (arc 28 / H5).** `StickyStore.withContent` — the read
+`Deleted`/`ScribbleErased` need before the row goes — is a suspending call, and g-paper's delete
+callback is not. `NotebookActivity.recordWithStickies` is the one seam: with a sticky (loose, or
+wrapped in a link that holds one) in the act, it drains the writer, reads every wrapped note's
+content, *then* soft-deletes and records the entry — still **one gesture, one undo entry**, just
+recorded a beat later. With no sticky in the act the entry is recorded on the spot, exactly as every
+erase and delete was before H5.
 
 Every gesture-driven operation runs through `runPageOp` — a `Mutex` on `lifecycleScope`, a no-op
 while not open or once closing, `runCatching` + `Log.w` on failure — so two overlapping gestures
@@ -1337,6 +1414,23 @@ has no entry to update, and `refreshToPage` finds no index and stays put.
   exists. Read once, cleared regardless of outcome. K4 rides `lastOpenViaLink` along with it, so
   a via-link notebook is restored *as* via-link — without it the restore would read as a fresh
   open and clear the persisted link trail ([`docs/links.md`](links.md)).
+- **`endTransformIfRunning()` (arc 28 / H4)** persists and records a running transform mode through
+  `onTransformEnded` rather than dropping it on the silent `release` path — called at **eight**
+  sites: `close()`, `onStop`, the top of `navigateTo` (before `drain()`, so a same-page refresh
+  reads the geometry the exit just wrote), both extensions' `beforeLaunch` handoffs
+  (`releaseForHandoff` is itself a silent release), and the three other floating bars' `show`s
+  (`showLassoPopup`/`showTagsPopup`/`showInsertBar` — another bar taking this one's place ends the
+  mode, the same rule the bars already apply to each other). Idempotent, and safe before `onCreate`
+  has built the surface.
+- **The sticky editor's EPD handoff (arc 28 / H5).** `StickyFlow` runs
+  `dismissFloatingChrome()` → `endTransformIfRunning()` → `paper.releaseForHandoff()` → launch, all
+  inside one page op after a `drain()` — the notebook itself has no chrome-side `releaseForHandoff`
+  to give up, only the paper surface underneath. `StickyEditorActivity` mirrors it:
+  `resumeDrawing()` in `onResume`, `releaseForHandoff()` before every `finish()`. The notebook's
+  result callback runs `reclaimPipeline()` **first, before any other statement** — ActivityResult
+  callbacks run **before** `onResume` — guarded on `::paper.isInitialized`, since the same callback
+  also fires on a screen Android rebuilt after a process death whose `onCreate` bounced on
+  `IndexGuard`.
 
 ## Frame-silence rule
 
@@ -1510,6 +1604,25 @@ and ids no longer live are dropped from what is sent. `HeldInkClient` and `Exten
 themselves are exercised through `ScratchPadClient`/`CalendarClient` and
 `ScratchPadEntry`/`CalendarEntry`'s own instrumented paths, not a JVM suite of their own — the
 `RattaNotebookView` sibling-copy trap this closed is documented, not separately unit-tested.
+
+**Arc 28 (objects), the notebook's own half:** `TextRowsTest`, `TextLinesTest`,
+`TextPlacementTest`, `SelectionModesTest` (+ `SelectionModesStickyTest`), `ShapeRowsTest`,
+`ShapeFlagsTest`, `ShapeGeometryTest`, `ShapeDefaultsTest`, `ShapeBoxTest`,
+`ShapeTransformLabelsTest`, `InsertBarKindsTest`, `StickyRowsTest`, `StickyFlagsTest`,
+`StickyStoreTest` (+ `StickyStoreSetContentTest`), `StickyInkTest`, `StickyClipTest`,
+`StickyDefaultsTest`, `StickyEditorTransferTest`, `TagSelectionTest`
+(+ `TagSelectionStickyTest`), and `NotebookUndoTest`'s six new kinds (+
+`NotebookUndoStickyTest`). `ObjectClipTest` grows the three kinds' arms (a sticky's children
+travel with fresh ids, kept in local space; a shape's payload bounds go through
+`ShapeGeometry.tightBounds` + `strokeWidth/2`, not the density-scaled `aabb`), and `SoilDao`'s
+`liveContentIds`/`liveDescendantIds` widen against the same shared `FakeSoilDao`. `:app` went
+**1194 → 1470** over the arc (1337 at H1 · 1369 at H2/H3 · 1393 at H4 · 1459 at H5 · 1470 at H6);
+2830 across every module. The store/geometry/PDF-endnote/transform-mode suites this table does not
+name are [`docs/objects.md`](objects.md)'s own inventory. `NotebookActivity` grew alongside them,
+**3150 → 3725** lines despite the new object kinds landing almost entirely in their own files — one
+`<Kind>Flow.kt` (+ a nested `Host` object the activity implements) per kind kept the growth in the
+activity itself to selection wiring, the eight `endTransformIfRunning()` call sites and the
+handoff chain, not the features themselves.
 
 ## Deliberate differences from Paper v0
 

@@ -114,6 +114,44 @@ edit is still "the pages have changed," og's rule). `liveDescendantIds` gained `
 one. `SoilCompactor` purges a document row only via cascade from its purged page — there is no
 independent document-purge path.
 
+### Arc 28 objects and staleness
+
+Arc 28 ("Objects" — sticky notes, on-page Markdown text objects, six hand-placed shapes;
+[`objects.md`](objects.md) is the reference) added three more row types to the family table, and
+`DocumentDao`'s content-staleness queries grew to match. The two `@Query` strings that carry a
+`type IN (…)` whitelist — `maxContentUpdatedAt` (a page's own watermark) and
+`notebookMaxContentUpdatedAt` (the notebook document's, which also folds in every page-parented
+`document` row) — each gained `'text'`, `'shape'` and `'sticky_note'` beside `'stroke'`,
+`'heading'`, `'link'` (and, in the notebook-wide query's page-level branch only, `'document'`
+itself). Between the two queries that is three literal `type IN (…)` lists, all three widened the
+same way — read `DocumentDao.kt` for the exact SQL if a fourth kind is ever added, since a kind
+left out of even one of the three would have that kind's edits go unnoticed by whichever sweep
+missed it.
+
+The effect: a page that gained a new text object, shape or sticky icon since a document was
+drafted from it reads as **edited**, exactly like a page that gained new ink — the "Page has
+changed since this draft" source-strip wording and the notebook document's own staleness banner
+both follow from the same watermark comparison, unchanged.
+
+**A note's own content strokes are deliberately not in the whitelist** — they are parented to the
+sticky, not to the page or a link, so the join in either query never reaches them. This is the same
+rule H1 built for the object model generally (`ObjectClip`'s docs, `docs/clipboard.md`): a note's
+icon is what the page knows about it, and ink drawn *inside* a note never draws on the page and
+never feeds the document, so editing inside one is not "the page has changed." Moving, resizing or
+deleting the icon itself does count, because the icon row's own `updatedAt` is on the page's side
+of the join.
+
+**Text objects feed neither the document seed nor Contents.** Seeding still reads only the page's
+recognized handwriting or the stored document (`RecognizerClient.recognizePage`, above) — a text
+object's own Markdown is never folded into that read, so a page carrying only typed text objects
+and no ink still seeds blank. Likewise Contents (headings only) does not walk text-object rows.
+Both are backlog items, not oversights: nothing in this arc changed either path.
+
+`FakeDocumentDao` (`app/src/test/…/data/soil/FakeDocumentDao.kt`, over the notebook package's
+`FakeSoilDao` in-memory rows) mirrors the widened whitelist in its own `content` set — `stroke`,
+`heading`, `link`, `text`, `shape`, `sticky_note` — so `DocumentStalenessTest` and
+`DocumentWhitelistTest` exercise the same shape the real queries do, without a device.
+
 ---
 
 ## The editor's store

@@ -83,6 +83,12 @@ installed index as the marker and its four outcomes, the key proof before any co
 prune, **the destination rule** (this device's backup destination is parked and re-applied; the
 backup's is always discarded), per-item interrupted-commit recovery, both sources, the screen, the
 failure table, the measured Nomad numbers, the fault seam and the traps) ·
+`docs/objects.md` (arc 28 "Objects": **sticky notes, text objects and six shapes as a feature** —
+the three additive rows and their bit packing on the 18 universal columns, the D8 draw order, the
+Insert bar, text insert / convert / edit, the g-paper transform mode and **the host contract as
+built**, the sticky editor with its transfer singleton and EPD handoff chain, selection modes /
+undo kinds / clipboard arms / whole-object erase, PDF endnotes over `PageBundle` v2 +
+`bundleVersion`, the failure table, the design calls, the traps, the Nomad walks and the tests) ·
 `docs/sn-screen.md` (arc 11 / J1: the shared `:sn-screen` paper-screen library — what may live
 there, what may not depend on it, and the `nonTransitiveRClass` flag that holds it together).
 
@@ -294,14 +300,28 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   the cloud extension store is restored like any other (the host never reaches into `:ext-cloud`'s
   tables), and every restore walk is driven by hand on the Nomad against a backup made foreign by
   `GlobalRotation` — never the Manta.
-- **Arc 28 "Objects" is IN PROGRESS (wizard locked 2026-09-06; H1 ✅ landed 2026-09-06 — the substrate: three row types, mappers, stores, renderers in D8 order, undo kinds, clipboard arms, the Insert bar shell; **H2 ✅ landed 2026-09-06 — text objects end to end: `TextEditDialog`, `TextFlow` (insert / convert / edit), `SelectionMode.TEXT`, the lasso bar's Text, `armLassoForLanding` shared with the transfer pastes**; **H3 ✅ landed 2026-09-06 — g-paper transform mode (handles + rotate knob + aspect lock + 5° snap, g-paper 0.1.27, SN re-pinned 0.1.23 → 0.1.27, no host behaviour change)**; **H4 ✅ landed 2026-09-06 — shapes on the page: `ShapeFlow` (insert + transform), `ShapeTransformBar`, `SelectionMode.SHAPE` + the lasso bar's Transform, the six Insert-bar shapes offered in every build, finger gates yield while `paper.transformingContentId != null`**; **H5 ✅ landed 2026-09-06 — sticky notes: `StickyEditorActivity` (core, its own g-paper surface below a one-row top bar, no `.soil` of its own — writes through the notebook's `SoilWriter` via the process-local `StickyEditorTransfer`; Back saves-and-closes), `StickyFlow` (insert → editor at once, finger-tap reopen before links, one `StickyContentEdited` per showing from a re-read, the pipeline reclaimed as the result callback's FIRST statement), `SelectionMode.STICKY`, the white-filled `ic_sticker_2` silhouette**; H6 ⬜ next)** — sticky notes, on-page
-  Markdown text objects and six hand-placed shapes (`PARITY_BACKLOG.md` item 3), all **core** on the
-  arc-3 heading pattern: three additive row types on the universal table (no `SOIL_VERSION` bump),
-  a host `StickyEditorActivity` (the second second-paper-surface in one process, writing through the
-  notebook's `SoilWriter`), a g-paper **transform mode** (H3, engine-owned handles + rotate), and PDF
-  endnotes over a backward-readable `PageBundle` v2. No ninth point, no `API_VERSION` bump, no line
-  objects, no shape recognizer. **Read the standalone `OBJECTS_PLAN.md`, not `RATTA_PLAN.md`, for
-  any work on it**; when it closes, `docs/objects.md` is the reference.
+- **Arc 28 "Objects" is COMPLETE + FROZEN (H1–H7 landed 2026-09-06; wizard locked the same
+  day)** — sticky notes, on-page Markdown text objects and six hand-placed shapes
+  (`PARITY_BACKLOG.md` item 3, now DONE), all **core** on the arc-3 heading pattern: three additive
+  row types on the universal table (`text` / `shape` / `sticky_note` — no `SOIL_VERSION` bump, no
+  migration, no new column; packing in `docs/objects.md`), pure mappers + stores on the one
+  `SoilWriter`, three `ContentRenderer`s in the D8 draw order (headings · text · shapes · links ·
+  stickies · strokes), one `Insert` button + an eight-button floating sub-bar, `SelectionMode`
+  TEXT / SHAPE / STICKY, undo / clipboard / page-copy / erase parity, a host
+  `StickyEditorActivity` (the second second-paper-surface in one process, no `.soil` of its own —
+  writes through the notebook's `SoilWriter` via the process-local `StickyEditorTransfer`; Back
+  saves-and-closes), a g-paper **transform mode** (H3 — engine-owned handles + rotate knob + aspect
+  lock + 5° snap, **g-paper 0.1.27**, SN re-pinned from 0.1.23; the host's finger gates yield while
+  `paper.transformingContentId != null`, `endTransformIfRunning()` before every silent release), and
+  PDF endnotes over a backward-readable `PageBundle` v2 + the `ExporterInfo.bundleVersion`
+  compatible tail. No ninth point, no `API_VERSION` bump (stays 8), no line objects, no shape
+  recognizer, **no extension transfers** (Pad / Calendar hide for the new kinds). Version stays
+  `0.1.0-ratta`; `:app` 1194 → **1470** tests, **2830** across the modules. **The arc-range
+  `/code-review` was waived by the user at H6 — do not re-raise it.** **`docs/objects.md` is the
+  reference**; the plan + per-phase ledger is the standalone `OBJECTS_PLAN.md` (not `RATTA_PLAN.md`).
+  Standing rule from H2 that binds every later host-landed selection: call `armLassoForLanding()`
+  **before** `setSelection` from any non-lasso context — a selection landed under a pen tool is a
+  picture the pen inks through.
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by

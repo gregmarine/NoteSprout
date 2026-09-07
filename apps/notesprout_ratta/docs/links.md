@@ -106,6 +106,47 @@ style (which is what makes an unchanged-payload Edit a clean no-op).
 `MIXED_WITH_LINK` hide the Link action — see below) and re-checked at use time in
 `createLinkFromSelection`.
 
+### Wrapping the new kinds (arc 28)
+
+A link may wrap any of arc 28's three additive kinds — text, shape and sticky rows — exactly as it
+wraps ink and headings: `PageLink` grew `texts: List<PageText>` / `shapes: List<PageShape>` /
+`stickies: List<PageSticky>` alongside `strokes`/`headings`, all page-absolute, each in z-order;
+`LinkRows.toLink` takes them as trailing defaults so a three-argument call (a test, a foreign-file
+read) still compiles; `LinkStore.loadPage`/`create`/`unlink`/`relink` reparent and read all six
+kinds through the widened `PageLink.childIds`.
+
+**A wrapped sticky's content stays under the sticky, not the link.** `childIds` deliberately
+excludes a note's content strokes — they hang off the sticky row (`StickyStore`), the same
+grandchild relationship a loose sticky has to its page — so `page → link → sticky → stroke` is
+**three levels deep** (the exact phrase `ObjectClip`'s own comment uses), one level deeper than
+anything arc 6 had to reach. A wrapped sticky still **never draws its content on the page or in the
+composite** ([Rendering](#rendering) below; `LinkComposite.build` draws the sticky's icon only, in
+D8's order — headings · texts · shapes · strokes · icons, the same order `PagePreview.drawContent`
+uses).
+
+Reads reach the extra level on purpose:
+
+- `LinkStore.loadPage` reads a wrapped sticky **icon-only** — `StickyStore`'s own page-load rule,
+  since a page load never needs a note's content; a capture or a delete snapshot that does goes
+  through `StickyStore.withContent` explicitly.
+- `SoilDao.liveDescendantIds` reaches a sticky's content whether the sticky sits loose on the page
+  or inside one of the page's links — a third branch besides the page's own children and the links'
+  children ([`docs/notebook.md`](notebook.md) § Undo / redo has the full query).
+- `ObjectClip.capture`/`plan` treat a link's wrapped set as anything parented to it that is not
+  another link (no nesting, unchanged) — a wrapped sticky's own children are then assembled the
+  same way a loose one's are, wired onto the sticky's **new** id before the link is rebuilt around
+  it.
+
+**Deleting a link that holds a sticky reads before it writes.** `LinkStore.remove` reads every
+wrapped sticky's content strokes inside its own transaction and takes them down with the link — no
+snapshot needed for a plain delete. **Undo needs one**: a link snapshot holding stickies must carry
+their content (`StickyStore.withContent` on each, taken **before** the delete), because there is no
+DAO call that reads an already-soft-deleted child back — `LinkStore.restore`'s own doc comment says
+so. `NotebookActivity.recordWithStickies` is what makes that read possible from a delete/scribble
+gesture at all: g-paper's callback is synchronous, so with a sticky in the act (loose or wrapped)
+the read, the deletes and the one undo entry all move into a single page op — still one gesture, one
+entry, just recorded a beat later ([`docs/notebook.md`](notebook.md) § Undo / redo).
+
 ## Rendering
 
 `LinkRenderer` is the arc's g-paper `ContentRenderer`, registered alongside `HeadingRenderer` at

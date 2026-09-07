@@ -79,10 +79,6 @@ import java.io.File
  *    commit: a kill at a seam of the swap (the relaunch's `recoverInterrupted` is what is under
  *    test), a throw before the key state, a planted file at the Garden name, a torn staging set,
  *    or an in-process store call mid-swap. Consumed when it fires.
- *  - **Insert sample objects** ([SampleObjects], arc 28 / H1) — write one text object, all six
- *    shapes and one sticky note (with content) onto a picked notebook's first page, so the draw
- *    order, the hit boxes and the reopen can be walked on the Nomad a whole arc before the Insert
- *    bar offers anything. Refuses an open notebook and a locked one. Removed at H7.
  *  - **WEBP encoder measurement** ([WebpProbe]) — lossless vs lossy-q100 on this device's own page
  *    size, for the open question in `BuiltInTemplates.toWebp`. Skia's encoders are the subject, so
  *    no host tool can answer it; run it on every device tier before changing the format.
@@ -116,7 +112,6 @@ object DebugMenu {
             "Break a rekey commit (debug)",
             "Break keying (debug)",
             "Break a restore (debug)",
-            "Insert sample objects (debug)",
         )
         val actions = listOf<() -> Unit>(
             { storeSelfTest(activity) },
@@ -127,7 +122,6 @@ object DebugMenu {
             { pickNotebook(activity, "Break a rekey commit") { id -> breakRekeyCommit(activity, id) } },
             { pickNotebook(activity, "Break keying") { id -> breakKeying(activity, id) } },
             { breakRestore(activity) },
-            { pickNotebook(activity, "Insert sample objects") { id -> insertSampleObjects(activity, id) } },
         )
         Dialogs.style(
             AlertDialog.Builder(activity)
@@ -183,20 +177,6 @@ object DebugMenu {
                     .setNegativeButton("Close", null)
                     .create()
             ).show()
-        }
-    }
-
-    /**
-     * Arc 28 / H1 — write the sample objects into a picked notebook's first page ([SampleObjects]).
-     * The result is a toast, not a dialog: it confirms something that already happened, and every
-     * refusal it can report ("open", "locked", "no page") is one the person can act on directly.
-     */
-    private fun insertSampleObjects(activity: AppCompatActivity, notebookId: String) {
-        val dm = activity.resources.displayMetrics
-        activity.lifecycleScope.launch {
-            val text = SampleObjects.insert(activity, notebookId, dm.density, dm.scaledDensity)
-            Slog.d("DebugMenu") { "sample objects: $text" }
-            Toast.makeText(activity, text, Toast.LENGTH_LONG).show()
         }
     }
 

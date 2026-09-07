@@ -122,7 +122,21 @@ after it — the staged index must open under a key the user can supply, or noth
 
 ---
 
-## 3. Content objects — sticky notes, text, some shapes
+## 3. Content objects — sticky notes, text, some shapes — ✅ DONE (arc 28 "Objects", H1–H7 landed 2026-09-06)
+
+**The reference is `docs/objects.md`; the plan and ledger `OBJECTS_PLAN.md`** — read those, not this
+section. What landed, all **core** on the arc-3 heading pattern: three additive row types on the
+universal table (`text` / `shape` / `sticky_note`, no `SOIL_VERSION` bump, no new column), the
+Insert bar (Sticky · Text · Rectangle · Ellipse · Triangle · Line · Arrow · Star), text objects
+created by lasso-bar recognition **or** Insert-and-type and edited in a plain Markdown box, six
+hand-placed shapes with a g-paper **transform mode** (handles + rotate knob + aspect lock, g-paper
+0.1.27), sticky notes with a core `StickyEditorActivity` on its own paper surface writing through the
+notebook's `SoilWriter` (no ninth point — the seam question below was answered *in-process*), full
+in-notebook parity (lasso / move / erase / undo / clipboard / page copy / link-wrap) with **no
+extension transfers** (Pad / Calendar hide), and PDF endnotes over a backward-readable `PageBundle`
+v2 (no `API_VERSION` bump). Line objects and the dwell shape recognizer stayed out, as decided. The
+arc-range code review was waived by the user at H6. The text that follows is the gap review as it
+stood before the wizard, kept for the record.
 
 **User's call:** "We will implement sticky notes, text, and perhaps some of the shapes. **We will
 not implement the smart shape feature** — that never worked well."

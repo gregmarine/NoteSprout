@@ -340,6 +340,81 @@ this arc added, approved 2026-08-30, and it never leaks past `:ext-pdf`. Every
 ("reading the page bundle" / "writing the PDF" / "protecting the PDF") — never a path, never a
 page's content, never the secret.
 
+### PDF endnotes — `PageBundle` v2 and `bundleVersion` (arc 28 / H6)
+
+Sticky notes (arc 28) had to reach the PDF exporter without ever crossing the seam themselves —
+the D7 answer is the same host-renders/extension-assembles split above, grown one trailer deeper.
+A live sticky note's ink goes out as an **endnote**: one page appended after the notebook's own
+pages, and two links tying it to the page it came from. Full reference for the objects this reads:
+[`objects.md`](objects.md).
+
+**`PageBundle.VERSION = 2`, backward-readable to `VERSION_1 = 1`.** `extension-api`'s
+`PageBundle` (`docs/extensions.md` § "The source-kind tail") gained a trailer behind the pages: `int
+linkCount` then, per link, `int fromPage · float l t r b · int toPage` — a `Link` whose constructor
+`require`s 1-based page numbers and a non-empty finite rect. `MAX_LINKS = 65536` caps the trailer
+before allocation, the same rule as the page caps above it. `Writer(out, pageCount, links =
+emptyList())` writes **version 1 byte-for-byte when `links` is empty** — `writer.version` reports
+which — so a sticky-free notebook still produces the identical arc-18 stream, and the trailer itself
+is written in `close()`, after every declared page has actually landed. Every link is checked
+against `pageCount` at construction, so a reader can never meet a page number the writer could not
+have meant. `Reader` accepts version 1 or 2; `readLinks()` may only be called after the last page
+has been read (before that, `IOException` — the trailer sits behind the pages on the wire) and
+answers an empty list for a version-1 stream; the link count is capped before any `ArrayList` is
+sized, and a truncated trailer is named in the exception rather than swallowed as EOF. 11
+`PageBundleTest`s pin all of this, including a v1 stream read through a v2 reader and four
+malformed-trailer shapes.
+
+**`ExporterInfo.bundleVersion: Int = 1`** is the second compatible parcel tail, right after
+`sourceKind` (same `dataAvail()`-gated read, same "an old-shape descriptor simply runs out and
+means the old value" rule) — **no `API_VERSION` bump**, exactly as `sourceKind` needed none at arc
+18. It says the highest `PageBundle` version that exporter's `export()` actually reads. `:ext-pdf`'s
+`PdfDescriptor.info()` declares `bundleVersion = PageBundle.VERSION`; an exporter that never heard
+of endnotes keeps declaring 1 and the host writes it a version-1 bundle regardless of what the
+notebook holds — the notes simply go out as icons only, with no links to follow them, and the
+Export screen says so in one line (`export_endnotes_unavailable`, below the options) whenever
+`ExportDocumentRules.endnotesUnavailable(sourceKind, bundleVersion, hasStickyContent,
+documentSource)` is true: a `SOURCE_PAGES` exporter below `PageBundle.VERSION`, a notebook that
+actually has a note with content, and the pages — not the document — about to be drawn.
+`ExportActivity` reads `hasStickyContent` off `SoilDao.stickyIdsWithContent()` on the **same**
+`readOnce` that already answers `hasLiveDocument()`, and passes `c.info.bundleVersion` straight
+into `ExportRender.render(...)`.
+
+**`PdfLinks.annotations(links, pageHeights)`** (`:ext-pdf`, pure) is the one piece of arithmetic
+between a bundle link and a PDF annotation: the bundle speaks top-left-origin pixels on a 1-based
+page, PDF wants bottom-left-origin on a 0-based page, and the only conversion once the pages are
+1:1 in size is the vertical flip — `lly = pageH − b`, `ury = pageH − t`. A link naming a page
+outside `pageHeights` is refused, never dropped. `PdfAssembly` reads the trailer only after every
+page has been added to the document, and — only when it is non-empty — adds one borderless
+`PDAnnotationLink` with a `PDActionGoTo`/`PDPageFitDestination` per entry, in a `"linking the
+endnotes"` stage that runs **before** `protect()`, so a password-protected export encrypts the
+links along with everything else. A version-1 bundle carries no trailer, the annotation pass never
+runs, and a sticky-free notebook's PDF is byte-identical to the one arc 18 produced
+(`PdfLinksTest.noLinksMeansNoAnnotations` + the writer's v1-bytes test pin it both ends).
+
+**Host side.** `SoilDao.stickyIdsWithContent()` is one notebook-wide `JOIN` naming every live
+sticky note that owns at least one live stroke — a note with nothing drawn in it gets no endnote
+page at all. Pure `export/Endnotes.plan(sources, pageCount)` decides everything `ExportRender`
+then only draws: numbering is page order, then z-order on the page (loose objects before
+link-wrapped ones); a note's page is `pageCount + N`; its content size is the row's own carried
+size, falling back to the source page's own size when the row carries none (an old or foreign
+file), clamped to `PageBundle.MAX_DIMENSION_PX` with `Endnotes.CAPTION_PX` (60 px) reserved for the
+caption strip underneath; two links per note — the icon on the source page jumps to the note, the
+caption strip jumps home — except an icon with no area, which gets no icon link (`PageBundle.Link`
+refuses an empty rect). Content taller than one page is not split (og's own deferred item, kept
+deferred). `ExportRender.render(..., bundleVersion)` plans the endnotes **before** the first page
+is drawn, since the `PageBundle.Writer` declares its page count and its whole link trailer up
+front; it then walks the notebook's pages as before, recycling the template bitmap, and finally
+bakes each note — its strokes clipped to the content area (local coordinates, `(0,0)` at the
+content's own top-left), a 1 px rule under it, `Endnotes.caption(number, fromPage)` ("Note N — from
+page P", og's wording verbatim, the notebook never named) in 32 px sans at a 16 px inset, encoded
+WEBP q100 exactly like a page, one bitmap alive at a time. Progress counts the notes as well as the
+pages. `DocumentPdfRender` is untouched — a document export never carries links, so it is always a
+version-1 bundle by construction.
+
+Failure-table and traps additions, below, are this phase's; tests: `PageBundleTest` (11, in
+`extension-api`), `PdfLinksTest` (`:ext-pdf`), `EndnotesTest` (8), `ExportRenderEndnotesTest` (2,
+over the fake DAO — order, skip-empty, wrapped, size fallback), `ExportDocumentRulesTest` (+1).
+
 ---
 
 ## The document exporter (arc 19)
@@ -640,6 +715,10 @@ describes itself honestly. Full model, the resolver, every open site and the fai
 | The byte count the extension reports doesn't match what was streamed (`SOURCE_SOIL`/`SOURCE_DOCUMENT`), or is zero or disagrees with the destination (`SOURCE_PAGES`) | problem dialog, "Only part of the notebook reached that file"; wreckage removed (best-effort, reported honestly) | `ExportVerification.verdict` → `SHORT` → `export_short_body` |
 | The stream completed but every answer the destination provider gives disagrees with it (either source kind) | *check-the-file* dialog, **no delete** — metadata can lag a write it just took, and a fully-written export is never destroyed over a stale answer | `ExportVerification.verdict` → `UNCONFIRMED` → `export_verify_body` |
 | Back / the back arrow tapped while an export runs | "Export in progress" dialog; the flow continues untouched | `showBusyGuard` (`export_busy_body`) |
+| A `SOURCE_PAGES` exporter's `bundleVersion` is below `PageBundle.VERSION` and the notebook holds a note with content (arc 28 / H6) | no dialog — an honest one-line caption under the options, `export_endnotes_unavailable`; the export still runs, notes go out as icons only | `ExportDocumentRules.endnotesUnavailable` → `ExportActivity` |
+| A live sticky note has no strokes (arc 28 / H6) | not an error — `SoilDao.stickyIdsWithContent` never names it, so `Endnotes.plan` never sees it and no page is spent on an empty note | `SoilDao.stickyIdsWithContent`, `ExportRender.endnoteSources` |
+| The endnote pages push the total past `PageBundle.MAX_PAGES` (arc 28 / H6) | same as any other over-long bundle: problem dialog, "more pages than this format can carry" | `ExportRender.Problem.TOO_LONG` → `export_too_long_body` |
+| A link in the trailer names a page outside the bundle's own declared count or height list (arc 28 / H6 — a foreign or damaged bundle) | refused rather than silently dropped: `IllegalArgumentException`/`IOException` naming the pages, surfacing as the ordinary assembly failure dialog | `PageBundle.Reader.readLinks`, `PdfLinks.annotations` → `export_failed_body` |
 | Export succeeded | confirm dialog, "Exported"; screen finishes on dismiss | `runExport` success path |
 
 The rule behind the column, family-wide: **a toast only confirms something that already happened;
@@ -691,6 +770,12 @@ reported honestly, because the delete is best-effort.
   own format caption and the document exporter's `OPTION_TEXT_FORMAT` radio are both labelled
   "Format" — two "Format" captions stack in the options panel. Recorded at M9's checklist, left as
   is.
+- **A `PageBundle.Link` must be built only after the endnote's size clamp** (arc 28 / H6). Building
+  it from the row's raw carried size and clamping the note's page afterwards produces a caption-strip
+  link rectangle that no longer matches the page that was actually written, which the writer's own
+  `pageCount` bounds check will not catch (the rect, not the page number, is wrong) — the trap
+  surfaced while writing `Endnotes.plan`, which is why `contentSize` runs first and every `Link` in
+  the plan is built from its already-clamped `w`/`h`.
 
 ---
 
@@ -705,6 +790,9 @@ reported honestly, because the delete is best-effort.
 - [`docs/library.md`](library.md) — the notebook long-press sheet, where the **Export…** row sits.
 - [`docs/cloud.md`](cloud.md) — the eighth extension point this arc's Destination row rides on:
   `ACTION_CLOUD_STORAGE`, `:ext-cloud`, the provider's tree, the Connect door, `CloudTimeouts`.
+- [`docs/objects.md`](objects.md) — the feature the PDF endnotes read from: sticky notes' data
+  model, the transform mode, the sticky editor, and the `PageBundle` v2 / `bundleVersion` design
+  in full (arc 28).
 - `apps/notesprout_ratta/RATTA_PLAN.md` §§ "Phases — Arc 15 \"Export\"," "Phases — Arc 18 \"PDF\","
   and "Phases — Arc 19 \"Document\"" (phase M9) — the wizard's locked decisions and each phase's
   outcome, in full.

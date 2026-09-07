@@ -341,6 +341,88 @@ lands *among* rows that are already there:
    exactly backwards — while the one genuine top-level row was dropped. **Standing trap: when a rule
    exists to reject the malformed case, never let the malformed case outvote it.**
 
+### The three kinds + sticky children (arc 28)
+
+Arc 8's `ObjectClip` grew a third capture/plan arm for each of the three additive kinds — `text`,
+`shape`, `sticky_note` — beside the strokes/headings/links it already carried. `ObjectClip.Plan`
+gained `texts: List<PageText>`, `shapes: List<PageShape>` and `stickies: List<PageSticky>` next to
+`strokes`/`headings`/`links`, and `NotebookSession.ORDERED_TYPES` (the per-type `"order"` rebase
+table `pasteObjects` reads its bases from) is now **six** entries: stroke, heading, link, text,
+shape, sticky. A kind missing from that list would have its pasted rows land on `-1 + 1` and tie
+with the page's first row of that type — the same trap the original three were tested against.
+
+**A sticky is the payload's third level.** `capture`'s `children` parameter already carried a
+link's wrapped set; arc 28 adds a note's content strokes to it, so a payload can now be
+page → link → sticky → stroke, three deep. A note's content is the one exception to "everything
+moves by the placement offset" (`ObjectClip.plan`'s `local` check on `row.parentId in stickyIds`):
+those rows travel with **fresh ids and zero translation**, because they live in the note's own
+local space — the icon moves with the paste offset, its ink does not, or shifting it would drag
+every stroke off the note's own paper. Everything else, including the icon's own `x`/`y`, shifts
+by `(dx, dy)` like any other row.
+
+`ObjectClip.payloadBounds` — the box a placement is measured against — treats the three kinds
+differently: a **shape**'s `x`/`y` is a centre and its outline a centre line, so its columns are
+not a box at all; it is decoded through `ShapeGeometry.tightBounds` and grown by half its own
+stroke width (the K2 trap in geometry form). A **text** or a **sticky** row's box *is* its columns,
+like a heading's — read straight off `x`/`y`/`width`/`height`.
+
+`NotebookSession.captureObjects` gathers a selected sticky's content itself: after the link's
+wrapped set is read, every sticky in `top + wrapped` has its content strokes fetched
+(`childrenOfType(id, TYPE_STROKE)`) and folded into `ObjectClip.capture`'s `children` — the same
+read-only, drain-first discipline as the original three kinds.
+
+**Object paste needs no `armLassoForLanding()` call.** Both paste gestures — the pen tap on bare
+paper and the lasso popup's Paste — fire only while `tool == LASSO` already (`onPaperTapped`'s and
+the popup's own preconditions), so by the time `doObjectPaste` reaches `paper.setSelection` the
+lasso is already the armed tool. That is different from an **Insert** (`TextFlow`/`ShapeFlow`/
+`StickyFlow`'s landings, `docs/objects.md`), which can fire from any tool and does call
+`armLassoForLanding()` before selecting — the same O2 lesson, just already satisfied here by the
+gesture's own precondition rather than needing a second guard.
+
+**Cross-notebook page copy needed no change at all.** `PageClip` and `NotebookRemap` are both
+row-level and type-agnostic — `PageClip` reads meaning out of exactly one row kind (a page's own
+`refId` and a link's payload) and copies every other row, `text`/`shape`/`sticky_note` included, by
+its columns alone. The three new kinds ride along through a full-notebook or cross-notebook page
+copy with no code in either file naming them.
+
+**Cutting a sticky snapshots it `withContent` first.** `NotebookActivity.recordWithStickies` — the
+same deferred-delete helper H1 built so one gesture still records one undo entry — reads
+`session.stickies.withContent(it)` for every icon (loose or wrapped in a link) **before** the
+sticky rows are deleted, so the snapshot a redo restores from carries the note's ink, not an empty
+shell. A lasso Cut over a sticky goes through the ordinary `doObjectCopy(cut = true)` →
+`deleteSelection` → `recordWithStickies` chain like any other cut.
+
+**The sticky editor has its own, narrower clipboard rules** (`StickyClip.kt`,
+`StickyEditorActivity.kt`) — a note's paper is not the page, so what crosses is deliberately
+smaller:
+
+- **Copy** re-parents the note's own working strokes onto the sticky's id and hands them to the
+  *same* `ObjectClip.capture` the notebook uses (`StickyClip.rowsFor` → `capture(top = …, children
+  = emptyList())`), so a note's ink copied out lands on a page exactly like any other stroke
+  selection, and a page's ink copied into a note (see Paste) is symmetric with it.
+- **Paste** takes **stroke rows only** — nothing else lives inside a note (D2). Page-space ink
+  (loose strokes and a link's wrapped strokes, one coordinate space) is preferred; only when the
+  payload holds none of that does a copied sticky's own content (local space) count, so the two
+  spaces are never mixed in one placement (`StickyClip.extract`). `leftOut` is measured against
+  what was **dropped**, not what the clipboard held — a copied sticky whose children all came in
+  drops only its icon, which is not ink the user drew, so no notice fires for that case. When
+  something *was* dropped, the toast reads "Pasted the ink only"
+  (`sticky_paste_ink_only_toast`); when nothing placeable came in at all, a dialog explains rather
+  than pasting silently ("Only ink can be pasted into a note, and the clipboard holds none.",
+  `sticky_paste_no_ink_body`).
+
+**Both Sends still hide.** A lone new-kind object classifies as `TEXT` / `SHAPE` / `STICKY` and any
+mix holding one as `MIXED` or `MIXED_WITH_LINK` (`SelectionModes.classify`); the Send-to-Pad /
+Send-to-Calendar buttons are offered only in `STROKES` and are `GONE`, never disabled, everywhere
+else. `:ext-ink`'s `InkWire` (the
+scratch pad's and calendar's shared stroke wire format) was not widened to carry a text, a shape or
+a sticky, so there is nothing for either extension transfer to receive even if the buttons were
+shown.
+
+Tests: `ObjectClipTest` (a text, a shape and a rotated star through the three-arm capture/plan,
+plus the sticky-content zero-translation case), `StickyClipTest` (the extract/placed pair and the
+`leftOut` rule), `PageClipTest` (unchanged — the row-level design needed no new cases).
+
 ### Links across notebooks, for objects (O2)
 
 The rewrite above, minus its one exception. A link copied out of notebook A and pasted into B is the

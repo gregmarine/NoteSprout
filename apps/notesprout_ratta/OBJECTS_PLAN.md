@@ -7,8 +7,11 @@ whole at every phase start, together with the root `CLAUDE.md` and `apps/notespr
 traps are summarized at the end so this file is enough. `RESTORE_PLAN.md`, `ENCRYPTION_PLAN.md` and
 `DRIVE_PLAN.md` are the shapes this file copies.
 
-**Status: H6 ✅ landed 2026-09-06 (2830 JVM tests green; walked by hand on the Nomad — every
-item passes) — H7 ⬜ next.** H1 ✅ · H2 ✅ · H3 ✅ · H4 ✅ · H5 ✅ · H6 ✅ · H7 ⬜. When the arc closes, `docs/objects.md` is the reference.
+**Status: ARC COMPLETE + FROZEN 2026-09-06 (H1–H7 all landed the same day; 1470 `:app` / 2830
+JVM tests green; every phase walked by hand on the Nomad; the arc-range code review waived by the
+user at H6).** H1 ✅ · H2 ✅ · H3 ✅ · H4 ✅ · H5 ✅ · H6 ✅ · H7 ✅. **`docs/objects.md` is the
+reference** — this file is the plan and the per-phase ledger, kept for the record. No further
+phase, no ninth point and no next arc without another user decision.
 
 **Phase letter:** **H** — the last free letter in `RATTA_PLAN.md`'s A–Z (L went to arc 27). After
 this arc every letter is spoken for; the next arc picks a two-letter code.
@@ -414,7 +417,7 @@ never bleed through the glyph); the outline itself stays the Tabler outlined for
 **Questions to resolve at phase start:** app version · review level (default high) · whether the
 endnote caption also names the notebook (default: no — og's wording verbatim).
 
-### ⬜ H7 — Docs, ledger, freeze (Sonnet docs in parallel · Fable read-back · **no code review, no code**)
+### ✅ H7 — Docs, ledger, freeze (Sonnet docs in parallel · Fable read-back · **no code review, no code**)
 
 `docs/objects.md` (the reference: the three rows, the Insert bar, the transform mode, the sticky
 editor and its handoff/transfer, the endnotes, the failure table) · `docs/notebook.md` (Insert bar,
@@ -763,3 +766,31 @@ and an `AskUserQuestion` never share one turn — explain, wait, then ask.
   pages + captions, icon → note and caption → page links both ways, the protected PDF keeps them,
   a sticky-free notebook exports as before, an empty note gets no page, the page draws icons only.
 
+
+### H7 — Outcome (2026-09-06) — ARC COMPLETE + FROZEN
+
+- **Phase-start answer:** version stays `0.1.0-ratta`.
+- **The one code change (H1's answer):** the debug "Insert sample objects" entry and
+  `SampleObjects.kt` removed from the debug `DebugMenu`; nothing else in `app/src` touched. No code
+  review (decision 11 as amended at H6).
+- **Docs:** `docs/objects.md` written whole (645 lines — the reference: phases, the twelve decisions
+  as built, collaborators, the three rows and their bit packing, rendering + D8, the Insert bar,
+  text objects, shapes + the transform mode + **the host contract as built**, sticky notes + the
+  editor + transfer + handoff, selection modes / undo kinds / clipboard / erase, PDF endnotes, the
+  failure table, design calls, standing traps, the Nomad walks, not-built, tests). Pointer sections
+  in `docs/notebook.md` (collaborators, Insert, selection modes, gestures, undo table, lifecycle,
+  tests), `docs/links.md` (wrapping the new kinds), `docs/clipboard.md` (the three kinds + sticky
+  children + the editor's narrower rules), `docs/document.md` (staleness whitelists),
+  `docs/export.md` (`PageBundle` v2 / `bundleVersion` / endnotes + failure rows + trap),
+  `docs/extensions.md` (the bundle-version tail, the `API_VERSION` row, boundary-audit row 43),
+  `docs/sn-screen.md` (`buttonAt`, `ic_resize`). Both `CLAUDE.md`s, the root pointer,
+  `PARITY_BACKLOG.md` item 3 → DONE, `RATTA_PLAN.md` header, this file's status, memory.
+- **Fable read-back findings (fixed in place):** `objects.md` had a first-dialog Cancel "removing"
+  a row that never existed (nothing exists until Save), a made-up `ShapeType.fromRow` (it is
+  `ShapeRows.toShape`), a mention of activity-level tests (there are none — JVM + hand walks only),
+  and a vague H1 test row; `clipboard.md` said a lone new kind classifies `MIXED` (it has its own
+  mode since H2/H4/H5 — the Sends are gated on `STROKES`). Every other cited name was checked
+  against the code.
+- **Tests:** unchanged — 1470 `:app` / 2830 across the modules (debug source set only lost a file).
+- **Open:** nothing. No next arc and no ninth point without a user decision; `PARITY_BACKLOG.md`
+  items 4–7 are the candidates.
