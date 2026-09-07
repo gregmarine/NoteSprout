@@ -164,6 +164,10 @@ skill (`.claude/skills/device-build-install/SKILL.md`) — invoked automatically
   (three additive row types, no `.soil` version bump), a g-paper transform mode (SN pinned to
   g-paper 0.1.27), a host sticky editor, PDF endnotes over `PageBundle` v2; no ninth point, no API
   bump, code review waived by the user. **Arcs 1–28 are all complete and frozen.**
+  **Arc 29 "Loop" (the lasso eraser, PARITY_BACKLOG item 4) is IN PROGRESS — wizard locked
+  2026-09-06, phases LE1–LE4 in the standalone `apps/notesprout_ratta/LOOP_PLAN.md` (read that,
+  not `RATTA_PLAN.md`): a g-paper `Tool.LASSO_ERASER` (0.1.28) armed from an eraser re-tap sub-bar
+  on all four paper surfaces; no ninth point, no API bump, no code review.**
   **No NINTH extension point
   and no other arc without another user decision. Read `apps/notesprout_ratta/RATTA_PLAN.md`
   first for ANY other work there** — it holds the working protocol, model recipe, standing

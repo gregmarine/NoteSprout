@@ -18,8 +18,10 @@ binds every item here.
 **Status:** item 1 **DONE** (arc 26 "Keys", U1–U7 landed 2026-09-05, complete + frozen; the
 reference is `docs/encryption.md`, the plan and ledger `ENCRYPTION_PLAN.md`). Item 2 **DONE** (arc 27
 "Restore", L1–L6 landed 2026-09-05/06, complete + frozen; the reference is `docs/restore.md`, the plan
-and ledger `RESTORE_PLAN.md`). **Item 3 IN PROGRESS** — arc 28 "Objects", wizard locked 2026-09-06, phases
-H1–H7 in the standalone `OBJECTS_PLAN.md` (read that, not this section). Items 4–7 not started. No ordering has been decided — the numbering below is the order the user listed
+and ledger `RESTORE_PLAN.md`). Item 3 **DONE** (arc 28 "Objects", H1–H7 landed 2026-09-06, complete + frozen; the reference is
+`docs/objects.md`, the plan and ledger `OBJECTS_PLAN.md`). **Item 4 IN PROGRESS** — arc 29 "Loop",
+wizard locked 2026-09-06, phases LE1–LE4 in the standalone `LOOP_PLAN.md` (read that, not this
+section). Items 5–7 not started. No ordering has been decided — the numbering below is the order the user listed
 them in, not a priority.
 
 ---
@@ -171,7 +173,7 @@ Not included, per the user: og's line objects.
 
 ---
 
-## 4. Lasso eraser
+## 4. Lasso eraser — 🔄 IN PROGRESS (arc 29 "Loop", wizard locked 2026-09-06 — `LOOP_PLAN.md`)
 
 **User's call:** "We will want lasso eraser."
 

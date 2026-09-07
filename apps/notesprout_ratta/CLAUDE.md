@@ -322,6 +322,12 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   Standing rule from H2 that binds every later host-landed selection: call `armLassoForLanding()`
   **before** `setSelection` from any non-lasso context — a selection landed under a pen tool is a
   picture the pen inks through.
+- **Arc 29 "Loop" is IN PROGRESS (wizard locked 2026-09-06)** — the lasso eraser (`PARITY_BACKLOG.md`
+  item 4): `Tool.LASSO_ERASER` in g-paper **0.1.28** (LE1 re-pins), armed from a second tap on the
+  armed eraser (a Point · Lasso sub-bar in `:sn-screen`) on the notebook, the sticky editor, the
+  scratch pad and the calendar; `onLassoErased(strokeIds, contentIds)` mirrored like the scribble;
+  `NotebookUndo.Action.LassoErased`; no point, no API bump, no code review. **Read the standalone
+  `LOOP_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by
