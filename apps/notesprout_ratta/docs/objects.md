@@ -355,6 +355,14 @@ Cut · Delete (the lasso button carries the clipboard mark, `FloatingSelectionBa
 the bar query its own latch state). Pen-tap paste via `StickyClip`. No shapes, text or stickies
 inside a note — only `stroke` rows may be a sticky's children.
 
+**Since arc 29 / LE2 the eraser has two kinds here too**, reached the same way as the notebook's own
+bar: a second tap on the armed eraser opens `:sn-screen`'s `EraserBar` (Point · Lasso) — the last
+child of the editor's root, dismissed on every pointer-down outside the bar and its own eraser
+button (`ACTION_DOWN` / `ACTION_POINTER_DOWN`), and hidden on `exit()` and on `reload()`'s content
+swap. `onLassoErased` is exactly the point eraser's body — the note carries no content renderers at
+all (no headings, no links, no other objects), so `contentIds` is always empty and ignored, and
+there is no new `StickyInk.Action` kind for it to fall under.
+
 **`StickyEditorTransfer`** — a process-local singleton, og's `persistToHost` pattern, because the
 editor **opens no `.soil` of its own**: the notebook's `NotebookSession` stays alive behind it and
 every row the editor writes goes through that session's one serial `SoilWriter` via a `Sink`
@@ -437,8 +445,15 @@ a paste — only the parent row shifts. `payloadBounds` for a shape uses the den
 `ShapeGeometry.tightBounds` + `strokeWidth/2` (a payload is page px, not one screen's density — the
 plan's original wording naming `aabb(shape, density)` was corrected by the H4 ledger). `PageClip`
 needed no change (kind-agnostic already, verified by test); `NotebookRemap` still rewrites only
-link payloads. The eraser and scribble-erase take a **whole object** — a swept text, shape or
-sticky icon goes as one, never a part; the eraser never reaches inside a sticky from the page.
+link payloads. The eraser, scribble-erase **and, since arc 29 / LE2, the lasso eraser** take a
+**whole object** — a swept text, shape or sticky icon goes as one, never a part; the eraser never
+reaches inside a sticky from the page. The lasso eraser's reach is the lasso's own hit rule
+(`LassoHitTest.polygonIntersectsBounds`): a content object goes whole the moment the drawn loop
+touches its box, exactly what the lasso already selects — so select-then-Delete and a lasso erase
+always agree about what one loop holds. It is reported by the engine as one `onLassoErased(strokeIds,
+contentIds)` and recorded as `NotebookUndo.Action.LassoErased` (`ScribbleErased`'s exact shape, its
+own kind for the same label reason: drawing a loop around something is a different act to the user
+than crossing it out or tapping Delete) — see [`docs/notebook.md`](notebook.md) § Undo for the row.
 
 ## Export — PDF endnotes
 
@@ -639,7 +654,10 @@ were walked by hand on the Nomad instead, never left untested by any means.
 - `docs/links.md` — link objects: how a link wraps the three new kinds.
 - `docs/document.md` — Documents: the staleness whitelist growing the three new kinds (a note's
   inner strokes deliberately excluded).
-- `docs/sn-screen.md` — the shared paper-screen library `FloatingSelectionBar.buttonAt` lives in.
+- `docs/sn-screen.md` — the shared paper-screen library `FloatingSelectionBar.buttonAt` lives in,
+  and (arc 29 / LE2–LE3) the `EraserBar` / `AnchoredBar` the eraser re-tap sub-bar is built from.
 - `OBJECTS_PLAN.md` — the arc's full ledger: phase-by-phase Outcome entries, every phase-start
   question and answer, and the planner calls recorded along the way. Kept as history; this file is
   the reference going forward.
+- `docs/notebook.md` (arc 29 "Loop") + `LOOP_PLAN.md` — the lasso eraser as a whole: the engine
+  tool, the eraser re-tap sub-bar on all four paper surfaces, and `NotebookUndo.Action.LassoErased`.

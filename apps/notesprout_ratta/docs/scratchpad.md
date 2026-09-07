@@ -56,6 +56,15 @@ those names (`ScratchAction.Drew` → `InkAction.Drew`, and so on), and the pad'
 re-run whole at Y1 (open, ink, flip, send both ways) rather than assumed safe from the JVM tests
 alone — it came back clean, including the pad's page-full ceiling having stayed gone.
 
+**Arc 29 / LE3 grew the sharing again.** The eraser re-tap sub-bar's whole lifecycle — toggle,
+show/hide gated on `opened` rather than pen-idle, the outside-contact dismissal on every
+`ACTION_DOWN` / `ACTION_POINTER_DOWN` (the eraser button and the bar itself excluded), `hideEraserBar()`
+in `exit()` and before `showPage()`'s content swap, and `floatingRects()` / `floatingContains()` as
+the `PaperChrome` suppliers — lives **once** in `:ext-ink`'s `InkScreenActivity`, exactly as the
+undo/redo replay and the save debounce already did. The pad and the calendar each build one
+`EraserBar` (`:sn-screen`) and wire their own toolbar's re-tap into it; neither carries a line of
+the show/hide logic itself.
+
 ## The screen
 
 `ScratchPadActivity` (`:ext-scratchpad`) is the notebook's shape, built from `:sn-screen`:
@@ -71,7 +80,7 @@ pager, the inserts and the delete confirm, and the head of `consumeReceived`.
 |---|---|
 | Top bar | Back · Pen · Eraser · Lasso · "Scratch Pad" (centred on the screen) · **Send** (only with a notebook behind it) |
 | Bottom bar | ← · page indicator · → , centred on the screen |
-| Tools | **Fixed and they are the notebook's**: PEN, black, the notebook's pen width; the notebook's eraser radius. No panels, no colour, nothing remembered — a pad that lassoed differently one tap from the notebook would read as a bug. |
+| Tools | **Fixed and they are the notebook's**: PEN, black, the notebook's pen width; the notebook's eraser radius. No panels, no colour, nothing remembered — a pad that lassoed differently one tap from the notebook would read as a bug. **Since arc 29 / LE3 the eraser has two kinds**, reached the notebook's way: a second tap on the armed eraser opens a Point · Lasso sub-bar (`EraserBar`, `:sn-screen`) rather than doing nothing; picking Lasso arms `Tool.LASSO_ERASER` (g-paper 0.1.28 — a closed loop erases everything it holds on the lasso's own hit rule), picking Point arms `Tool.ERASER` back. |
 | Gestures | The notebook's, minus what the pad has no use for: 1-finger horizontal swipe = flip (past the last page, insert one) · 2-finger horizontal swipe = insert before / after · 2-finger stationary double-tap = undo · 3-finger = redo · 1-finger long-press = ask to delete this page. No link follow, no trail walk-back, no Contents, no Recents. |
 | Selection | Smart lasso + scribble erase, armed before the listener attaches. The floating bar is Send selection (with a notebook behind) then Delete — Delete last, as on the notebook's bar. |
 | Undo | Pad-level and **in memory**: it survives page turns and dies with the screen. |
@@ -308,6 +317,10 @@ transfer can have just landed, so one field does for both. See [`docs/notebook.m
 one shape cover three acts — insert (blank both sides), delete (ink on the `before` side) and a
 received new page (ink on the `after` side) — without the arc growing a fifth kind.
 
+A lasso erase (arc 29 / LE3) records exactly one `InkAction.Erased`, the point eraser's own kind —
+the pad is ink only, so `onLassoErased`'s `contentIds` (always empty here) is ignored and there is
+nothing for a separate kind to label. Undo puts the erased strokes back; redo takes them again.
+
 ## Failure table
 
 Every failure is a dialog that says what happened and what is still true. Toasts only confirm.
@@ -371,7 +384,10 @@ The pad carries the SN-wide rule (never present an app frame while `paper.isPenA
 new exception: its frames are the notebook's recorded exceptions in scratch-pad form — the delete
 confirm at a long-press, the selection bar's show at lasso completion (and its re-anchor after a
 move, and its show over a received placement), the "Opening…" box's hide when the page lands, and a
-problem dialog at a pen-up or a chrome tap. **Since arc 23 / Y4 the gate itself is `:sn-screen`'s
+problem dialog at a pen-up or a chrome tap. **Arc 29 / LE3 adds one more, ledgered the same way:**
+the eraser sub-bar's show/hide is a chrome frame at a deliberate tap (the re-tap that opens it, the
+pick or outside contact that closes it) — the notebook's floating-bar rule, not pen-idle gated.
+**Since arc 23 / Y4 the gate itself is `:sn-screen`'s
 `PenIdle.whenIdle`** (`InkScreenActivity.whenPenIdle` is the one-line wrapper both screens call) —
 one frame-silence gate written once rather than the four copies that had grown across the pad's and
 the calendar's toolbars and screens. Host-side, the pad button's overlay rides the C1 exception: the
@@ -381,8 +397,8 @@ same act as the Contents and Recents buttons.
 
 | | |
 |---|---|
-| `:ext-scratchpad` `ScratchPadActivity` | thin on `:ext-ink`'s `InkScreenActivity` since Y4 — the page list, the pager, inserts, delete confirm, its own `consumeReceived` head |
-| `ScratchToolbar` | the chrome, the fixed tools, both Send buttons |
+| `:ext-scratchpad` `ScratchPadActivity` | thin on `:ext-ink`'s `InkScreenActivity` since Y4 — the page list, the pager, inserts, delete confirm, its own `consumeReceived` head; since arc 29 / LE3 builds the one `EraserBar` after its toolbar and swaps the `PaperChrome` suppliers to `floatingRects()` / `floatingContains()` |
+| `ScratchToolbar` | the chrome, the fixed tools, both Send buttons; since arc 29 / LE3 forwards `onEraserReTap` + `onToolTapped` to `:sn-screen`'s `PaperToolbar` and exposes `arm(tool)` for the sub-bar's pick |
 | `ScratchDocument` | which page is showing, the page list and its structural edits, the page's size — thin over `:ext-ink`'s `InkDocument` for what is on the page, and implements `:ext-ink`'s `InkPage` contract since Y4 |
 | `ScratchSchema` / `ScratchSql` | the pad's own tables and SQL, pinned by `ScratchSqlTest` — since Y4 the `stroke` table and its six statements are `:ext-ink`'s `InkSql` (`ScratchSql : InkDocument.StrokeSql by InkSql`), byte-identical to what this file used to spell out |
 | `ScratchStore` | the pad's table calls (page list, receive/compensate) — extends `:ext-ink`'s `InkStore` base |
@@ -392,9 +408,10 @@ same act as the Contents and Recents buttons.
 | `:ext-ink` `InkWire` | wire ⇄ paper on the extension side (arc 11's `ScratchInk`, shared since arc 23 / Y1) |
 | `:ext-ink` `InkStore` / `StoreBatches` / `StrokeReadPlan` / `StrokeRows` | the shared store base (run/compensated/guard/planned-stroke-read), batch splitting, ranged-read planning, row → stroke decode |
 | `:ext-ink` `InkDocument` / `InkAction` / `StoreUnavailable` / `PageInk` | the shared page-in-memory + op log + `flushUntilClean`, the four stroke-level undo actions, the one store-failure type, the stored-page shape |
-| `:ext-ink` `InkSql` / `InkPage` / `InkTransferSession` / `InkScreenActivity` | arc 23 / Y4 — the shared stroke SQL/DDL, the ink-page contract a consumer's document implements, the shared transfer-session base, and the shared tier-2 screen skeleton — one copy for the pad and the calendar |
+| `:ext-ink` `InkSql` / `InkPage` / `InkTransferSession` / `InkScreenActivity` | arc 23 / Y4 — the shared stroke SQL/DDL, the ink-page contract a consumer's document implements, the shared transfer-session base, and the shared tier-2 screen skeleton — one copy for the pad and the calendar; since arc 29 / LE3 `InkScreenActivity` also owns the whole eraser sub-bar lifecycle (toggle/show/hide, outside-contact dismissal, `onLassoErased`) for both |
 | `:sn-screen` `FloatingSelectionBar` | the row-of-buttons primitive `InkSelectionBar` places |
 | `:sn-screen` `InkSelectionBar` | the ONE Send-then-Delete floating bar (arc 23 / Y4, replacing `ScratchSelectionToolbar` and the calendar's `CalendarSelectionToolbar`), built on `FloatingSelectionBar` |
+| `:sn-screen` `EraserBar` / `AnchoredBar` | arc 29 / LE2–LE3 — the Point · Lasso sub-bar and its placement primitive (`AnchoredBar` moved here from `:app` at LE2), one implementation shared by the notebook, the sticky editor, the pad and the calendar; see [`docs/sn-screen.md`](sn-screen.md) |
 | `:sn-screen` `PenIdle` | the frame-silence gate (arc 23 / Y4) — `whenIdle` / `releaseRenderIfIdle`, shared by both toolbars and both activities |
 | `:extension-api` `IScratchPad.aidl` | `begin` · `receiveInk` · `takeOutgoing` · `end` |
 | `WireStroke` / `InkBundle` / `InkChunks` / `ExtensionContract` | the wire types, the chunker, the caps |
@@ -421,3 +438,7 @@ statement, pinned through the host's own validator) and `InkTransferSessionTest`
 accumulate-and-place body's refusals: over the caps, a placement changed mid-transfer, the store
 gone, and the one documented difference, `recordInboundPageSize`) — while `ScratchSqlTest` stays
 exactly as it was, now pinning the pad's own delegation rather than its own stroke strings.
+
+**Arc 29 / LE3 added no new pure piece here** — the eraser sub-bar lifecycle is structural
+(`InkScreenActivity` gains methods, not arithmetic), so the suite stayed at `1472` `:app` /
+`2832` total across the modules.

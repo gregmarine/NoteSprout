@@ -19,9 +19,9 @@ binds every item here.
 reference is `docs/encryption.md`, the plan and ledger `ENCRYPTION_PLAN.md`). Item 2 **DONE** (arc 27
 "Restore", L1–L6 landed 2026-09-05/06, complete + frozen; the reference is `docs/restore.md`, the plan
 and ledger `RESTORE_PLAN.md`). Item 3 **DONE** (arc 28 "Objects", H1–H7 landed 2026-09-06, complete + frozen; the reference is
-`docs/objects.md`, the plan and ledger `OBJECTS_PLAN.md`). **Item 4 IN PROGRESS** — arc 29 "Loop",
-wizard locked 2026-09-06, phases LE1–LE4 in the standalone `LOOP_PLAN.md` (read that, not this
-section). Items 5–7 not started. No ordering has been decided — the numbering below is the order the user listed
+`docs/objects.md`, the plan and ledger `OBJECTS_PLAN.md`). Item 4 **DONE** (arc 29 "Loop", LE1–LE4
+landed 2026-09-06/07, complete + frozen; the reference is `docs/notebook.md` § Toolbar + § Undo, the
+plan and ledger `LOOP_PLAN.md`). Items 5–7 not started. No ordering has been decided — the numbering below is the order the user listed
 them in, not a priority.
 
 ---
@@ -173,7 +173,26 @@ Not included, per the user: og's line objects.
 
 ---
 
-## 4. Lasso eraser — 🔄 IN PROGRESS (arc 29 "Loop", wizard locked 2026-09-06 — `LOOP_PLAN.md`)
+## 4. Lasso eraser — ✅ DONE (arc 29 "Loop", LE1–LE4 landed 2026-09-06/07)
+
+**The reference is `docs/notebook.md` (§ Toolbar — fixed tools, § Undo / redo, § Frame-silence
+rule) with pointers in `docs/scratchpad.md`, `docs/calendar.md`, `docs/objects.md` and
+`docs/sn-screen.md`; the plan and ledger `LOOP_PLAN.md`** — read those, not this section. What
+landed: the tool lives in the **engine** — `Tool.LASSO_ERASER` in g-paper **0.1.28** (SN re-pinned
+from 0.1.27), the lasso's own outline capture completed as an erase on the lasso's own hit rule
+(`LassoHitTest`, touch semantics — so select-then-Delete and lasso-erase always agree), no selection
+box ever, the Supernote x-trail (`SupernoteInk.Pen.CROSS`) retracted by the proven trace ladder, one
+`PaperListener.onLassoErased(strokeIds, contentIds)` with a forwarding default. It is armed on **all
+four paper surfaces** (notebook, sticky editor, scratch pad, calendar) from **a second tap on the
+armed eraser** — a Point · Lasso sub-bar (`EraserBar` in `:sn-screen`, `AnchoredBar` moved there
+with it) — not a fourth bar button, because a twelfth 62 dp button does not fit the Nomad's 749 dp
+with every extension installed. The notebook mirrors it as `NotebookUndo.Action.LassoErased`
+(`ScribbleErased`'s shape, its own kind) through `EraseKind { ERASER, SCRIBBLE, LASSO }`; the sticky
+editor records its point-eraser body; the pad and the calendar record `InkAction.Erased` with the
+whole sub-bar lifecycle living once in `:ext-ink` `InkScreenActivity`. No point, no `API_VERSION`
+bump, no new row, no code review (the user's call); version stays `0.1.0-ratta`; tests 1472 `:app` /
+2832 across the modules. The text that follows is the gap review as it stood before the wizard, kept
+for the record.
 
 **User's call:** "We will want lasso eraser."
 

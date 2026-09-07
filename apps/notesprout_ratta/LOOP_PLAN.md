@@ -6,7 +6,10 @@ cross-session memory for the arc: read it whole at every phase start, together w
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this file
 is enough. `OBJECTS_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — wizard locked 2026-09-06.** LE1 ✅ · LE2 ✅ · LE3 ✅ · LE4 ⬜.
+**Status: ✅ COMPLETE + FROZEN 2026-09-07 — wizard locked 2026-09-06.** LE1 ✅ · LE2 ✅ · LE3 ✅ ·
+LE4 ✅. **`docs/notebook.md` is the reference** (§ Toolbar — fixed tools, § Undo / redo, § Frame-silence
+rule), with pointers in `docs/scratchpad.md`, `docs/calendar.md`, `docs/objects.md` and
+`docs/sn-screen.md`. No further phase; any work on the lasso eraser starts here.
 
 **Phase code:** **LE** — the first two-letter code; every single letter A–Z is spoken for in
 `RATTA_PLAN.md` (H and L went to arcs 28 and 27).
@@ -256,7 +259,7 @@ eraser button or centred under the bar (planner call: under the button, `Anchore
   no eraser re-tap unless its bar is `PaperToolbar` — read at phase start); the handoff chain
   notebook → pad → notebook still reclaims the pen.
 
-### ⬜ LE4 — Docs, ledger, freeze (Sonnet docs in parallel · Fable read-back · no code review, no code)
+### ✅ LE4 — Docs, ledger, freeze (Sonnet docs in parallel · Fable read-back · no code review, no code)
 
 - `docs/notebook.md`: the tools table (a fourth row), the eraser re-tap + sub-bar under Toolbar,
   the undo table's `LassoErased` row, the frame-silence ledger entry, the JVM test list.
@@ -396,3 +399,25 @@ explain, wait, then ask.
 - **Next:** LE4 — docs (`notebook.md`, `scratchpad.md`, `calendar.md`, `objects.md`,
   `sn-screen.md`), `PARITY_BACKLOG.md` item 4 → DONE, `RATTA_PLAN.md` / both `CLAUDE.md` / memory,
   freeze.
+
+### LE4 — Outcome (2026-09-07) ✅ — arc complete + frozen
+
+- **Phase-start answer:** version stays `0.1.0-ratta`. No code.
+- **Docs (Sonnet, Fable read-back):** `docs/notebook.md` — the fourth tool row (the lasso eraser
+  as a tool, not a button; why no twelfth button), the eraser re-tap + `EraserBar` under Toolbar
+  and in the collaborators, `onLassoErased` + `EraseKind` in the listener table, the `LassoErased`
+  undo row, the frame-silence ledger entry, the sticky editor's bar, the JVM test list, a Paper-v0
+  difference bullet. `docs/scratchpad.md` + `docs/calendar.md` — the re-tap on each bar, the one
+  `InkScreenActivity` lifecycle, `InkAction.Erased` with no new kind, frame silence.
+  `docs/objects.md` — whole-object erase gains the lasso eraser; the sticky editor's bar.
+  `docs/sn-screen.md` — `EraserBar`, `AnchoredBar` (moved), `PaperToolbar`'s three additions.
+- **Ledger:** `PARITY_BACKLOG.md` item 4 → ✅ DONE (summary of what landed above the kept gap
+  review); `RATTA_PLAN.md` header line (arcs 1–29 frozen) + pin line 0.1.28; app `CLAUDE.md` arc
+  line + pin line; root `CLAUDE.md` branch line; memory.
+- **Standing facts for whoever comes next:** the tool lives in g-paper (`a0796d1`, 0.1.28) — a
+  trail that stays on the panel or a hit-rule complaint is an engine fix; Onyx's half of that commit
+  is untested; the sub-bar remembers nothing by design; the two exhaustive `when`s in
+  `NotebookActivity` carry `LassoErased`; nothing was stored, nothing crossed a seam.
+- **Frozen.** No LE5, no code review (decision 5), no next arc without a user decision —
+  `PARITY_BACKLOG.md` items 5–7 are the candidates.
+

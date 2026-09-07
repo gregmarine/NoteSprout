@@ -47,7 +47,13 @@ chrome are `docs/notebook.md` and `docs/library.md`.
 
 Month, Week and Day are three magnifications of one organizer: a Sun–Sat 6×7 grid for a month, a
 2×4 grid for a week, and 24 half-hour rows for one half of a day (AM or PM — a day owns two pages).
-Every page is a writing surface with the notebook's own pen and eraser, fixed. Navigation, the day
+Every page is a writing surface with the notebook's own pen and eraser, fixed — **since arc 29 /
+LE3 the eraser has two kinds**, reached the notebook's way: a second tap on the armed eraser opens
+a Point · Lasso sub-bar (`EraserBar`, `:sn-screen`); Lasso arms `Tool.LASSO_ERASER` (g-paper
+0.1.28 — a closed loop erases everything it holds), Point arms `Tool.ERASER` back. See
+[`docs/scratchpad.md`](scratchpad.md) § Shared with the calendar for the shared mechanics; this
+door works identically on Month, Week and Day — the events editor's own `NoteSurface` carries no
+tool bar at all (pen-only, no eraser re-tap) and this arc left it untouched. Navigation, the day
 picker and the three layouts are read from Notesprout's original ("og") calendar
 (`docs/calendar.md` at the monorepo root, `CalendarActivity` / `CalendarTemplateRenderer`) as a
 **reference for the geometry and the gestures only** — nothing is copied, and every number here was
@@ -792,6 +798,11 @@ landed page exactly as opening or stepping would, and `CalendarActivity.followRe
 after every replay (the Y4 review: without it the toggles, the pager, the picker and a double-tap
 all acted on the page the navigation still believed was showing).
 
+**A lasso erase (arc 29 / LE3) records exactly one `InkAction.Erased`** — the same kind the point
+eraser and scribble erase already record. The calendar is ink only, so `onLassoErased`'s
+`contentIds` (always empty here) is ignored; there is nothing for a separate undo kind to label,
+the pad's own reasoning exactly (`docs/scratchpad.md` § What one placement records).
+
 ## The two doors + the held bind
 
 `CalendarEntry` is one class serving **both** doors — the library's (Y1) and the notebook's (Y3) —
@@ -991,7 +1002,9 @@ The calendar carries the SN-wide rule (never present an app frame while `paper.i
 adds no new exception — its frames are the pad's recorded exceptions in calendar form: the
 selection bar's show at lasso completion (and its re-anchor after a move, and its show over a
 received placement — the same kind of frame at the same kind of boundary), the "Opening…" box's
-hide once the page lands, and a problem dialog at a pen-up or a chrome tap. The pager's title
+hide once the page lands, and a problem dialog at a pen-up or a chrome tap. **Arc 29 / LE3 adds
+one more, ledgered the same way as the pad's:** the eraser sub-bar's show/hide is a chrome frame
+at a deliberate tap, not pen-idle gated. The pager's title
 (`CalendarToolbar.setTitle`) and the view latches wait for `whenPenIdle` explicitly — **since Y4**
 `InkScreenActivity.whenPenIdle` is a one-line wrapper over `:sn-screen`'s `PenIdle.whenIdle`, the
 same gate the pad's screen calls, rather than a copy each screen kept for itself.
@@ -1029,7 +1042,7 @@ same gate the pad's screen calls, rather than a copy each screen kept for itself
 | `:ext-ink` `InkSql` | arc 23 / Y4 — the shared `stroke` DDL and its six statements, `CalendarSql`/`ScratchSql` delegate to it |
 | `:ext-ink` `InkPage` | arc 23 / Y4 — the ink half of a consumer's document as a contract; `CalendarDocument` implements it |
 | `:ext-ink` `InkTransferSession<P, R>` | arc 23 / Y4 — the shared held-showing state and the two transfer stubs' bodies (`receiveChunk` / `outgoing`); `CalendarSession` is one instance, `ScratchSession` the other |
-| `:ext-ink` `InkScreenActivity<A>` | arc 23 / Y4 — the shared tier-2 screen skeleton (page-op lock, undo/redo replay, `followReplay` hook, the save debounce, the EPD handoff); `CalendarActivity` is thin over it |
+| `:ext-ink` `InkScreenActivity<A>` | arc 23 / Y4 — the shared tier-2 screen skeleton (page-op lock, undo/redo replay, `followReplay` hook, the save debounce, the EPD handoff); `CalendarActivity` is thin over it; since arc 29 / LE3 also owns the whole eraser sub-bar lifecycle (toggle/show/hide, outside-contact dismissal, `onLassoErased`), shared with the pad — see [`docs/scratchpad.md`](scratchpad.md) |
 | `:ext-ink` `InkDocument.pendingStatements()` | arc 24 / Z3 — the op log as statements **without clearing it**, for a consumer (the note) whose whole page rides one outer transaction rather than a flush of its own |
 | `:ext-calendar` `CalendarApplication` | registers `RattaEngine` — the extension's own process hosts paper |
 | `:ext-calendar` `CalendarService` / `CalendarSession` | thin on `:ext-ink`'s `InkTransferSession` since Y4 — `CalendarService` supplies the target's own null check and the log wording |
@@ -1039,7 +1052,7 @@ same gate the pad's screen calls, rather than a copy each screen kept for itself
 | `:ext-calendar` `CalendarGeometry` / `CalendarTemplate` | the three layouts' rects and hit-tests; the template painter |
 | `:ext-calendar` `CalendarNavigation` | the pure anchor rule and every `Move` |
 | `:ext-calendar` `DayPickerModel` / `DayPickerDialog` | the picker's grids (pure) and its views |
-| `:ext-calendar` `CalendarToolbar` | the chrome, the fixed tools, the pager, both Send buttons, and (Y4) the three Tabler view latches and the calendar's own Scratch Pad button |
+| `:ext-calendar` `CalendarToolbar` | the chrome, the fixed tools, the pager, both Send buttons, and (Y4) the three Tabler view latches and the calendar's own Scratch Pad button; since arc 29 / LE3 forwards `onEraserReTap` + `onToolTapped` to `:sn-screen`'s `PaperToolbar` and exposes `arm(tool)` for the sub-bar's pick |
 | `:ext-calendar` `CalendarActivity` | thin on `:ext-ink`'s `InkScreenActivity` since Y4 — navigation, template bake, the picker, double-tap, `followReplay()`; (Z2) `openEvents()`/`eventsLauncher`, `btnEvents` |
 | `:ext-calendar` `Event` / `EventType` / `Freq` / `MonthlyMode` / `EndMode` / `ReminderUnit` / `Reminder` / `RecurrenceRule` / `UpcomingEvent` / `Scope` | arc 24 / Z1 — the event model and its small pure types |
 | `:ext-calendar` `EventRules` | arc 24 / Z1 — the caps, `normalize`, `problem` (`Problem.EMPTY_TITLE` / `UNTIL_BEFORE_START`) |
@@ -1082,6 +1095,7 @@ same gate the pad's screen calls, rather than a copy each screen kept for itself
 | `:app` `LibraryActivity` | `btnCalendar`, the library door, and (Y4) `onCalendarClosed`/`onPadClosed` — the same door chain as the notebook's |
 | `:sn-screen` `FloatingSelectionBar` | the row-of-buttons primitive `InkSelectionBar` places |
 | `:sn-screen` `InkSelectionBar` | arc 23 / Y4 — the ONE Send-then-Delete floating bar, replacing `CalendarSelectionToolbar` and the pad's `ScratchSelectionToolbar`, built on `FloatingSelectionBar` |
+| `:sn-screen` `EraserBar` / `AnchoredBar` | arc 29 / LE2–LE3 — the Point · Lasso sub-bar and its placement primitive, one implementation shared by the notebook, the sticky editor, the pad and the calendar; see [`docs/sn-screen.md`](sn-screen.md) |
 | `:sn-screen` `PenIdle` | arc 23 / Y4 — the frame-silence gate (`whenIdle` / `releaseRenderIfIdle`), shared by both toolbars and both activities |
 | `:sn-screen` `PageGestures` | `onFingerDoubleTap` — the second tap history the calendar's cell-open rides |
 | `:sn-screen` `ic_calendar_event` | arc 24 / Z2 — Tabler `calendar-event`, the calendar's own Events door icon |
@@ -1141,6 +1155,10 @@ recorded statements could never exercise a real compensation or a real re-read. 
 lists literally rather than recording them, which is what lets `EventStoreTest` exercise a real
 compensation and a real re-read rather than asserting on the statements alone. `TestEvent.kt`'s `testEvent(…)` is the
 builder every events test constructs its fixtures from.
+
+**Arc 29 / LE3 added no new pure piece here** — the eraser sub-bar lifecycle is structural, living
+once in `:ext-ink`'s `InkScreenActivity` — so the suite stayed unchanged (`1472` `:app` / `2832`
+total across the modules).
 
 ## Traps
 

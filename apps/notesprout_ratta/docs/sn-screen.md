@@ -66,15 +66,20 @@ app's debug build consumes the library's debug variant, so the gate means exactl
 | `core/SwipeMath` | the one horizontal-flip rule, in pure arithmetic — shared by `PageGestures` and `ListSwipe` so a page turn means the same travel everywhere. JVM-tested |
 | `core/ListSwipe` | the one-finger flip for a **paginated list** (F3): `SwipeMath` applied to a region rather than the screen, armed only inside it, finger-only, observer-only |
 | `notebook/UndoRedoStack<A>` | the generic LIFO history plus its `generation` counter. The notebook's fourteen action kinds stay in `:app` as `NotebookUndo.Action` |
-| `notebook/PaperToolbar` | back + the three tool buttons, **binding-free** |
+| `notebook/AnchoredBar` | arc 29 / LE2 — **moved here from `:app`** (same package, `R` repointed; the three `:app` callers — the lasso popup, the tags popup, the Insert bar — untouched): the floating-bar placement primitive, one bordered row of buttons anchored under a view and clamped to the root |
+| `notebook/EraserBar` | arc 29 / LE2–LE3 — the eraser button's **Point · Lasso** sub-bar, built on `AnchoredBar`; one implementation shared by all four paper surfaces (the notebook, the sticky editor, the scratch pad, the calendar) rather than a fourth top-bar button (an eleventh 62 dp button already fills the Nomad's bar with every extension installed; a twelfth falls off the edge) |
+| `notebook/PaperToolbar` | back + the three tool buttons, **binding-free**; since arc 29 / LE2 also carries `onEraserReTap` (a second tap on the armed eraser opens `EraserBar` rather than doing nothing), `onToolTapped` (an actual tool change, so a consuming screen can close floating chrome), and public `arm(tool)` (the sub-bar's pick lands here — a host-set tool is never echoed back as `onToolChanged`, so `sync` has to be called by hand); `sync` selects the eraser button under **either** eraser kind and swaps its glyph only on a change of kind (frame silence — every `onToolChanged` lands in `sync`, and re-setting the same drawable would invalidate the button for nothing) |
 | `notebook/PaperChrome` | exclusion rects and the over-chrome hit test, with the host-specific parts as suppliers |
 | `notebook/FloatingSelectionBar` | an extension screen's floating selection bar (arc 23 / Y1 — the pad's own, shared so the calendar's is not a sibling copy): a row of buttons built to the one recipe, placed by `SelectionAnchor` next to the lasso box; the consumer says which buttons. `buttonAt(index)` (arc 28 / H5) hands back one built button for a consumer whose button carries **state** the bar itself cannot know — the sticky editor's Snap latch, which wears the selected border and re-words its hint exactly as the notebook's own Snap button does |
 | `notebook/PenIdle` | arc 23 / Y4 — the two pen-activity gates every paper-hosting screen writes against: `whenIdle` (the frame-silence gate, re-posting at `PaperView.PEN_ACTIVE_TAIL_MS` while the pen is active) and `releaseRenderIfIdle` (`PaperView.releaseRender`'s own pen-gated contract); one copy rather than the four that had grown across the pad's and the calendar's toolbars and screens — `PaperToolbar` is trimmed to call it too |
 | `notebook/InkSelectionBar` | arc 23 / Y4 — the ONE Send-then-Delete floating bar an ink-on-paper extension screen puts over a lasso selection, replacing the pad's and the calendar's own `*SelectionToolbar` copies; built on `FloatingSelectionBar`, Send absent (never disabled) with no notebook behind the caller |
 
 Resources: `values/{colors,dimens,styles,themes}`, `values-sw720dp/dimens`,
-`values-sw960dp/dimens` (the Manta's card-grid minimum only — see `docs/library.md` § The grid), 58
-chrome `ic_*.xml` (grown one arc at a time since J1's move; the latest is arc 28 / H4's
+`values-sw960dp/dimens` (the Manta's card-grid minimum only — see `docs/library.md` § The grid), 59
+chrome `ic_*.xml` (grown one arc at a time since J1's move; the latest is arc 29 / LE2's
+`ic_lasso_eraser` — copied byte-for-byte from og's `drawable/` rather than drawn fresh (the standing
+"check first" trap), the eraser sub-bar's Lasso button and the eraser top-bar button's own glyph
+while that eraser is armed; before it arc 28 / H4's
 `ic_resize` (Tabler, the lasso bar's **Transform** button — a lone selected shape's one verb, D9);
 before it arc 24 / Z5b's
 `ic_backspace` — Tabler's own, the keypad's rub-out key — before it arc 24 / Z2's
@@ -89,9 +94,10 @@ since the knob insets are computed from it, so change both or neither), `Widget.
 (arc 24 / Z3, the user's eye on the discard dialog — a 16dp `layout_marginStart` plus 16dp of side
 padding, so AppCompat's own 8dp button-bar spacing no longer reads as one control; every two-button
 dialog in the family inherits the air),
-and a `strings.xml` holding only `ok`
-and `cancel` — the two strings the moved helpers reference themselves. Every other string stays in
-`:app`.
+and a `strings.xml` holding `ok`
+and `cancel` — the two strings the moved helpers reference themselves — plus, since arc 29 / LE2,
+`eraser_point` / `eraser_lasso`, the `EraserBar`'s two long-press hints (here, not in `:app`,
+because all four paper surfaces share the one bar). Every other string stays in `:app`.
 
 **`ic_launcher_foreground.xml` and every `mipmap-*` stay in `:app`.** The launcher glyph is the
 host's identity, not shared chrome; the Scratch Pad extension draws its own.

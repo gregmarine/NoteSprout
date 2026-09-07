@@ -322,12 +322,26 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   Standing rule from H2 that binds every later host-landed selection: call `armLassoForLanding()`
   **before** `setSelection` from any non-lasso context — a selection landed under a pen tool is a
   picture the pen inks through.
-- **Arc 29 "Loop" is IN PROGRESS (wizard locked 2026-09-06)** — the lasso eraser (`PARITY_BACKLOG.md`
-  item 4): `Tool.LASSO_ERASER` in g-paper **0.1.28** (LE1 re-pins), armed from a second tap on the
-  armed eraser (a Point · Lasso sub-bar in `:sn-screen`) on the notebook, the sticky editor, the
-  scratch pad and the calendar; `onLassoErased(strokeIds, contentIds)` mirrored like the scribble;
-  `NotebookUndo.Action.LassoErased`; no point, no API bump, no code review. **Read the standalone
-  `LOOP_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**
+- **Arc 29 "Loop" is COMPLETE + FROZEN (LE1–LE4 landed 2026-09-06/07; wizard locked 2026-09-06)** —
+  the lasso eraser (`PARITY_BACKLOG.md` item 4, now DONE): `Tool.LASSO_ERASER` in g-paper **0.1.28**
+  (re-pinned from 0.1.27 at LE1) — the lasso's outline capture completed as an erase on the lasso's
+  own hit rule (touch semantics: a stroke goes if any point is inside, host content goes whole if
+  the loop touches its box — so select-then-Delete and lasso-erase always agree), never a selection,
+  the Supernote x-trail (`SupernoteInk.Pen.CROSS`) retracted by the same trace ladder as the dash
+  trail, one `onLassoErased(strokeIds, contentIds)` with a forwarding default. Armed on **all four
+  paper surfaces** (notebook, sticky editor, scratch pad, calendar) from **a second tap on the armed
+  eraser** → a Point · Lasso sub-bar (`EraserBar` in `:sn-screen`; `AnchoredBar` moved there with
+  it; `PaperToolbar` + `NotebookToolbar` carry `onEraserReTap` / `arm(tool)` / the glyph swap) —
+  never a fourth bar button (a twelfth 62 dp button falls off the Nomad's 749 dp with every
+  extension installed). The sub-bar remembers nothing; a plain eraser tap always arms the point
+  eraser. The notebook mirrors it as `NotebookUndo.Action.LassoErased` (`ScribbleErased`'s shape,
+  its own kind) through `EraseKind { ERASER, SCRIBBLE, LASSO }`; the sticky editor records its
+  point-eraser body; the pad and the calendar record `InkAction.Erased` (no new kind) with the
+  whole sub-bar lifecycle living **once** in `:ext-ink` `InkScreenActivity`. The host never repaints
+  from `onLassoErased` (the scribble rule). No point, no API bump, no new row, no code review (the
+  user's call — do not re-raise); version stays `0.1.0-ratta`; 1472 `:app` / 2832 tests. Onyx's
+  side of the engine change is mechanical and **untested** (SN is Ratta-only). **`docs/notebook.md`
+  is the reference; read the standalone `LOOP_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by
@@ -528,7 +542,7 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   never repaired by deletion.
 - **`IndexGuard.ready(this)` first thing in every index-touching `onCreate`**;
   `BootstrapActivity` is the only index opener and is `noHistory`.
-- **g-paper 0.1.27 (since arc 28 / H3, 2026-09-06 — transform mode; 0.1.23 before), `gpaper-core` + `gpaper-ratta` only** (mavenLocal). No `gpaper-onyx`,
+- **g-paper 0.1.28 (since arc 29 / LE1, 2026-09-06 — `Tool.LASSO_ERASER`; 0.1.27 = arc 28's transform mode, 0.1.23 before), `gpaper-core` + `gpaper-ratta` only** (mavenLocal). No `gpaper-onyx`,
   no BOOX repo, no jetifier, no jniLibs pickFirsts, no `tools:replace` label. Engine gaps
   are fixed in `~/git/g-paper` (bump version, `publishToMavenLocal`, re-pin) — never
   worked around in the host.

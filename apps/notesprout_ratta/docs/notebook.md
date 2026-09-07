@@ -35,7 +35,8 @@ deliberate differences are listed at the end.
 | `core/RecognizingOverlay` (N2) | the "Recognizing…" box during a convert — `OpeningOverlay`'s smaller, dialog-free sibling. Grew a message parameter in arc 21 / W3 (default text unchanged) so the lasso's silent heading→tag can reuse it, showing "Tagging…" instead |
 | `notebook/InkPayload` (N2) | `Stroke` (g-paper) → `InkStroke` (extension-api) in writing order — the one place a page's ink is reduced to bare geometry for the recognizer |
 | `CoverSnapshot` | `paper.renderToBitmap()` → ≤ 512 px long edge → WEBP q100 → `IndexRepository.setCover`; headings ride along for free (`HeadingRenderer` is part of the same committed-layer render) |
-| `NotebookToolbar` | `[←] [contents] [pen] [eraser] [lasso] … [document] [recents] [scratch pad]` — arming only; owns the fixed tool values (the Contents, Document and Recents buttons belong to their own flows, not to it). Back goes through `backPressed()`, never straight to `close()` (K4 — both Backs walk the link trail in a via-link notebook). O1: a second tap on the **armed lasso** calls back to the screen (the clipboard popup), and `showClipboardLoaded()` swaps that button's icon |
+| `NotebookToolbar` | `[←] [contents] [pen] [eraser] [lasso] … [document] [recents] [scratch pad]` — arming only; owns the fixed tool values (the Contents, Document and Recents buttons belong to their own flows, not to it). Back goes through `backPressed()`, never straight to `close()` (K4 — both Backs walk the link trail in a via-link notebook). O1: a second tap on the **armed lasso** calls back to the screen (the clipboard popup), and `showClipboardLoaded()` swaps that button's icon. Arc 29 / LE2: a second tap on the **armed eraser** calls back as `onEraserReTap` (the screen opens `EraserBar`); `arm(tool)` lets the bar's pick drive the button from the host side; `sync` selects the eraser button under either eraser and swaps its glyph to `ic_lasso_eraser` only on a change of kind |
+| `EraserBar` (arc 29 / LE2–LE3, `:sn-screen`) | the eraser button's own floating sub-bar — **Point** (`Tool.ERASER`) · **Lasso** (`Tool.LASSO_ERASER`) — hung under it via `AnchoredBar`. One implementation shared by all four paper surfaces (the notebook and the sticky editor at LE2, the scratch pad and the calendar at LE3 through `:ext-ink`'s `InkScreenActivity`) so a fix to the sub-bar's placement or dismissal never becomes the `RattaNotebookView` sibling-copy trap one bar at a time. Remembers nothing between openings; a pick pen-gates the release, arms the tool and calls back so the screen can hide the bar and sync its own toolbar |
 | `SelectionToolbar` | the floating bar over a live lasso selection: Delete (always) + H, plus (K1) **Link** / **Edit** / **Unlink** by `SelectionMode` (five modes since K1), plus (O1) **Copy** / **Cut** in every mode, plus (N2) the H1–H6 level sub-toolbar it can open, plus (arc 21 / W3) **Tag** — see [Tag](#tag-arc-21) below |
 | `LassoPopup` (O1) | the small bordered bar under the **armed** lasso button: **Paste** + **Clear** for the object clipboard. Opens only while the clipboard holds objects; the screen owns every dismissal. Placement is [`AnchoredBar`](#anchoredbar) since arc 21 / W2, shared with the tag button's own popup |
 | `ObjectClip` (O1) | pure selection ⇄ clipboard payload — capture, fresh ids, parent rewiring, the per-type `"order"` rebase, geometry translation (stroke = decode/translate/re-encode). JVM-tested. [`docs/clipboard.md`](clipboard.md) |
@@ -53,7 +54,7 @@ deliberate differences are listed at the end.
 | `RecentsFlow` (T1) | what the clock button and the two-finger swipe-down both call: busy guard, pen-gated `releaseRender`, gather → `RecentsDialog`, `showing` (drives BLOCK_ALL), `dismissIfShowing()`. Owns `btnRecents` outright |
 | `RecentsDialog` (T1) | the Recents screen: `dialog_contents.xml` mirrored to the right (2 dp rule on the left edge), three-line rows, measured pagination, tap = switch notebooks |
 | `DocumentEditorEntry` / `DocumentSeedFlow` / `DocumentHostHooks` (arc 19 / M3–M8) | what `btnDocument` opens: the fifth extension point's client, the seed-before-launch flow, and the host-side callback binder every read/write from the editor comes back through. Full detail — data model, seeding, flips, the notebook document, text documents — is [`docs/document.md`](document.md); see [Document](#document-arc-19) below for this screen's own slice |
-| `AnchoredBar` (arc 21 / W2) | the placement mechanics for a small bordered bar hung under a top-bar button — measure-before-place, the rects, the button recipe — pulled out of the arc-8 `LassoPopup` so `TagsPopup` did not need a second copy of the same bar |
+| `AnchoredBar` (arc 21 / W2, moved to `:sn-screen` arc 29 / LE2) | the placement mechanics for a small bordered bar hung under a top-bar button — measure-before-place, the rects, the button recipe — pulled out of the arc-8 `LassoPopup` so `TagsPopup` did not need a second copy of the same bar. Moved into `:sn-screen` at LE2 so `EraserBar` could share it across all four paper surfaces; the three `:app` callers (`LassoPopup`, `TagsPopup`, `InsertBar`) were repointed, untouched otherwise |
 | `TagsPopup` (arc 21 / W2) | the `ic_tag` button's own bar, hung under it via `AnchoredBar`: **Tag notebook** · **Tag page** · **Manage** — the notebook's three tag doors. Gated on `canvasShown`; see [Tags](#tags-arc-21) below |
 | `TagTargets` (arc 21 / W2) | pure: a page's 1-based number in the live page list (or null — a page briefly missing from it names nothing), and the pages a MANAGE showing may carry, capped at `TagShowing.MAX_PAGES`. JVM-tested |
 | `TagSelection` (arc 21 / W3) | pure: which selections offer the lasso's Tag button and which of the two flows a tap takes (`TagFlow.SILENT` / `RECOGNIZE` / `NONE`), plus the prefill cut for an over-cap heading title. JVM-tested; see [Tag](#tag-arc-21) below |
@@ -168,6 +169,48 @@ bar is remembered between openings. Dismisses on a pick, another bar's button, a
 swap, or an outside touch, and unions its bounds into the exclusion rects and `overChrome` while up,
 like every other floating bar. Full data-model detail for what each button creates is
 [`docs/objects.md`](objects.md).
+
+### The lasso eraser (arc 29 / Loop)
+
+A third erase path (after the point eraser and scribble erase), but **not a fourth toolbar button** — with every extension installed the
+notebook's top bar already holds eleven 62 dp buttons on the Nomad's 749 dp (682 dp + 8 dp
+padding); a twelfth falls off the edge. Instead the eraser is reached under **either** of two
+kinds it can be armed to, and a **second tap on the already-armed eraser** opens `EraserBar`
+(Collaborators above) — **Point** (`Tool.ERASER`, the 15 px whole-stroke eraser) · **Lasso**
+(`Tool.LASSO_ERASER`, g-paper 0.1.28). Picking Lasso arms the new
+tool and swaps the eraser button's own glyph to `ic_lasso_eraser` for as long as it stays armed
+(the O1 `showClipboardLoaded` precedent — a standing state of the surface belongs on the button,
+not a toast that is gone before the next stroke); picking Point (or a plain eraser tap from any
+other tool) always arms `Tool.ERASER` — **the sub-bar remembers nothing**, and the lasso eraser is
+reachable only through the re-tap.
+
+- **The hit rule is the lasso's own, unchanged (D4).** A stroke goes if any point lies inside the
+  drawn outline; a heading / link / text / shape / sticky goes **whole** if the outline touches its
+  box — exactly what a lasso *selects* today, so select-then-Delete and a lasso-erase always agree
+  about what a loop holds. The eraser never reaches inside a sticky from the page.
+- **There is no selection in this tool.** No box, no drag, no `onSelection*` callback; the barrel
+  button / eraser end still point-erases, exactly as it does under `Tool.LASSO`; the smart-lasso
+  and scribble-erase recognizers stay off (they only ever evaluate under `Tool.PEN`); and a
+  tap-sized contact reports nothing at all — no callback, no undo entry, not even the paste-here
+  hook (`onPaperTapped`, which belongs to `Tool.LASSO` only). A loop that takes nothing is nothing.
+- **One gesture, one undo entry** — `PaperListener.onLassoErased(strokeIds, contentIds)` reports
+  both lists once, on the `onScribbleErased` shape (a forwarding default keeps an older host
+  compiling); see the listener table and [Undo / redo](#undo--redo) below for the mirror.
+- **The sub-bar's own lifecycle** is the Insert bar's: it hangs under the eraser button via
+  `AnchoredBar`, and closes on a pick, any tool tap, another floating bar taking its place
+  (newest-tap-wins), a page swap, or an outside contact — with the eraser button itself excluded,
+  since its own re-tap is what toggles the bar and a dismissal there would reopen what it just
+  closed. Its rect unions into the exclusion rects and `overChrome` while it is up, like every
+  other floating bar, and its show/hide is **not** pen-idle-gated — a re-tap and a pick are both
+  deliberate acts (see [Frame-silence rule](#frame-silence-rule)).
+- On the Supernote the outline paints the firmware's `SupernoteInk.Pen.CROSS` x-trail (not the
+  lasso's own dash trail), retracted at lift by the same trace ladder as every other hardware
+  trail — a g-paper 0.1.28 detail, not a host one.
+
+The sticky editor, the scratch pad and the calendar carry the identical re-tap and sub-bar — see
+[Objects — text, shapes and stickies](#objects--text-shapes-and-stickies-arc-28) below for the
+sticky editor's own mirror, and [`docs/scratchpad.md`](scratchpad.md) /
+[`docs/calendar.md`](calendar.md) for the other two surfaces.
 
 ## Open
 
@@ -284,6 +327,7 @@ resolver, the doors and the failure table: [`docs/encryption.md`](encryption.md)
 | `onSelectionTapped(x, y)` (N2) | hit-tests `currentSelection`'s heading ids against `liveHeadings`; a hit opens `HeadingEditDialog`. A tap over ink only, or outside any heading's bounds, still does nothing |
 | `onContentErased(ids)` (N2) | the eraser tool swept a heading or a link whole → `removeContent` (rows + working copies + both renderers + `notifyContentChanged`), recorded as `Action.HeadingDeleted`, or `Action.Deleted` when a link was in it |
 | `onScribbleErased(strokeIds, contentIds)` (arc 14) | a scribble crossed out ink **and** content in one gesture: `store.erase` for the strokes, the same `removeContent` for the rest, recorded as **one** `Action.ScribbleErased`. One callback because one gesture must be one undo step — see below |
+| `onLassoErased(strokeIds, contentIds)` (arc 29 / LE2) | `Tool.LASSO_ERASER`'s one report: a drawn loop took ink **and** content in one gesture, on the lasso's own hit rule. The body is `onScribbleErased`'s exactly — `store.erase` for the strokes, the same `removeContent` for the rest, recorded as one `Action.LassoErased` (`eraseEntry(kind = EraseKind.LASSO)` — the boolean `eraseEntry` used for "was this a scribble" became a three-way `EraseKind { ERASER, SCRIBBLE, LASSO }`). No repaint beyond what `removeContent` already does — the engine re-records the strokes itself |
 | `onSelectionDragStarted()` | hide the selection toolbar (the mirror is **not** cleared) |
 | `onToolChanged` | toolbar sync only |
 
@@ -438,6 +482,11 @@ hand: a lone content object with no ink takes its own mode — `HEADING`, `TEXT`
   [`docs/objects.md`](objects.md)).
 - **`STICKY`** (a lone sticky) — the base row and nothing else: a note's one verb is a **finger tap
   on its icon**, which opens `StickyEditorActivity` (Gestures below), not a bar button.
+  `StickyEditorActivity` carries the same eraser re-tap and `EraserBar` as the notebook (arc 29 /
+  LE2) — a second tap on its armed eraser button opens the sub-bar, and `onLassoErased` records
+  exactly what its point eraser already does (the note holds ink only, so `contentIds` is always
+  empty and is ignored). The bar is the last child of the editor's root, dismissed on every
+  pointer-down outside it and hidden on `exit()` and on `reload()` after a fresh showing.
 - **Pad / Calendar / Tag are gone in all three modes** — Pad and Calendar are gated on `STROKES`
   alone, and `TagSelection.offered` explicitly refuses `TEXT`/`SHAPE`/`STICKY`: a note or a shape
   has no ink to send and no words to tag.
@@ -1056,6 +1105,11 @@ would have been the sibling-copy trap ([`docs/drawing-engine.md`](drawing-engine
 family) in miniature — the same lesson, at the scale of one floating bar instead of a whole notebook
 view.
 
+`AnchoredBar` itself **moved into `:sn-screen` at arc 29 / LE2** so the eraser sub-bar
+([EraserBar](#the-lasso-eraser-arc-29--loop) below) could share it with the scratch pad and the
+calendar as well as the notebook — the same package, the three `:app` callers (`LassoPopup`,
+`TagsPopup`, `InsertBar`) repointed at the moved class and otherwise untouched.
+
 ## Pages
 
 A notebook is an ordered list of `page` rows under the notebook row; `"order"` is kept **dense,
@@ -1184,6 +1238,7 @@ and survives it — [`docs/links.md`](links.md)).
 | `Drew` | `onStrokeCommitted` | `store.remove([id])` | `store.revive` |
 | `Erased` | `onStrokesErased` (the eraser tool; a scribble records `ScribbleErased` instead) | `store.revive` | `store.remove` |
 | `ScribbleErased` (arc 14) | `onScribbleErased` — one scribble, whatever mix of strokes / `headingIds` / `links` snapshots it crossed out | `store.revive` + `headings.restore` + `links.restore` | `store.remove` + `headings.erase` + `links.remove` |
+| `LassoErased` (arc 29 / LE2) | `onLassoErased` — one drawn loop, whatever mix of strokes / `headingIds` / `links` / `textIds` / `shapeIds` / stickies it took. `ScribbleErased`'s exact shape and replay, kept its own kind for the same reason `ScribbleErased` and `Deleted` are separate: a loop around something is a different act to the user than crossing it out or tapping Delete, and a future undo *label* has to say which | `store.revive` + `headings.restore` + `links.restore` + text/shape restore + `StickyStore.restore` | `store.remove` + `headings.erase` + `links.remove` + text/shape erase + `StickyStore.remove` |
 | `Deleted` | the selection toolbar's Delete (strokes **and**, N2, `headingIds` — **and**, K1, `links` snapshots: a whole-link erase records here too; O1's **Cut** goes through the very same path, so undoing a cut puts the ink back exactly as undoing a Delete would) | `store.revive` + `headings.restore` + `links.restore` | `store.remove` + `headings.erase` + `links.remove` |
 | `Moved` | `onSelectionMoved` (strokes **and**, N2, `headingIds` **and**, K1, `linkIds` riding the same drag) | `store.move(-dx,-dy)` + `headings.move(-dx,-dy)` + `links.move(-dx,-dy)` | `store.move(dx,dy)` + `headings.move(dx,dy)` + `links.move(dx,dy)` |
 | `HeadingCreated` (N2) | a successful convert | `headings.erase` + `store.revive` (in place — order matters) | `headings.restore` + `store.remove` |
@@ -1240,6 +1295,13 @@ stickies ride all four as whole `PageSticky` snapshots **with their content**
 (`StickyStore.withContent`), never ids, because an icon alone would come back an empty note. Both
 replay `when`s stay exhaustive, so a new kind that misses one arm is a compile error, not a silent
 no-op — the standing trap this arc tests against on every kind.
+
+**`LassoErased` (arc 29 / LE2) is `ScribbleErased`'s shape, not a widened field.** Because a lasso
+erase is its own gesture rather than a variant of an existing one, it earned its own kind (Undo
+table above) instead of a boolean or an extra field on `ScribbleErased` — the same call as
+`ScribbleErased` itself against `Deleted` at arc 14. Both exhaustive `when`s (undo and redo) gained
+the arm, so the standing trap from H1 held again: a kind either replays both directions or the
+build fails. `NotebookUndoTest` gained the case both ways.
 
 **A sticky's delete snapshot suspends (arc 28 / H5).** `StickyStore.withContent` — the read
 `Deleted`/`ScribbleErased` need before the row goes — is a suspending call, and g-paper's delete
@@ -1514,6 +1576,12 @@ reasoning) rather than a new one; and the transfer paste-back landing selected w
 exception 7's object-paste frame exactly — ink arriving in one frame at a boundary where nothing is
 being written, whether that ink came from the clipboard or from another extension's screen.
 
+**Arc 29 added no new exception**: the eraser sub-bar's show/hide follows a deliberate tap on the
+already-armed eraser button — exception 5's justification (a chrome tap answered by a chrome
+frame), extended from the lasso popup to this bar. A lasso-erase's own repaint is the engine's one
+frame at the outline's completion, the same boundary exception 2 already covers for a selection;
+the host never repaints from `onLassoErased` beyond what `removeContent` already asks for.
+
 Any new exception needs the same written justification.
 
 ## JVM tests
@@ -1624,6 +1692,14 @@ name are [`docs/objects.md`](objects.md)'s own inventory. `NotebookActivity` gre
 activity itself to selection wiring, the eight `endTransformIfRunning()` call sites and the
 handoff chain, not the features themselves.
 
+**Arc 29 (loop), the notebook's own half:** `NotebookUndoTest` gains the `LassoErased` case both
+replay directions (revert and reapply, on `ScribbleErased`'s fixture shape). No new pure geometry
+module — `EraserBar`'s placement rides `AnchoredBar`'s existing suite, and the hit rule is
+g-paper's own `LassoHitTest`, already covered there. `:app` **1470 → 1472**; **2830 → 2832** across
+every module; `./gradlew test` exit 0. The engine side (`Tool.LASSO_ERASER`, `onLassoErased`, the
+Ratta trail, the Onyx capture widening — untested this arc, SN is Ratta-only) is
+`~/git/g-paper`'s own suite, not this repo's.
+
 ## Deliberate differences from Paper v0
 
 - **Fixed tools like Paper v0** (3 px pen / 15 px eraser, no panels) as of P1 — R3's panels and
@@ -1654,3 +1730,9 @@ handoff chain, not the features themselves.
   so that whole state (and its own edit/re-recognize affordances) simply doesn't exist here.
 - **No un-heading / revert-to-ink command** — og parity kept deliberately narrow: a heading is
   edited, re-leveled, moved or deleted; there is no path back to raw strokes.
+- **The lasso eraser is an engine tool armed from the eraser's own re-tap, not a fourth bar
+  button** (arc 29 / Loop). og Notesprout gives `lassoEraser` its own toolbar slot
+  (`pen · eraser · lassoEraser · lasso`); SN's bar has no room for a twelfth button once every
+  extension is installed, so the same tool is reached through a **Point · Lasso** sub-bar hung
+  under the eraser — the lasso re-tap popup's own precedent, one tap deeper rather than one button
+  wider.
