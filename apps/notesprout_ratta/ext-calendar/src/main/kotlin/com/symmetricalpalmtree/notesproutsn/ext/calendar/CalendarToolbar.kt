@@ -33,7 +33,9 @@ import com.symmetricalpalmtree.notesproutsn.notebook.PenIdle
  *
  * **The tools are fixed, and they are the notebook's** — the pad's rule, for the pad's reason: PEN ·
  * black · [PEN_WIDTH_PX], eraser [ERASER_RADIUS_PX], no panels, no colour, nothing remembered. Smart
- * lasso and scribble erase are armed by the screen before the listener attaches.
+ * lasso and scribble erase are armed by the screen before the listener attaches. Since arc 29 / LE3
+ * the eraser has two kinds, reached the notebook's way: a second tap on the armed eraser opens the
+ * shared `EraserBar` (Point · Lasso) — the screen owns the bar, this just forwards the re-tap.
  *
  * **Send exists only when there is somewhere to send to**: opened from the library there is no
  * notebook behind us, so the button is absent rather than present-and-failing — GONE, never disabled.
@@ -76,6 +78,10 @@ class CalendarToolbar(
     /** The Scratch Pad door (Y4): leave for the pad — the host opens it and brings us back. Never
      *  called when [scratchPadAvailable] is false — the button is GONE. */
     onScratchPad: () -> Unit,
+    /** A tap on the already-armed eraser (arc 29 / LE3): the screen toggles the eraser sub-bar. */
+    onEraserReTap: () -> Unit,
+    /** Any actual tool change — the screen closes the sub-bar that belonged to the old tool. */
+    onToolTapped: () -> Unit,
     sendEnabled: Boolean,
     scratchPadAvailable: Boolean,
 ) {
@@ -97,6 +103,8 @@ class CalendarToolbar(
             btnLasso = btnLasso,
             paper = paper,
             onBack = onBack,
+            onEraserReTap = onEraserReTap,
+            onToolTapped = onToolTapped,
         )
 
         // Every button carries a hint naming it — the word buttons included: their tooltip is their
@@ -133,6 +141,9 @@ class CalendarToolbar(
     /** Make the tool buttons honest — driven from `PaperListener.onToolChanged`, never from a tap:
      *  smart lasso arms LASSO and restores PEN on its own. */
     fun sync(tool: Tool) = tools.sync(tool)
+
+    /** Arm [tool] from the host side and sync the buttons — what the eraser sub-bar's pick lands on. */
+    fun arm(tool: Tool) = tools.arm(tool)
 
     /** The period's title, presented only once the pen is idle (the frame-silence rule). */
     fun setTitle(text: String) {

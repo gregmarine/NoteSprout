@@ -6,7 +6,7 @@ cross-session memory for the arc: read it whole at every phase start, together w
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this file
 is enough. `OBJECTS_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — wizard locked 2026-09-06.** LE1 ✅ · LE2 ✅ · LE3 ⬜ · LE4 ⬜.
+**Status: 🔄 IN PROGRESS — wizard locked 2026-09-06.** LE1 ✅ · LE2 ✅ · LE3 ✅ · LE4 ⬜.
 
 **Phase code:** **LE** — the first two-letter code; every single letter A–Z is spoken for in
 `RATTA_PLAN.md` (H and L went to arcs 28 and 27).
@@ -245,7 +245,7 @@ eraser button or centred under the bar (planner call: under the button, `Anchore
   sticky editor's eraser re-tap works and its undo puts the ink back; process death (`am crash`)
   reopens on the pen with nothing armed.
 
-### ⬜ LE3 — Scratch pad + calendar (Opus/Sonnet on a Fable brief · walk by hand)
+### ✅ LE3 — Scratch pad + calendar (Opus/Sonnet on a Fable brief · walk by hand)
 
 **Questions to resolve at phase start:** app version.
 
@@ -369,3 +369,30 @@ explain, wait, then ask.
   wiring `onEraserReTap` + `onToolTapped` through `PaperToolbar`, one `EraserBar` per screen
   (root `FrameLayout`, added last), exclusion rects.
 
+### LE3 — Outcome (2026-09-07) ✅
+
+- **Phase-start answer:** version stays `0.1.0-ratta`.
+- **`:ext-ink`:** the whole eraser-sub-bar lifecycle lives **once** in `InkScreenActivity` — a
+  `protected lateinit var eraserBar: EraserBar` + abstract `eraserButtonView`, `onLassoErased` =
+  the point eraser's body (`InkAction.Erased`, `contentIds` ignored, no repaint),
+  `toggleEraserBar` / `showEraserBar` (gated on `opened`, not pen-idle) / `hideEraserBar`, the
+  sticky editor's outside-contact dismissal on every `ACTION_DOWN` / `ACTION_POINTER_DOWN` (the
+  eraser button and the bar itself excluded — which is what closes it under Today / Events / the
+  pager / Send / the title with none of them knowing the bar exists), `hideEraserBar()` in
+  `exit`, and `floatingRects()` / `floatingContains()` as the `PaperChrome` suppliers. The
+  events editor's `NoteSurface` is pen-only (no tool bar) and untouched.
+- **`:ext-scratchpad` / `:ext-calendar`:** `ScratchToolbar` / `CalendarToolbar` take
+  `onEraserReTap` + `onToolTapped` through to `PaperToolbar` and expose `arm(tool)`; each
+  Activity builds one `EraserBar` after its toolbar (`bandBottom = chromeBand()?.last`), swaps
+  the chrome suppliers, and `showPage` hides the bar before the content swap. Each layout gains
+  the `eraserBar` `LinearLayout` as the last root child (GONE while the opening overlay is up).
+- **Tests:** no new pure piece — suite unchanged at 1472 :app / 2832 total, `./gradlew test`
+  exit 0; host + both extension APKs built and installed on the Nomad.
+- **Walk (by hand on the Nomad, the user, 2026-09-07): all eleven items passed** — pad re-tap
+  toggle, Lasso erase with the x-trail in one frame, undo/redo, Point back, every other button and
+  a bare tap close the bar, page flip closes it, Send still lands and the notebook reclaims the pen;
+  calendar the same on Month / Week / Day, Today / latch / title / Events close it, the note
+  surface unchanged, the pad door round-trip reclaims the pen at the bookmark.
+- **Next:** LE4 — docs (`notebook.md`, `scratchpad.md`, `calendar.md`, `objects.md`,
+  `sn-screen.md`), `PARITY_BACKLOG.md` item 4 → DONE, `RATTA_PLAN.md` / both `CLAUDE.md` / memory,
+  freeze.

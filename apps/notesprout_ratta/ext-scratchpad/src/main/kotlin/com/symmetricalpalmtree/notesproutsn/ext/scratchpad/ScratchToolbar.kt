@@ -19,7 +19,9 @@ import com.symmetricalpalmtree.notesproutsn.notebook.PenIdle
  * frame-silence gate.
  *
  * **The tools are fixed, and they are the notebook's.** PEN · black · [PEN_WIDTH_PX], eraser
- * [ERASER_RADIUS_PX] — no panels, no colour, nothing remembered. Smart lasso and scribble erase are
+ * [ERASER_RADIUS_PX] — no panels, no colour, nothing remembered. Since arc 29 / LE3 the eraser has
+ * two kinds, reached the notebook's way: a second tap on the armed eraser opens the shared
+ * `EraserBar` (Point · Lasso) — the screen owns the bar, this just forwards the re-tap. Smart lasso and scribble erase are
  * armed by the screen before the listener attaches: a pad one tap from the notebook that lassoed
  * differently would read as a bug.
  *
@@ -49,6 +51,10 @@ class ScratchToolbar(
     onSend: () -> Unit,
     onPrevPage: () -> Unit,
     onNextPage: () -> Unit,
+    /** A tap on the already-armed eraser (arc 29 / LE3): the screen toggles the eraser sub-bar. */
+    onEraserReTap: () -> Unit,
+    /** Any actual tool change — the screen closes the sub-bar that belonged to the old tool. */
+    onToolTapped: () -> Unit,
     sendEnabled: Boolean,
 ) {
 
@@ -69,6 +75,8 @@ class ScratchToolbar(
             btnLasso = btnLasso,
             paper = paper,
             onBack = onBack,
+            onEraserReTap = onEraserReTap,
+            onToolTapped = onToolTapped,
         )
 
         listOf(btnPrevPage, btnNextPage, btnSend).forEach {
@@ -84,6 +92,9 @@ class ScratchToolbar(
     /** Make the tool buttons honest — driven from `PaperListener.onToolChanged`, never from a tap:
      *  smart lasso arms LASSO and restores PEN on its own. */
     fun sync(tool: Tool) = tools.sync(tool)
+
+    /** Arm [tool] from the host side and sync the buttons — what the eraser sub-bar's pick lands on. */
+    fun arm(tool: Tool) = tools.arm(tool)
 
     /** `n / N`, presented only once the pen is idle (the frame-silence rule). */
     fun setPage(number: Int, total: Int) {

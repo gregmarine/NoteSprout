@@ -22,6 +22,7 @@ import com.symmetricalpalmtree.notesproutsn.ink.InkPage
 import com.symmetricalpalmtree.notesproutsn.ink.InkScreenActivity
 import com.symmetricalpalmtree.notesproutsn.notebook.InkSelectionBar
 import com.symmetricalpalmtree.notesproutsn.notebook.PageGestures
+import com.symmetricalpalmtree.notesproutsn.notebook.EraserBar
 import com.symmetricalpalmtree.notesproutsn.notebook.PaperChrome
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -83,6 +84,7 @@ class ScratchPadActivity : InkScreenActivity<ScratchAction>() {
 
     override val logTag: String get() = TAG
     override val screenRoot: View? get() = if (::binding.isInitialized) binding.root else null
+    override val eraserButtonView: View? get() = if (::binding.isInitialized) binding.btnEraser else null
     override val topBarView: View? get() = if (::binding.isInitialized) binding.topBar else null
     override val bottomBarView: View? get() = if (::binding.isInitialized) binding.bottomBar else null
     override val openingOverlay: View? get() = if (::binding.isInitialized) binding.openingOverlay else null
@@ -157,7 +159,21 @@ class ScratchPadActivity : InkScreenActivity<ScratchAction>() {
             // No-op at a bound, never disabled: a greyed control is invisible on e-ink.
             onPrevPage = { runPageOp { flipTo(pageIndex() - 1) } },
             onNextPage = { runPageOp { flipTo(pageIndex() + 1) } },
+            // A second tap on the armed eraser toggles its sub-bar — Point · Lasso (arc 29 / LE3);
+            // arming a different tool takes the bar with it.
+            onEraserReTap = { toggleEraserBar() },
+            onToolTapped = { hideEraserBar() },
             sendEnabled = sendEnabled,
+        )
+        // After the toolbar: a pick lands on `toolbar.arm` (a host-set tool is never echoed back
+        // as `onToolChanged`, so the buttons are synced by hand).
+        eraserBar = EraserBar(
+            root = binding.root,
+            bar = binding.eraserBar,
+            anchor = binding.btnEraser,
+            bandBottom = { chromeBand()?.last },
+            paper = paper,
+            onPicked = { hideEraserBar(); toolbar.arm(it) },
         )
         selectionBar = InkSelectionBar(
             root = binding.root,
@@ -174,8 +190,8 @@ class ScratchPadActivity : InkScreenActivity<ScratchAction>() {
             paper = paper,
             topBar = binding.topBar,
             bottomStrip = binding.bottomBar,
-            extraRects = { selectionBar.rects() },
-            extraContains = { x, y -> selectionBar.contains(x, y) },
+            extraRects = { floatingRects() },
+            extraContains = { x, y -> floatingContains(x, y) },
             // The surface accepts no ink until the page is truly on it: a stroke committed now
             // would be dropped by the load's `loadStrokes` with nowhere to have been recorded.
             blockAll = { !opened },
@@ -338,6 +354,7 @@ class ScratchPadActivity : InkScreenActivity<ScratchAction>() {
         selectionActive = false
         currentSelection = null
         selectionBar.hide()   // idempotent — clearSelection fires onSelectionDismissed too
+        hideEraserBar()       // a floating bar never survives a content swap
         if (!firstLoad) paper.clearForContentSwap()
         paper.setPageSize(doc.pageWidth.toInt(), doc.pageHeight.toInt())
         paper.setTemplate(null)   // the pad is plain paper: no templates, ever

@@ -202,4 +202,20 @@
 
     </FrameLayout>
 
+    <!-- The eraser button's sub-bar (arc 29 / LE3) — Point / Lasso, hung under the armed eraser
+         button by SelectionAnchor.placeUnder. Buttons are built in code (EraserBar, :sn-screen).
+         **Last child of the root**: a floating bar must be a later sibling than anything it could
+         overlap, and the top bar's buttons are inside the earlier LinearLayout. It is GONE the whole
+         time openingOverlay is up (the bar cannot open before the page is on the paper), so the
+         overlay stays the topmost VISIBLE child while opening. -->
+    <LinearLayout
+        android:id="@+id/eraserBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:background="@drawable/shape_dialog_bordered"
+        android:orientation="horizontal"
+        android:padding="4dp"
+        android:visibility="gone" />
+
 </FrameLayout>

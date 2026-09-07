@@ -25,6 +25,7 @@ import com.symmetricalpalmtree.notesproutsn.ink.InkPage
 import com.symmetricalpalmtree.notesproutsn.ink.InkScreenActivity
 import com.symmetricalpalmtree.notesproutsn.notebook.InkSelectionBar
 import com.symmetricalpalmtree.notesproutsn.notebook.PageGestures
+import com.symmetricalpalmtree.notesproutsn.notebook.EraserBar
 import com.symmetricalpalmtree.notesproutsn.notebook.PaperChrome
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -162,6 +163,7 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
 
     override val logTag: String get() = TAG
     override val screenRoot: View? get() = if (::binding.isInitialized) binding.root else null
+    override val eraserButtonView: View? get() = if (::binding.isInitialized) binding.btnEraser else null
     override val topBarView: View? get() = if (::binding.isInitialized) binding.topBar else null
     override val bottomBarView: View? get() = if (::binding.isInitialized) binding.bottomBar else null
     override val openingOverlay: View? get() = if (::binding.isInitialized) binding.openingOverlay else null
@@ -260,8 +262,22 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
             // The pad is the host's to open: leave with the result that asks for it (flushed first,
             // like every exit), and the host brings the calendar back — at its bookmark — afterwards.
             onScratchPad = { exit(ExtensionContract.RESULT_CALENDAR_OPEN_SCRATCH_PAD) },
+            // A second tap on the armed eraser toggles its sub-bar — Point · Lasso (arc 29 / LE3);
+            // arming a different tool takes the bar with it.
+            onEraserReTap = { toggleEraserBar() },
+            onToolTapped = { hideEraserBar() },
             sendEnabled = sendEnabled,
             scratchPadAvailable = scratchPadAvailable,
+        )
+        // After the toolbar: a pick lands on `toolbar.arm` (a host-set tool is never echoed back
+        // as `onToolChanged`, so the buttons are synced by hand).
+        eraserBar = EraserBar(
+            root = binding.root,
+            bar = binding.eraserBar,
+            anchor = binding.btnEraser,
+            bandBottom = { chromeBand()?.last },
+            paper = paper,
+            onPicked = { hideEraserBar(); toolbar.arm(it) },
         )
         selectionBar = InkSelectionBar(
             root = binding.root,
@@ -278,8 +294,8 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
             paper = paper,
             topBar = binding.topBar,
             bottomStrip = binding.bottomBar,
-            extraRects = { selectionBar.rects() },
-            extraContains = { x, y -> selectionBar.contains(x, y) },
+            extraRects = { floatingRects() },
+            extraContains = { x, y -> floatingContains(x, y) },
             // The surface accepts no ink until the page is truly on it.
             blockAll = { !opened },
         )
@@ -490,6 +506,7 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
         selectionActive = false
         currentSelection = null
         selectionBar.hide()
+        hideEraserBar()   // a floating bar never survives a content swap
         if (!firstLoad) paper.clearForContentSwap()
         applyTemplate(force = forceBake)
         paper.loadStrokes(doc.strokes)

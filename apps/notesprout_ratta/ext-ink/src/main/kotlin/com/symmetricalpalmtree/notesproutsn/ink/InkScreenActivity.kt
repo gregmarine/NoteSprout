@@ -1,6 +1,7 @@
 package com.symmetricalpalmtree.notesproutsn.ink
 
 import android.app.Activity
+import android.graphics.Rect
 import android.util.Log
 import android.view.MotionEvent
 import android.view.View
@@ -17,9 +18,11 @@ import com.symmetricalpalmtree.notesproutsn.core.Dialogs
 import com.symmetricalpalmtree.notesproutsn.core.Slog
 import com.symmetricalpalmtree.notesproutsn.extension.InkChunks
 import com.symmetricalpalmtree.notesproutsn.extension.WireStroke
+import com.symmetricalpalmtree.notesproutsn.notebook.EraserBar
 import com.symmetricalpalmtree.notesproutsn.notebook.InkSelectionBar
 import com.symmetricalpalmtree.notesproutsn.notebook.PageGestures
 import com.symmetricalpalmtree.notesproutsn.notebook.PaperChrome
+import com.symmetricalpalmtree.notesproutsn.notebook.PaperToolbar
 import com.symmetricalpalmtree.notesproutsn.notebook.PenIdle
 import com.symmetricalpalmtree.notesproutsn.notebook.UndoRedoStack
 import com.symmetricalpalmtree.notesproutsn.screen.R
@@ -62,11 +65,16 @@ import kotlinx.coroutines.withContext
  *   up) against every **leave** flush (unbounded — there is no next debounce);
  * - [chromeBand] and [surfaceSize], the chrome-tap `releaseRender` in [dispatchTouchEvent];
  * - [onPause] / [exit] / [finishWithHandoff] / [onDestroy], **in their exact order**;
- * - [send] — the copy that parks chunks for the host to drain.
+ * - [send] — the copy that parks chunks for the host to drain;
+ * - the **eraser sub-bar** (arc 29 / LE3): the eraser button's re-tap toggles `:sn-screen`'s
+ *   [EraserBar] — Point · Lasso — and every dismissal path ([hideEraserBar]: a pick, a tool tap, a
+ *   page swap, an exit, any contact outside the bar and the eraser button) lives here once, with
+ *   [floatingRects] / [floatingContains] feeding the subclass's [PaperChrome]. A lasso erase on
+ *   either screen is ink only and records an [InkAction.Erased] — no new kind (the plan's D5).
  *
  * **`HostCallerCheck.enforceActivity` stays the first statement of the concrete `onCreate`**, before
- * anything is inflated, and the subclass assigns [paper], [chrome], [gestures] and [selectionBar]
- * there. Nothing in this class runs before that check, because nothing in this class is an
+ * anything is inflated, and the subclass assigns [paper], [chrome], [gestures], [selectionBar] and
+ * [eraserBar] there. Nothing in this class runs before that check, because nothing in this class is an
  * `onCreate`.
  *
  * **The EPD handoff order is g-paper's law.** The caller releases (`releaseForHandoff()`)
@@ -98,6 +106,10 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
     protected lateinit var gestures: PageGestures
     protected lateinit var selectionBar: InkSelectionBar
 
+    /** The eraser button's sub-bar (arc 29 / LE3) — Point · Lasso. Assigned in `onCreate` after
+     *  the toolbar, because a pick lands on the toolbar's `arm`. */
+    protected lateinit var eraserBar: EraserBar
+
     /** In-memory, screen-level history: it survives page turns and dies with the screen. */
     protected val undo = UndoRedoStack<A>()
 
@@ -126,6 +138,10 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
     protected abstract val topBarView: View?
     protected abstract val bottomBarView: View?
     protected abstract val openingOverlay: View?
+
+    /** The top bar's eraser button — the one contact that never dismisses the eraser sub-bar
+     *  (its own re-tap toggles it; a dismissal here would make the toggle reopen what it closed). */
+    protected abstract val eraserButtonView: View?
 
     /** The page being written on, or null before the document is built. */
     protected abstract val inkPage: InkPage?
@@ -195,6 +211,19 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
         }
 
         override fun onStrokesErased(strokeIds: List<String>) {
+            if (!opened || closing) return
+            inkPage?.erase(strokeIds)?.let { record(it); scheduleSave() }
+        }
+
+        /**
+         * The lasso eraser's one report (arc 29 / LE3, g-paper 0.1.28) — the point eraser's body:
+         * these screens are ink only, so [contentIds] is always empty and is ignored, and the erase
+         * records an [InkAction.Erased] like any other. The forwarding default would do the same;
+         * the override is here so the intent is explicit and a content renderer added to either
+         * screen later cannot silently split one gesture into two entries. No repaint — the
+         * engine re-records itself.
+         */
+        override fun onLassoErased(strokeIds: List<String>, contentIds: List<String>) {
             if (!opened || closing) return
             inkPage?.erase(strokeIds)?.let { record(it); scheduleSave() }
         }
@@ -435,6 +464,54 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
         if (::chrome.isInitialized) chrome.pushExclusions()
     }
 
+    /** Every floating bar's rect, in window coordinates — the [PaperChrome] `extraRects` supplier. */
+    protected fun floatingRects(): List<Rect> =
+        (if (::selectionBar.isInitialized) selectionBar.rects() else emptyList()) +
+            (if (::eraserBar.isInitialized) eraserBar.rects() else emptyList())
+
+    /** The matching hit test in root view-local coordinates — the `extraContains` supplier. */
+    protected fun floatingContains(x: Int, y: Int): Boolean =
+        (::selectionBar.isInitialized && selectionBar.contains(x, y)) ||
+            (::eraserBar.isInitialized && eraserBar.contains(x, y))
+
+    // ── The eraser sub-bar (arc 29 / LE3) ────────────────────────────────────
+
+    /** A second tap on the armed eraser opens the sub-bar; a third closes it — the notebook's toggle. */
+    protected fun toggleEraserBar() {
+        if (::eraserBar.isInitialized && eraserBar.isShowing) hideEraserBar() else showEraserBar()
+    }
+
+    /**
+     * Open the eraser's sub-bar — Point · Lasso. Gated on the page actually being on the paper (the
+     * block-all rect's reason), and **not** pen-idle gated: one chrome frame at a deliberate tap,
+     * with the pen that tapped it still hovering (the notebook's floating-bar rule, ledgered there).
+     */
+    protected fun showEraserBar() {
+        if (!opened || closing || !::eraserBar.isInitialized) return
+        if (eraserBar.show()) pushExclusions()
+    }
+
+    /** Idempotent — every dismiss path calls it without checking. */
+    protected fun hideEraserBar() {
+        if (!::eraserBar.isInitialized || !eraserBar.isShowing) return
+        eraserBar.hide()
+        pushExclusions()
+    }
+
+    /**
+     * The outside-contact dismissal — the sticky editor's rule: any pointer landing anywhere but
+     * the bar itself or the eraser button takes the bar down. That covers a bare pen tap, a stroke,
+     * a finger gesture and **every other button on either bar** (Today, Events, the pager, Send…)
+     * without each of them having to know the sub-bar exists.
+     */
+    private fun dismissEraserBarOnContact(ev: MotionEvent, index: Int) {
+        if (!::eraserBar.isInitialized || !eraserBar.isShowing) return
+        val x = ev.getX(index).toInt(); val y = ev.getY(index).toInt()
+        if (eraserButtonView?.let { PaperToolbar.rectOf(it) }?.contains(x, y) == true) return
+        if (eraserBar.contains(x, y)) return
+        hideEraserBar()
+    }
+
     /** The free band between the two bars, in root coordinates. Null until both are laid out. */
     protected fun chromeBand(): IntRange? {
         val top = topBarView ?: return null
@@ -457,7 +534,13 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         // Observer only — consumes nothing.
         if (opened && ::gestures.isInitialized) gestures.onTouchEvent(ev)
-        if (::chrome.isInitialized && ev.actionMasked == MotionEvent.ACTION_DOWN) {
+        val action = ev.actionMasked
+        // Every pointer going down, not just the first: with a hand resting on the glass the pen
+        // arrives as ACTION_POINTER_DOWN (the notebook's O2 finding).
+        if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
+            dismissEraserBarOnContact(ev, ev.actionIndex)
+        }
+        if (::chrome.isInitialized && action == MotionEvent.ACTION_DOWN) {
             val tool = ev.getToolType(0)
             val stylus = tool == MotionEvent.TOOL_TYPE_STYLUS || tool == MotionEvent.TOOL_TYPE_ERASER
             if (!stylus && !paper.isPenActive && chrome.overChrome(ev)) paper.releaseRender()
@@ -494,6 +577,7 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
     protected fun exit(resultCode: Int = Activity.RESULT_CANCELED) {
         if (closing) return
         closing = true
+        hideEraserBar()   // a floating bar belongs to a screen that is leaving
         screenRoot?.removeCallbacks(saveRunnable)
         val page = inkPage ?: run { finishWithHandoff(resultCode); return }
         appScope.launch {
