@@ -912,6 +912,17 @@
     <string name="insert_arrow">Arrow</string>
     <string name="insert_star">Star</string>
 
+    <!-- The sticky note editor (arc 28 / H5, decisions 2–3). Back saves-and-closes (the ✓ was
+         dropped on the walk — Back already does the one thing it did). The paste notices: a
+         note holds ink only, so a clipboard carrying more says so (toast — the paste happened) and
+         one carrying no ink at all explains (dialog — nothing happened). -->
+    <string name="sticky_editor_title">Sticky Note</string>
+    <string name="sticky_paste_ink_only_toast">Pasted the ink only</string>
+    <string name="sticky_paste_no_ink_title">Paste</string>
+    <string name="sticky_paste_no_ink_body">Only ink can be pasted into a note, and the clipboard holds none.</string>
+    <string name="sticky_open_failed_title">Sticky note</string>
+    <string name="sticky_open_failed_body">This note couldn\'t be read. Try again.</string>
+
     <!-- Shapes on the page (arc 28 / H4). Transform is the lasso bar's button on a lone shape;
          the rest are the floating transform bar's two controls. The aspect latch names the state
          the shape is IN, not what a tap would make it — the same way an armed tool's border does

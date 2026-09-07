@@ -48,7 +48,7 @@ object TagSelection {
         // title — there is no one line in it a tag could honestly be made of. A lone shape
         // (arc 28 / H4) is the plainest case of all: it carries no words at all, and recognizing
         // a rectangle would be recognizing nothing.
-        SelectionMode.TEXT, SelectionMode.SHAPE,
+        SelectionMode.TEXT, SelectionMode.SHAPE, SelectionMode.STICKY,
         SelectionMode.LINK, SelectionMode.MIXED, SelectionMode.MIXED_WITH_LINK -> TagFlow.NONE
     }
 

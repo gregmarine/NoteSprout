@@ -11,6 +11,7 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -27,7 +28,6 @@ import com.symmetricalpalmtree.gpaper.core.model.OrientedBox
 import com.symmetricalpalmtree.gpaper.core.model.Selection
 import com.symmetricalpalmtree.gpaper.core.model.SelectionMove
 import com.symmetricalpalmtree.gpaper.core.model.Stroke
-import com.symmetricalpalmtree.notesproutsn.BuildConfig
 import com.symmetricalpalmtree.notesproutsn.R
 import com.symmetricalpalmtree.notesproutsn.core.ActionSheetDialog
 import com.symmetricalpalmtree.notesproutsn.core.Dialogs
@@ -196,6 +196,43 @@ class NotebookActivity : AppCompatActivity() {
             pushExclusions()
         }
     })
+    /** The sticky note flow (arc 28 / H5): insert, the editor's launch and return, the finger-tap
+     *  reopen. Its [StickyFlow.Host] is the same shape as the shape flow's plus the handoff verbs —
+     *  the launcher below is the one door to [StickyEditorActivity], and the result callback's
+     *  first act is the pipeline reclaim (result callbacks run before `onResume`). */
+    private val stickyFlow: StickyFlow = StickyFlow(object : StickyFlow.Host {
+        override val alive: Boolean get() = opened && !closing
+        override val session: NotebookSession get() = this@NotebookActivity.session
+        override val pageId: String get() = displayedPageId
+        override val objects: PageObjects get() = pageObjects
+        override val paper: PaperView get() = this@NotebookActivity.paper
+        override val density: Float get() = resources.displayMetrics.density
+        override fun contentSize(): Pair<Int, Int> =
+            StickyDefaults.contentSize(binding.root.width, binding.root.height, binding.topBar.height)
+        override fun record(action: Action) = undo.record(action)
+        override fun runPageOp(block: suspend () -> Unit) = this@NotebookActivity.runPageOp(block)
+        override fun selectAsSticky(sticky: PageSticky) = this@NotebookActivity.selectAsSticky(sticky)
+        override fun armLassoForLanding() = this@NotebookActivity.armLassoForLanding()
+        override fun endTransformIfRunning() = this@NotebookActivity.endTransformIfRunning()
+        override fun reclaimPipeline() { if (this@NotebookActivity::paper.isInitialized) this@NotebookActivity.paper.resumeDrawing() }
+        override fun dismissFloatingChrome() {
+            hideLassoPopup()
+            hideTagsPopup()
+            hideInsertBar()
+        }
+        override fun launchEditor(intent: Intent) = stickyEditorLauncher.launch(intent)
+        override fun syncClipboardMark() {
+            if (this@NotebookActivity::toolbar.isInitialized) toolbar.showClipboardLoaded(SnClipboard.hasObjects)
+        }
+    })
+
+    /** The sticky editor's launcher (arc 28 / H5). Registered at field-init like the template
+     *  picker's, before RESUMED. The callback ignores the result code: whatever the editor said,
+     *  the pipeline is reclaimed and the rows are re-read. */
+    private val stickyEditorLauncher: ActivityResultLauncher<Intent> = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { stickyFlow.onEditorClosed() }
+
     private val repo by lazy { IndexRepository() }
 
     /** The global clipboard's one index row (arc 7) — the payload, read and written only here. */
@@ -710,23 +747,19 @@ class NotebookActivity : AppCompatActivity() {
             // lesson). H1 gated it because nothing on the bar could fire.
             releaseRender = { paper.releaseRender() },
             // Insert is a command, not a tool: the armed tool is untouched and what lands, lands
-            // selected (D4). Sticky is the one kind still waiting for its phase.
+            // selected (D4).
             onInsert = { kind ->
                 hideInsertBar()
                 val shape = InsertBar.shapeType(kind)
                 when {
                     shape != null -> shapeFlow.insertAtCentre(shape)
                     kind == InsertBar.Kind.TEXT -> textFlow.insertAtCentre()
+                    kind == InsertBar.Kind.STICKY -> stickyFlow.insertAtCentre()
                 }
             },
         )
-        // Text (H2) and the six shapes (H4) in every build; Sticky stays debug-only so the
-        // EIGHT-button bar's width can still be measured against the Nomad (D4) and so release
-        // sees only what works.
-        InsertBar.Kind.entries.forEach {
-            val landed = it == InsertBar.Kind.TEXT || InsertBar.shapeType(it) != null
-            insertBar.offer(it, landed || BuildConfig.DEBUG)
-        }
+        // All eight in every build since H5 — Text (H2), the six shapes (H4), Sticky (H5).
+        InsertBar.Kind.entries.forEach { insertBar.offer(it, true) }
         binding.btnInsert.setOnClickListener {
             if (!opened || closing) return@setOnClickListener
             if (insertBar.isShowing) hideInsertBar() else showInsertBar()
@@ -1541,7 +1574,11 @@ class NotebookActivity : AppCompatActivity() {
         override fun onFingerTap(x: Float, y: Float) {
             // Gesture coordinates are the window's; link bounds are page px = paper-view px.
             val loc = IntArray(2).also { paper.asView().getLocationInWindow(it) }
-            followFlow.followAt(x - loc[0], y - loc[1])
+            val px = x - loc[0]; val py = y - loc[1]
+            // Stickies before links (D2): the icons sit above the links in the draw order, so a
+            // note dropped over a link is what the finger is on.
+            if (stickyFlow.openAt(px, py)) return
+            followFlow.followAt(px, py)
         }
     }
 
@@ -2011,8 +2048,8 @@ class NotebookActivity : AppCompatActivity() {
      *
      * **Arc 28:** the rule itself moved to [SelectionModes] at H2, so the D5 table is a table a
      * test can read; what stays here is the three predicates, which are answered off *this
-     * screen's working copies* rather than trusted from the engine's id set. A lone **sticky** is
-     * still [SelectionMode.MIXED] — its own mode arrives with H5.
+     * screen's working copies* rather than trusted from the engine's id set. H5 gave a lone
+     * **sticky** its own mode ([SelectionMode.STICKY]).
      */
     private fun showSelectionToolbar(sel: Selection) {
         val lone = sel.strokeIds.isEmpty() && sel.contentIds.size == 1
@@ -2023,6 +2060,7 @@ class NotebookActivity : AppCompatActivity() {
             isLink = { liveLinks.containsKey(it) },
             isText = { pageObjects.texts.containsKey(it) },
             isShape = { pageObjects.shapes.containsKey(it) },
+            isSticky = { pageObjects.stickies.containsKey(it) },
         )
         selectionToolbar.show(sel.bounds, mode, loneHeading?.level)
     }
@@ -2208,6 +2246,17 @@ class NotebookActivity : AppCompatActivity() {
         selectionActive = true
         currentSelection = Selection(emptySet(), setOf(s.id), bounds)
         selectionToolbar.show(bounds, SelectionMode.SHAPE, null)
+    }
+
+    /**
+     * The same twin for a sticky (arc 28 / H5) — [StickyFlow] asks for it when the editor closes
+     * after an initial create, so the icon can be dragged into place at once (decision 2).
+     */
+    private fun selectAsSticky(s: PageSticky) {
+        paper.setSelection(emptySet(), setOf(s.id), s.bounds)
+        selectionActive = true
+        currentSelection = Selection(emptySet(), setOf(s.id), s.bounds)
+        selectionToolbar.show(s.bounds, SelectionMode.STICKY, null)
     }
 
     /** The single selected shape's id, or null — [loneSelectedLink]'s rule and its reason: the

@@ -7,7 +7,7 @@ whole at every phase start, together with the root `CLAUDE.md` and `apps/notespr
 traps are summarized at the end so this file is enough. `RESTORE_PLAN.md`, `ENCRYPTION_PLAN.md` and
 `DRIVE_PLAN.md` are the shapes this file copies.
 
-**Status: H4 ✅ landed 2026-09-06 — H5 ⬜ next.** H1 ✅ · H2 ✅ · H3 ✅ · H4 ✅ · H5 ⬜ · H6 ⬜ ·
+**Status: H5 ✅ landed 2026-09-06 — H6 ⬜ next.** H1 ✅ · H2 ✅ · H3 ✅ · H4 ✅ · H5 ✅ · H6 ⬜ ·
 H7 ⬜. When the arc closes, `docs/objects.md` is the reference.
 
 **Phase letter:** **H** — the last free letter in `RATTA_PLAN.md`'s A–Z (L went to arc 27). After
@@ -376,7 +376,7 @@ whether the rotate knob is offered for `LINE`/`ARROW` only or every type (defaul
 **Questions to resolve at phase start:** app version · star point count fixed at 5 or a bar
 control (default: fixed at 5 — a control is a backlog item).
 
-### ⬜ H5 — Sticky notes (Fable: surface + handoff chain + transfer · Opus: the rest · Fable review · walk by hand)
+### ✅ H5 — Sticky notes (Fable: surface + handoff chain + transfer · Opus: the rest · Fable review · walk by hand)
 
 - `StickyRenderer` + `ic_sticker_2` · Insert → Sticky (D2 flow) · `StickyEditorActivity` +
   `StickyEditorTransfer` + the debounced writer through the notebook's `SoilWriter` · the handoff
@@ -396,6 +396,11 @@ control (default: fixed at 5 — a control is a backlog item).
 
 **Questions to resolve at phase start:** app version · editor top-bar wording for ✓ ("Done") ·
 whether the icon shows a "has content" mark (default: no — og's deferred item stays deferred).
+
+**Phase-start answers (2026-09-06):** version stays `0.1.0-ratta`; ✓ hint "Done" — **then dropped
+on the walk** (Back already saves-and-closes; a centred "Sticky Note" title took its place); **no
+content mark** — but the icon's interior is painted **white** under the outline (the template must
+never bleed through the glyph); the outline itself stays the Tabler outlined form.
 
 ### ⬜ H6 — PDF endnotes + `/code-review` on the arc range + fixes (Fable review · Opus fixes · Sonnet tests)
 
@@ -658,3 +663,55 @@ and an `AskUserQuestion` never share one turn — explain, wait, then ask.
   field (a style cannot be applied to a code-built view — `ExportPanel`'s finding).
 - **Open for H5:** nothing new; H5's sticky insert follows `ShapeFlow.insertAtCentre`'s one-block
   shape and calls `armLassoForLanding()` before `selectAsSticky`.
+
+### H5 — Outcome (2026-09-06)
+
+- **Phase-start answers:** version stays `0.1.0-ratta`; ✓ hint "Done" (dropped on the walk — see
+  below); no content mark, icon interior white.
+- **Landed (Fable: surface + handoff + transfer + flow; Opus: tests + KDoc):** `StickyEditorActivity`
+  (core, `exported="false"`, `activity_sticky_editor.xml` — top bar `[←] [pen] [eraser] [lasso]` +
+  centred **"Sticky Note"** title, paper **below** the bar at the note's content size, no bottom
+  bar; the notebook's fixed tools; `FloatingSelectionBar` Snap · Copy · Cut · Delete; 2/3-finger
+  undo/redo over an in-memory `StickyInk`; pen-tap paste via `StickyClip`; the lasso button wears
+  the arc-8 clipboard mark) · `StickyEditorTransfer` (process-local singleton: `stage` / `take` once
+  / `leave` / `clear`, a `Sink` bound to `StickyStore.setContent` + `drain`) · `StickyInk` (pure:
+  Drew / Erased(indexed) / Moved / Pasted, index-faithful revert) · `StickyClip` (pure: copy rows
+  parented to the sticky id → `ObjectClip.capture`; paste = stroke rows only, page-space first, a
+  copied sticky's children only when no page ink; `leftOut` measured against what was **dropped**)
+  · `StickyDefaults` (pure: 72 dp icon at centre; `contentSize` = window − the notebook's own
+  laid-out top bar, computed by the **notebook** so the row is complete from its first write) ·
+  `StickyFlow` + `StickyFlow.Host` (insert → editor at once; `openAt` finger tap, stickies before
+  links; `onEditorClosed` = `reclaimPipeline()` **first**, drain, re-read, one
+  `StickyContentEdited` per showing only if changed, `armLassoForLanding` + `selectAsSticky` after
+  an initial create) · `SelectionMode.STICKY` (`SelectionModes.classify(isSticky)`, Link offered,
+  `TagSelection` refuses) · `ic_sticker_2` gains a **paperWhite silhouette fill** as its first path
+  (one XML edit covers every render site) · `FloatingSelectionBar.buttonAt` (`:sn-screen`, for the
+  Snap latch's state) · Insert bar offers all eight in every build.
+- **Handoff chain as built:** `dismissFloatingChrome` → `endTransformIfRunning` →
+  `paper.releaseForHandoff()` → launch (all inside one page op after `drain`); editor
+  `resumeDrawing` in `onResume`, `releaseForHandoff` before every `finish`; notebook
+  `reclaimPipeline()` as the result callback's first statement, **guarded on `::paper.isInitialized`**
+  — the callback also fires on a screen Android rebuilt after a process death whose `onCreate`
+  bounced on `IndexGuard`.
+- **Nomad (by hand, the user, 2026-09-06):** every checklist item passed — insert → editor, ink /
+  erase / lasso-move / undo-redo inside, icon lands selected, white interior over a template,
+  finger reopen vs stylus ink, one undo entry per showing, clipboard both ways + the ink-only
+  dialog, page parity (bar, copy/paste across a flip, eraser + scribble, link-wrap/unlink),
+  close-reopen, PDF icon only, process death (**`am kill` refuses a foreground process — `am
+  crash <pkg>` is the door**; the Bootstrap relaunch lost nothing but the debounce window).
+- **Walk tweaks:** the ✓ button dropped (Back does the one thing it did), "Sticky Note" title
+  added, the editor's lasso button now carries the clipboard mark.
+- **Tests:** `:app` 1393 → **1459** (+66: `StickyInkTest`, `StickyClipTest`, `StickyDefaultsTest`,
+  `StickyEditorTransferTest`, `SelectionModesStickyTest`, `TagSelectionStickyTest`,
+  `NotebookUndoStickyTest`, `StickyStoreSetContentTest`); `:sn-screen` 69; every module green.
+- **`NotebookActivity`:** 3676 → 3725 (+49: the `Host` object, the launcher, `selectAsSticky`,
+  the finger-tap order). The editor is 558 lines, the flow 210.
+- **Planner calls recorded:** the editor's paper sits **below** the top bar rather than full-bleed
+  under it — the note's content size is the paper area, so the bar needs no exclusion rect and
+  `setPageSize(contentW, contentH)` is exactly the visible paper; the content size is minted by the
+  notebook (both screens share one window) rather than written back by the editor; the undo
+  `after` is the **re-read** row set, never the editor's parting word; `StickyEditorTransfer.take()`
+  is once-only, so an Activity recreate (not just a process death) finishes empty-handed —
+  accepted, the editor is portrait-locked with `keyboard|keyboardHidden` in `configChanges`.
+- **Open for H6:** nothing new. The endnote render reads `StickyStore.content` after a drain.
+

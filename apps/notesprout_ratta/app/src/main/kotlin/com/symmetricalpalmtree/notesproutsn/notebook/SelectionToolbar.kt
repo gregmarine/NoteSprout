@@ -32,7 +32,7 @@ import com.symmetricalpalmtree.notesproutsn.R
  *
  * Which selection is which mode is [SelectionModes]'s, not this file's.
  */
-enum class SelectionMode { STROKES, HEADING, TEXT, SHAPE, LINK, MIXED, MIXED_WITH_LINK }
+enum class SelectionMode { STROKES, HEADING, TEXT, SHAPE, STICKY, LINK, MIXED, MIXED_WITH_LINK }
 
 /**
  * The selection's context toolbar: a small bordered bar that floats over the paper for as long as a
@@ -65,6 +65,10 @@ enum class SelectionMode { STROKES, HEADING, TEXT, SHAPE, LINK, MIXED, MIXED_WIT
  * the reasoning behind it) · **Delete**
  * (always, and last: the one destructive verb sits alone on the far edge, away from the buttons
  * reached for casually).
+ * A lone **sticky** ([SelectionMode.STICKY], arc 28 / H5) adds nothing at all: it takes the base row
+ * — Snap · Copy · Cut · a link-free Link · Delete — because a note's one verb is a **finger tap on
+ * its icon**, which opens the note's editor (D5), and a bar button for the same act would be a
+ * second way to do a thing the page already does.
  * **Sub-toolbar**: H1…H6, shown by an H tap and hung off the *bar*
  * by [SelectionAnchor.placeSub] — below it, above when the bar itself flipped — so opening it never
  * moves the buttons the user just aimed at. Every [show] closes it: a fresh selection (or a
@@ -270,7 +274,7 @@ class SelectionToolbar(
         val levelable = mode == SelectionMode.STROKES || mode == SelectionMode.HEADING
         // A link may wrap any of the arc-28 kinds (D5), so a lone shape is wrappable too.
         val wrappable = levelable || mode == SelectionMode.MIXED ||
-            mode == SelectionMode.TEXT || mode == SelectionMode.SHAPE
+            mode == SelectionMode.TEXT || mode == SelectionMode.SHAPE || mode == SelectionMode.STICKY
         headingButton.visibility = if (levelable) View.VISIBLE else View.GONE
         // Ink alone: a conversion consumes the strokes, so there has to be nothing else in the set.
         textButton.visibility = if (mode == SelectionMode.STROKES) View.VISIBLE else View.GONE

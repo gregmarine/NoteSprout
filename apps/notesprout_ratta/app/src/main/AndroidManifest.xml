@@ -150,6 +150,18 @@
             android:exported="false"
             android:screenOrientation="portrait" />
 
+        <!-- The sticky note editor (arc 28 / H5, D2): a core screen with its own g-paper surface,
+             the second second-paper-surface in one process, launched only by NotebookActivity with
+             an ActivityResultLauncher. It opens no .soil — it writes through the notebook's live
+             session via StickyEditorTransfer, so it is meaningless from anywhere else. The Intent
+             carries the three ids and nothing more. keyboard|keyboardHidden for the notebook's
+             reason: a recreate would drop the in-process transfer for nothing. -->
+        <activity
+            android:name=".notebook.StickyEditorActivity"
+            android:configChanges="keyboard|keyboardHidden"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
         <!-- Export (arc 15 / E1). Reached only from the library's notebook long-press sheet;
              receives EXTRA_NOTEBOOK_ID / _NAME and nothing else.
              keyboard|keyboardHidden (arc 18 / D3): attaching or detaching a keyboard (the folio,

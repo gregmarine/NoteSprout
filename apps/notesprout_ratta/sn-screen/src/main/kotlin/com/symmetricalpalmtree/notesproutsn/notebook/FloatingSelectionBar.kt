@@ -44,9 +44,19 @@ class FloatingSelectionBar(
 
     val isShowing: Boolean get() = bar.visibility == View.VISIBLE
 
+    private val views: List<AppCompatImageButton> = buttons.map { button(it) }
+
     init {
-        for (b in buttons) bar.addView(button(b))
+        for (v in views) bar.addView(v)
     }
+
+    /**
+     * The built button for [buttons]`[index]` — for a consumer whose button carries **state** the
+     * bar cannot know (arc 28 / H5: the sticky editor's Snap latch wears the selected border and
+     * re-words its hint as the notebook's does). The bar still owns the recipe; the consumer only
+     * flips `isSelected` and the description.
+     */
+    fun buttonAt(index: Int): AppCompatImageButton = views[index]
 
     private fun button(spec: Button): AppCompatImageButton {
         val ctx = bar.context

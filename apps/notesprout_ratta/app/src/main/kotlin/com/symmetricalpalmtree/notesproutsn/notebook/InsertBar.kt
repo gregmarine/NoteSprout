@@ -23,10 +23,9 @@ import com.symmetricalpalmtree.notesproutsn.R
  *
  * **Every button is [offer]ed by its own phase, and hidden until then** (J4: GONE, never disabled
  * — a control that does nothing does not exist, and on e-ink a greyed control is invisible anyway).
- * H2 offered [Kind.TEXT] in every build and H4 the six shapes ([shapeType] is the mapping); only
- * [Kind.STICKY] is still waiting for H5, and until then it is offered in **debug builds only**,
- * which is how the eight-button bar's width goes on being measurable on the Nomad without a
- * release build growing a control that does nothing.
+ * That staging is finished: H2 offered [Kind.TEXT], H4 the six shapes ([shapeType] is the mapping)
+ * and H5 [Kind.STICKY], so **all eight are offered in every build** and the bar the Nomad was
+ * measured with in H1 is the bar that ships.
  *
  * The screen owns *when* it closes — a pick, another bar button, a tool switch, a page swap, a
  * finger gesture, an outside tap — and unions [rects] into the exclusion rects and the

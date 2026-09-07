@@ -16,12 +16,12 @@ package com.symmetricalpalmtree.notesproutsn.notebook
  *  3. ink alone → [SelectionMode.STROKES];
  *  4. anything else → [SelectionMode.MIXED].
  *
- * A lone **sticky** is [SelectionMode.MIXED] until H5 gives it something of its own to offer —
- * deliberately, and pinned by a test: MIXED's row is Snap / Copy / Cut / Delete plus a link-free
- * Link, which is the honest set for a kind whose own verbs do not exist yet. A lone **shape** got
- * its own mode at H4, whose one addition to that row is **Transform**.
+ * A lone **shape** got its own mode at H4, whose one addition to the base row is **Transform**;
+ * a lone **sticky** got [SelectionMode.STICKY] at H5 — the base row (Snap / Copy / Cut / Delete
+ * plus a link-free Link) with no button of its own, because its verb is a finger tap on the icon,
+ * not a bar button (D5).
  *
- * The four predicates are read off the screen's working copies rather than trusted from the
+ * The five predicates are read off the screen's working copies rather than trusted from the
  * engine's id set — the same rule the old `when` followed.
  */
 object SelectionModes {
@@ -33,6 +33,7 @@ object SelectionModes {
         isLink: (String) -> Boolean,
         isText: (String) -> Boolean,
         isShape: (String) -> Boolean,
+        isSticky: (String) -> Boolean = { false },
     ): SelectionMode {
         val lone = if (strokeCount == 0 && contentIds.size == 1) contentIds.first() else null
         val hasLink = contentIds.any(isLink)
@@ -40,6 +41,7 @@ object SelectionModes {
             lone != null && isHeading(lone) -> SelectionMode.HEADING
             lone != null && isText(lone) -> SelectionMode.TEXT
             lone != null && isShape(lone) -> SelectionMode.SHAPE
+            lone != null && isSticky(lone) -> SelectionMode.STICKY
             lone != null && hasLink -> SelectionMode.LINK
             hasLink -> SelectionMode.MIXED_WITH_LINK
             contentIds.isEmpty() && strokeCount > 0 -> SelectionMode.STROKES

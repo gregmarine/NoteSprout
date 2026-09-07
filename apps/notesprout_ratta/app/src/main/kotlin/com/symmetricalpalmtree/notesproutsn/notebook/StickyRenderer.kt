@@ -12,6 +12,10 @@ import kotlin.math.roundToInt
  * Tabler `sticker-2` glyph ([icon] — `R.drawable.ic_sticker_2`, loaded by the host) scaled into
  * each note's icon box. The note's content never draws here, or anywhere on the page.
  *
+ * The glyph's silhouette is **filled `paperWhite` in `ic_sticker_2` itself** (arc 28 / H5, the
+ * user's call), so a template's rules and grid never show through the note that was dropped on top
+ * of them — the icon reads as a piece of paper on the page rather than as an outline over it.
+ *
  * [ContentLayer.BELOW_STROKES], registered **after** the links — the top of the object stack, so a
  * note dropped over anything stays reachable (D8). [stickies] is the screen's working copy, set on
  * Main at the page-load sites and after every mutation; the engine re-records on
