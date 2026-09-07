@@ -4,6 +4,7 @@ import androidx.appcompat.widget.TooltipCompat
 import com.symmetricalpalmtree.gpaper.core.PaperView
 import com.symmetricalpalmtree.gpaper.core.Tool
 import com.symmetricalpalmtree.gpaper.core.model.StrokeStyle
+import com.symmetricalpalmtree.notesproutsn.BuildConfig
 import com.symmetricalpalmtree.notesproutsn.R
 import com.symmetricalpalmtree.notesproutsn.core.InkColorCodec
 import com.symmetricalpalmtree.notesproutsn.core.Slog
@@ -82,6 +83,19 @@ class NotebookToolbar(
         releaseRenderIfIdle()
         if (paper.tool == tool) {
             if (tool == Tool.LASSO) onLassoReTap()
+            // LE1 walk door (debug only, removed by LE2's eraser sub-bar): a re-tap on the
+            // armed eraser flips it to the g-paper 0.1.28 lasso eraser and back.
+            if (tool == Tool.ERASER && BuildConfig.DEBUG) {
+                paper.tool = Tool.LASSO_ERASER
+                sync(Tool.LASSO_ERASER)
+                Slog.d(TAG) { "armed LASSO_ERASER (debug re-tap)" }
+            }
+            return
+        }
+        if (tool == Tool.ERASER && paper.tool == Tool.LASSO_ERASER && BuildConfig.DEBUG) {
+            paper.tool = Tool.ERASER
+            sync(Tool.ERASER)
+            Slog.d(TAG) { "armed ERASER (debug re-tap)" }
             return
         }
         onToolTapped()
@@ -109,7 +123,7 @@ class NotebookToolbar(
      */
     fun sync(tool: Tool) = with(binding) {
         btnPen.isSelected = tool == Tool.PEN
-        btnEraser.isSelected = tool == Tool.ERASER
+        btnEraser.isSelected = tool == Tool.ERASER || tool == Tool.LASSO_ERASER
         btnLasso.isSelected = tool == Tool.LASSO
     }
 

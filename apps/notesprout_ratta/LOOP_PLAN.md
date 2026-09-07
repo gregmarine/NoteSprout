@@ -6,7 +6,7 @@ cross-session memory for the arc: read it whole at every phase start, together w
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this file
 is enough. `OBJECTS_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — wizard locked 2026-09-06.** LE1 ⬜ · LE2 ⬜ · LE3 ⬜ · LE4 ⬜.
+**Status: 🔄 IN PROGRESS — wizard locked 2026-09-06.** LE1 🧪 · LE2 ⬜ · LE3 ⬜ · LE4 ⬜.
 
 **Phase code:** **LE** — the first two-letter code; every single letter A–Z is spoken for in
 `RATTA_PLAN.md` (H and L went to arcs 28 and 27).
@@ -206,7 +206,7 @@ precedent being the lasso's own re-tap popup.
 
 ## Phases
 
-### ⬜ LE1 — The engine tool (Fable; g-paper 0.1.28; SN re-pin)
+### 🧪 LE1 — The engine tool (Fable; g-paper 0.1.28; SN re-pin)
 
 **Questions to resolve at phase start:** app version (stays `0.1.0-ratta`?).
 
@@ -217,6 +217,11 @@ precedent being the lasso's own re-tap popup.
   changes — the forwarding default keeps every listener compiling). A debug-only way to arm the
   tool for the walk if LE2's bar is not there yet (the debug menu's "Arm lasso eraser" toggle,
   removed in LE2) so the engine is proven on the Nomad **before** the bar exists.
+- **As built (2026-09-06):** g-paper `a0796d1` (0.1.28, pushed); SN re-pinned, `NotebookToolbar`
+  carries the LE1 debug door — a **re-tap on the armed eraser flips ERASER ↔ LASSO_ERASER**
+  (`BuildConfig.DEBUG` only; `sync` keeps the eraser button selected in both), removed by LE2's
+  sub-bar. No debug-menu row was needed. `setSelection` while armed is accepted as it is in PEN
+  (the next outline dismisses it) — the derived rule above is read that way.
 - **Walk (by hand, Nomad):** x-trail paints live and retracts at lift; a loop over ink erases it in
   one frame; a loop over a heading / shape / sticky icon / link reports the content id (the
   forwarding default deletes it through `onContentErased` today); a tap-sized contact does nothing
