@@ -256,6 +256,20 @@
         android:background="@drawable/shape_dialog_bordered"
         android:padding="4dp"/>
 
+    <!-- The eraser button's sub-bar (arc 29 / LE2) — Point / Lasso, hung under the armed eraser
+         button by SelectionAnchor.placeUnder. Buttons are built in code (EraserBar, :sn-screen).
+         A later sibling than every top-bar button it could overlap, which is the FrameLayout rule
+         every floating bar in this layout follows. -->
+    <LinearLayout
+        android:id="@+id/eraserBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:background="@drawable/shape_dialog_bordered"
+        android:padding="4dp"/>
+
     <!-- The shape transform bar (arc 28 / H4) — the aspect latch and Done, floating beside the
          shape for as long as g-paper's transform mode has it. Placed by ShapeTransformBar off the
          shape's box grown by the overlay's reach; buttons are built in code. -->

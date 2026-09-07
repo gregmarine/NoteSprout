@@ -6,7 +6,7 @@ cross-session memory for the arc: read it whole at every phase start, together w
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this file
 is enough. `OBJECTS_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — wizard locked 2026-09-06.** LE1 ✅ · LE2 ⬜ · LE3 ⬜ · LE4 ⬜.
+**Status: 🔄 IN PROGRESS — wizard locked 2026-09-06.** LE1 ✅ · LE2 ✅ · LE3 ⬜ · LE4 ⬜.
 
 **Phase code:** **LE** — the first two-letter code; every single letter A–Z is spoken for in
 `RATTA_PLAN.md` (H and L went to arcs 28 and 27).
@@ -229,7 +229,7 @@ precedent being the lasso's own re-tap popup.
   arming the tool while a selection stands dismisses it; the pen tool afterwards inks normally.
 - Commit: g-paper first (the pin must resolve from a fresh clone), then SN with the pin.
 
-### ⬜ LE2 — Notebook + sticky editor (Opus code on a Fable brief · Fable review · walk by hand)
+### ✅ LE2 — Notebook + sticky editor (Opus code on a Fable brief · Fable review · walk by hand)
 
 **Questions to resolve at phase start:** app version; whether the eraser sub-bar sits under the
 eraser button or centred under the bar (planner call: under the button, `AnchoredBar` clamped).
@@ -333,4 +333,39 @@ explain, wait, then ask.
   return to point eraser and pen clean.
 - **Next:** LE2 — `EraserBar` in `:sn-screen`, `PaperToolbar` + `NotebookToolbar` re-tap and icon
   swap, `Action.LassoErased` + `EraseKind`, the notebook and sticky editor overrides.
+
+### LE2 — Outcome (2026-09-06) ✅
+
+- **Phase-start answers:** version stays `0.1.0-ratta`; the sub-bar hangs under the eraser button
+  through `AnchoredBar` (its `SelectionAnchor.placeUnder` centring kept — the planner's
+  "left-aligned" wording was not carried; the three existing floating bars centre).
+- **`:sn-screen`:** `AnchoredBar` **moved** there (same package, `R` repointed — the three `:app`
+  callers untouched); new `EraserBar` (Point `ic_eraser` · Lasso `ic_lasso_eraser`, og's icon
+  byte-for-byte; a pick arms the tool pen-gated then `onPicked`; `show()` presses the armed one);
+  `PaperToolbar` gains `onEraserReTap` + `onToolTapped` (both defaulted — `ScratchToolbar` /
+  `CalendarToolbar` untouched until LE3), the re-tap rule (a tap on the eraser under **either**
+  eraser is the re-tap), public `arm(tool)`, and `sync` selecting the eraser under both kinds and
+  swapping its glyph **only on a change of kind** (review fix — every `onToolChanged` lands in
+  `sync`, and re-setting the same drawable invalidates the button for nothing).
+- **`:app`:** `NotebookToolbar` the same three changes, LE1's debug door removed;
+  `Action.LassoErased` (`ScribbleErased`'s shape, its own kind) with both replay arms;
+  `EraseKind { ERASER, SCRIBBLE, LASSO }` replaces `eraseEntry`'s boolean; `onLassoErased` =
+  the scribble body, no extra repaint; the notebook's eraser bar follows the Insert bar's whole
+  lifecycle (show/hide, newest-tap-wins between the four floating bars, page swap, outside
+  contact with the eraser button excluded, exclusion rects, `overChrome`); the sticky editor
+  gets the same bar (last child of its root), `onToolTapped` → hide, dismissal on every
+  pointer-down, hidden on `exit()` and `reload()`, and `onLassoErased` = its point-eraser body
+  (no new `StickyInk.Action` kind). `NotebookUndoTest` +2. `:app` 1470 → **1472**, total
+  2830 → **2832**; `./gradlew test` + `:app:assembleDebug` exit 0.
+- **Walk (by hand on the Nomad, the user, 2026-09-06): all eight items passed** — re-tap
+  toggle, Lasso/Point picks with the glyph swap, pen/lasso taps close the bar, one-frame whole
+  erase of ink / heading / text / shape / sticky / link with undo and redo, page flip closes the
+  bar, bare pen tap closes it and pastes nothing, the sticky editor's re-tap + erase + undo, and
+  `am crash` reopens on the pen with nothing armed.
+- **Not done here, deliberately:** `onSelectionCreated` does not hide the eraser bar — it cannot
+  be up when a selection is created (every road to `Tool.LASSO` is a tool tap, which already
+  hides it). `NotebookActivity.kt` is now ~3860 lines — long before this arc, not restructured.
+- **Next:** LE3 — `InkScreenActivity.onLassoErased`, `ScratchToolbar` / `CalendarToolbar`
+  wiring `onEraserReTap` + `onToolTapped` through `PaperToolbar`, one `EraserBar` per screen
+  (root `FrameLayout`, added last), exclusion rects.
 

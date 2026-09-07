@@ -75,6 +75,29 @@ object NotebookUndo {
         ) : Action
 
         /**
+         * A **lasso-erase** gesture (arc 29 / LE2, g-paper 0.1.28's `Tool.LASSO_ERASER`) — one
+         * closed outline that took everything it holds: ink, headings, links, texts, shapes and
+         * stickies together. The engine reports it all in a single `onLassoErased` for
+         * [ScribbleErased]'s reason: **one gesture is one undo step**, and a loop that swallowed a
+         * stroke and the heading above it must not cost the user two undos.
+         *
+         * Replayed identically to [Deleted] and [ScribbleErased] — strokes revive by id, heading /
+         * text / shape rows revive in place, links and stickies need their full snapshots. It is
+         * kept as its **own kind** for the reason those two are separate kinds and not one: drawing
+         * a loop around something is a different act to the user than crossing it out or tapping
+         * Delete, and a future undo *label* has to be able to say which one it is reversing.
+         */
+        data class LassoErased(
+            override val pageId: String,
+            val strokes: List<Stroke>,
+            val headingIds: List<String> = emptyList(),
+            val links: List<PageLink> = emptyList(),
+            val textIds: List<String> = emptyList(),
+            val shapeIds: List<String> = emptyList(),
+            val stickies: List<PageSticky> = emptyList(),
+        ) : Action
+
+        /**
          * One selection drag. [headingIds] (N2) are the headings that rode along — a mixed lasso
          * moves strokes and headings in one gesture, and one gesture must stay one undo step
          * (this is the plan's `HeadingMoved`, folded in rather than split).

@@ -138,6 +138,10 @@ class NotebookActivity : AppCompatActivity() {
     /** The Insert button's sub-bar (arc 28 / H1) — Sticky, Text and the six shapes. */
     private lateinit var insertBar: InsertBar
 
+    /** The eraser button's sub-bar (arc 29 / LE2) — Point · Lasso, opened by a re-tap on the armed
+     *  eraser. `:sn-screen`'s, because all four paper surfaces share the one bar. */
+    private lateinit var eraserBar: EraserBar
+
     /** The shape transform mode's floating bar (arc 28 / H4) — up only while
      *  `paper.transformingContentId != null`, torn down by the one `onTransformEnded`. */
     private lateinit var transformBar: ShapeTransformBar
@@ -219,6 +223,7 @@ class NotebookActivity : AppCompatActivity() {
             hideLassoPopup()
             hideTagsPopup()
             hideInsertBar()
+            hideEraserBar()
         }
         override fun launchEditor(intent: Intent) = stickyEditorLauncher.launch(intent)
         override fun syncClipboardMark() {
@@ -478,11 +483,16 @@ class NotebookActivity : AppCompatActivity() {
             // A second tap on the armed lasso opens the clipboard popup (arc 8) — and stays P1's
             // silent no-op when there is nothing of ours on the clipboard.
             onLassoReTap = { if (lassoPopup.isShowing) hideLassoPopup() else showLassoPopup() },
+            // A second tap on the armed eraser opens its own sub-bar (arc 29 / LE2) — Point ·
+            // Lasso — and a third closes it again. The lasso popup's toggle exactly.
+            onEraserReTap = { if (eraserBar.isShowing) hideEraserBar() else showEraserBar() },
             // Arming a different tool takes the popup with it: it belongs to the lasso. The Insert
-            // bar goes too — it belongs to no tool, but a tool tap is a new intention.
+            // bar goes too — it belongs to no tool, but a tool tap is a new intention. And so does
+            // the eraser sub-bar, which belongs to the eraser being left.
             onToolTapped = {
                 if (lassoPopup.isShowing) hideLassoPopup()
                 hideInsertBar()
+                hideEraserBar()
             },
         )
         lassoPopup = LassoPopup(
@@ -760,6 +770,19 @@ class NotebookActivity : AppCompatActivity() {
         )
         // All eight in every build since H5 — Text (H2), the six shapes (H4), Sticky (H5).
         InsertBar.Kind.entries.forEach { insertBar.offer(it, true) }
+        // The eraser's sub-bar (arc 29 / LE2, D3) — the Insert bar's recipe, hung under the eraser
+        // button instead, and opened only by that button's own re-tap (there is no third top-bar
+        // slot: a twelfth 62 dp button falls off the Nomad's edge). A pick arms the tool inside
+        // [EraserBar] and lands here, where the bar comes down and the toolbar is told — a
+        // host-set tool is never echoed back as `onToolChanged`.
+        eraserBar = EraserBar(
+            root = binding.root,
+            bar = binding.eraserBar,
+            anchor = binding.btnEraser,
+            bandBottom = { chromeBand()?.last },
+            paper = paper,
+            onPicked = { tool -> hideEraserBar(); toolbar.arm(tool) },
+        )
         binding.btnInsert.setOnClickListener {
             if (!opened || closing) return@setOnClickListener
             if (insertBar.isShowing) hideInsertBar() else showInsertBar()
@@ -1349,7 +1372,7 @@ class NotebookActivity : AppCompatActivity() {
             // kinds rather than two entries the user would have to undo twice — and since arc 28
             // the same is true of a text, a shape or a sticky.
             recordWithStickies(removed.stickies, removed.links) { stickies, links ->
-                eraseEntry(pageId, emptyList(), removed, stickies, links, scribble = false)
+                eraseEntry(pageId, emptyList(), removed, stickies, links, EraseKind.ERASER)
             }
             Slog.d(TAG) { "eraser removed ${removed.summary()}" }
         }
@@ -1376,9 +1399,41 @@ class NotebookActivity : AppCompatActivity() {
             val removed = removeContent(contentIds) ?: Removed.NONE
             if (strokes.isEmpty() && removed.isEmpty) return
             recordWithStickies(removed.stickies, removed.links) { stickies, links ->
-                eraseEntry(pageId, strokes, removed, stickies, links, scribble = true)
+                eraseEntry(pageId, strokes, removed, stickies, links, EraseKind.SCRIBBLE)
             }
             Slog.d(TAG) { "scribble removed ${strokes.size} strokes, ${removed.summary()}" }
+        }
+        /**
+         * A lasso-erase gesture (arc 29 / LE2, g-paper 0.1.28): one closed outline took everything
+         * it holds. The body is [onScribbleErased]'s exactly — one gesture, one callback, **one
+         * undo entry** — and for the same reason: a loop that swallowed a line of ink and the
+         * heading above it must not cost the user two undos.
+         *
+         * What differs from a scribble is only the *reach*: the hit rule is the **lasso's own**
+         * (D4) — a stroke goes if any point lies inside the loop, a heading / link / text / shape /
+         * sticky goes whole if the loop touches its box — so lasso-erase and select-then-Delete
+         * always agree about what a loop holds. Per kind the semantics are the eraser tool's:
+         * whole strokes, whole objects, a link with its wrapped children.
+         *
+         * **No repaint from here** (the arc-14 rule): the engine drops the strokes from its own
+         * model and re-records the moment this returns, and [removeContent] already asked for the
+         * one frame the content needs. A second would be a second EPD refresh whose first half
+         * would show the ink gone and the heading still standing.
+         *
+         * Either list may be empty, never both — an outline that took nothing reports nothing.
+         */
+        override fun onLassoErased(strokeIds: List<String>, contentIds: List<String>) {
+            if (!opened) return
+            val pageId = displayedPageId
+            // The mirror is the only place the geometry still exists once the engine drops it.
+            val strokes = strokeIds.mapNotNull { liveStrokes.remove(it) }
+            if (strokeIds.isNotEmpty()) session.store.erase(strokeIds)
+            val removed = removeContent(contentIds) ?: Removed.NONE
+            if (strokes.isEmpty() && removed.isEmpty) return
+            recordWithStickies(removed.stickies, removed.links) { stickies, links ->
+                eraseEntry(pageId, strokes, removed, stickies, links, EraseKind.LASSO)
+            }
+            Slog.d(TAG) { "lasso erased ${strokes.size} strokes, ${removed.summary()}" }
         }
         /** The pen is dragging the box — the bar would be dragged over, and it never follows live. */
         override fun onSelectionDragStarted() { selectionToolbar.hide() }
@@ -1526,11 +1581,19 @@ class NotebookActivity : AppCompatActivity() {
         }
     }
 
+    /** Which of the three erases is asking for an entry (arc 29 / LE2 — the boolean the scribble
+     *  introduced could not name a third). The kinds replay identically; they stay apart so a
+     *  future undo *label* can say which act it is reversing. */
+    private enum class EraseKind { ERASER, SCRIBBLE, LASSO }
+
     /**
-     * The kind an erase gets: a scribble is always its own kind, and an eraser sweep that took
-     * nothing but headings keeps the narrower [Action.HeadingDeleted] it has always had (its rows
-     * revive in place from ids alone). Everything else is a [Action.Deleted] covering every kind
-     * at once — one sweep the user undoes with one tap.
+     * The kind an erase gets: a scribble and a lasso erase are each always their own kind, and an
+     * eraser sweep that took nothing but headings keeps the narrower [Action.HeadingDeleted] it has
+     * always had (its rows revive in place from ids alone). Everything else is a [Action.Deleted]
+     * covering every kind at once — one sweep the user undoes with one tap.
+     *
+     * The headings-only narrowing belongs to the **eraser** alone: it is the sweep whose rows are
+     * ids and nothing else, and neither of the two gesture kinds gives up its own name for it.
      */
     private fun eraseEntry(
         pageId: String,
@@ -1539,9 +1602,12 @@ class NotebookActivity : AppCompatActivity() {
         stickies: List<PageSticky>,
         /** [Removed.links], with any wrapped sticky's content read in ([recordWithStickies]). */
         links: List<PageLink>,
-        scribble: Boolean,
+        kind: EraseKind,
     ): Action = when {
-        scribble -> Action.ScribbleErased(
+        kind == EraseKind.SCRIBBLE -> Action.ScribbleErased(
+            pageId, strokes, r.headingIds, links, r.textIds, r.shapeIds, stickies,
+        )
+        kind == EraseKind.LASSO -> Action.LassoErased(
             pageId, strokes, r.headingIds, links, r.textIds, r.shapeIds, stickies,
         )
         strokes.isEmpty() && links.isEmpty() && r.textIds.isEmpty() &&
@@ -1689,6 +1755,7 @@ class NotebookActivity : AppCompatActivity() {
         hideLassoPopup()          // it belongs to the page being left, like every other floating bar
         hideTagsPopup()           // and its Tag page door would now aim at a page nobody chose
         hideInsertBar()           // whatever it would place belongs to the page being left
+        hideEraserBar()           // and the eraser's own sub-bar goes with every other floating bar
         paper.clearForContentSwap()
         paper.setPageSize(page.width, page.height)
         paper.setTemplate(session.template)
@@ -1793,6 +1860,18 @@ class NotebookActivity : AppCompatActivity() {
                 session.stickies.restore(a.pageId, a.stickies)
                 session.store.drain(); refreshToPage(a.pageId)
             }
+            // And again for the lasso eraser (arc 29 / LE2) — deliberately its own arm rather than
+            // folded into the one above with a comma, so the three erase kinds stay as legible here
+            // as they are in the action set.
+            is Action.LassoErased -> {
+                session.store.revive(a.strokes.map { it.id })
+                session.headings.restore(a.headingIds)
+                session.links.restore(a.pageId, a.links)
+                session.texts.restore(a.textIds)
+                session.shapes.restore(a.shapeIds)
+                session.stickies.restore(a.pageId, a.stickies)
+                session.store.drain(); refreshToPage(a.pageId)
+            }
             is Action.Moved -> {
                 session.store.move(a.ids, -a.dx, -a.dy)
                 session.headings.move(a.headingIds, -a.dx, -a.dy)
@@ -1875,6 +1954,15 @@ class NotebookActivity : AppCompatActivity() {
                 session.store.drain(); refreshToPage(a.pageId)
             }
             is Action.ScribbleErased -> {
+                session.store.remove(a.strokes.map { it.id })
+                session.headings.erase(a.headingIds)
+                session.links.remove(a.links)
+                session.texts.erase(a.textIds)
+                session.shapes.erase(a.shapeIds)
+                session.stickies.remove(a.stickies.map { it.id })
+                session.store.drain(); refreshToPage(a.pageId)
+            }
+            is Action.LassoErased -> {
                 session.store.remove(a.strokes.map { it.id })
                 session.headings.erase(a.headingIds)
                 session.links.remove(a.links)
@@ -2917,6 +3005,7 @@ class NotebookActivity : AppCompatActivity() {
         // Another bar taking this one's place ends the mode — the same rule the floating bars
         // already apply to each other, and the transform bar is one of them.
         endTransformIfRunning()
+        hideEraserBar()   // the newest tap wins, as it does between the other floating bars
         if (lassoPopup.show()) pushExclusions()
     }
 
@@ -2938,6 +3027,7 @@ class NotebookActivity : AppCompatActivity() {
     private fun showTagsPopup() {
         if (!opened || closing || !canvasShown) return
         endTransformIfRunning()
+        hideEraserBar()
         if (tagsPopup.show()) pushExclusions()
     }
 
@@ -2960,12 +3050,39 @@ class NotebookActivity : AppCompatActivity() {
         endTransformIfRunning()
         hideLassoPopup()
         hideTagsPopup()
+        hideEraserBar()
         if (insertBar.show()) pushExclusions()
     }
 
     private fun hideInsertBar() {
         if (!::insertBar.isInitialized || !insertBar.isShowing) return
         insertBar.hide()
+        pushExclusions()
+    }
+
+    // ── The eraser sub-bar (arc 29 / LE2) ────────────────────────────────────
+
+    /**
+     * Open the eraser's sub-bar — Point · Lasso. The Insert bar's gates exactly, [canvasShown]
+     * included: the tools arm against the paper, and a text document that has never shown its
+     * pages has none. The three other floating bars come down first — they are four answers to
+     * four different buttons, and the newest tap wins.
+     *
+     * Deliberately **not** pen-idle gated: this is one chrome frame at a deliberate tap, and the
+     * pen that tapped it is still hovering (the floating-bar rule the lasso popup ledgered).
+     */
+    private fun showEraserBar() {
+        if (!opened || closing || !canvasShown) return
+        endTransformIfRunning()
+        hideLassoPopup()
+        hideTagsPopup()
+        hideInsertBar()
+        if (eraserBar.show()) pushExclusions()
+    }
+
+    private fun hideEraserBar() {
+        if (!::eraserBar.isInitialized || !eraserBar.isShowing) return
+        eraserBar.hide()
         pushExclusions()
     }
 
@@ -3352,7 +3469,7 @@ class NotebookActivity : AppCompatActivity() {
         val rects = (
             listOfNotNull(rectOf(binding.topBar), rectOf(binding.bottomStrip)) +
                 selectionToolbar.rects() + lassoPopup.rects() + tagsPopup.rects() +
-                insertBar.rects() + transformBar.rects()
+                insertBar.rects() + eraserBar.rects() + transformBar.rects()
             )
             .map { Rect(it.left - paperLoc[0], it.top - paperLoc[1], it.right - paperLoc[0], it.bottom - paperLoc[1]) }
         paper.setExclusionRects(rects)
@@ -3400,6 +3517,7 @@ class NotebookActivity : AppCompatActivity() {
                 dismissLassoPopupOnContact(ev, ev.actionIndex)
                 dismissTagsPopupOnContact(ev, ev.actionIndex)
                 dismissInsertBarOnContact(ev, ev.actionIndex)
+                dismissEraserBarOnContact(ev, ev.actionIndex)
             }
             if (action == MotionEvent.ACTION_DOWN) {
                 val tool = ev.getToolType(0)
@@ -3456,6 +3574,18 @@ class NotebookActivity : AppCompatActivity() {
         hideInsertBar()
     }
 
+    /** The eraser sub-bar's outside-tap dismissal (arc 29 / LE2) — the Insert bar's rule exactly,
+     *  the eraser button excluded because its own re-tap would otherwise close the bar here and
+     *  the toolbar would immediately reopen it, and [tapDismissedPopup] deliberately untouched:
+     *  that latch belongs to the clipboard popup, whose contact has a second meaning. */
+    private fun dismissEraserBarOnContact(ev: MotionEvent, index: Int) {
+        if (!::eraserBar.isInitialized || !eraserBar.isShowing) return
+        val x = ev.getX(index).toInt(); val y = ev.getY(index).toInt()
+        if (rectOf(binding.btnEraser)?.contains(x, y) == true) return
+        if (eraserBar.contains(x, y)) return
+        hideEraserBar()
+    }
+
     /** Both bars, the selection toolbar and the two floating popups — a floating bar is chrome
      *  like any other. */
     private fun overChrome(ev: MotionEvent): Boolean {
@@ -3468,6 +3598,7 @@ class NotebookActivity : AppCompatActivity() {
             (::lassoPopup.isInitialized && lassoPopup.contains(x, y)) ||
             (::tagsPopup.isInitialized && tagsPopup.contains(x, y)) ||
             (::insertBar.isInitialized && insertBar.contains(x, y)) ||
+            (::eraserBar.isInitialized && eraserBar.contains(x, y)) ||
             (::transformBar.isInitialized && transformBar.contains(x, y))
     }
 

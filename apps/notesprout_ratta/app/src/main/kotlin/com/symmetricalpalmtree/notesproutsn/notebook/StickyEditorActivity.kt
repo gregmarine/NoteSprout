@@ -49,8 +49,10 @@ import java.util.UUID
  * ✓ because Back already does the one thing it would) over a paper the size
  * of the note's content ([StickyEditorTransfer.Showing.contentW] × `contentH`, laid top-left 1:1
  * — a foreign size is the notebook's foreign-page rule). The tools are the notebook's, fixed
- * (3 px pen, 15 px eraser, black); 2/3-finger undo/redo replay an in-memory [StickyInk]; the
- * lasso's bar is Snap · Copy · Cut · Delete; a pen tap on bare paper pastes the clipboard's ink.
+ * (3 px pen, 15 px eraser, black) — including the eraser's **two kinds** since arc 29 / LE2, Point
+ * and Lasso, picked from the [EraserBar] its own re-tap opens; 2/3-finger undo/redo replay an
+ * in-memory [StickyInk]; the lasso's bar is Snap · Copy · Cut · Delete; a pen tap on bare paper
+ * pastes the clipboard's ink.
  *
  * **Writes are whole sets, debounced.** Every act updates [ink] and schedules
  * [StickyEditorTransfer.Sink.setContent] with the whole list [DEBOUNCE_MS] later; a leave
@@ -76,6 +78,9 @@ class StickyEditorActivity : AppCompatActivity() {
     private lateinit var paper: PaperView
     private lateinit var toolbar: PaperToolbar
     private lateinit var selectionBar: FloatingSelectionBar
+    /** The eraser button's sub-bar (arc 29 / LE2) — Point · Lasso, opened by a re-tap on the armed
+     *  eraser. `:sn-screen`'s [EraserBar], the same one the notebook hangs under its own button. */
+    private lateinit var eraserBar: EraserBar
     private lateinit var gestures: PageGestures
     private lateinit var snapPrefs: SnapPrefs
     private lateinit var showing: StickyEditorTransfer.Showing
@@ -105,6 +110,17 @@ class StickyEditorActivity : AppCompatActivity() {
         }
 
         override fun onStrokesErased(strokeIds: List<String>) {
+            if (!shown || closing) return
+            ink.erase(strokeIds)?.let { undo.record(it); scheduleSave() }
+        }
+
+        /**
+         * A lasso-erase gesture (arc 29 / LE2): the point eraser's body, because on this surface
+         * the two take exactly the same thing — ink. [contentIds] is always empty here (a note
+         * carries no content renderers at all: no headings, no links, no objects) and is therefore
+         * ignored; a `StickyInk.Action` kind of its own would have nothing to label.
+         */
+        override fun onLassoErased(strokeIds: List<String>, contentIds: List<String>) {
             if (!shown || closing) return
             ink.erase(strokeIds)?.let { undo.record(it); scheduleSave() }
         }
@@ -195,6 +211,23 @@ class StickyEditorActivity : AppCompatActivity() {
             btnLasso = binding.btnLasso,
             paper = paper,
             onBack = { exit() },
+            // A second tap on the armed eraser opens its sub-bar — Point · Lasso — and a third
+            // closes it again (arc 29 / LE2, the notebook's toggle exactly).
+            onEraserReTap = { if (eraserBar.isShowing) hideEraserBar() else showEraserBar() },
+            // Arming a different tool takes the sub-bar with it: it belongs to the eraser being
+            // left. A tool tap never reaches this screen otherwise — [PaperToolbar] consumes it.
+            onToolTapped = { hideEraserBar() },
+        )
+        // Constructed after the toolbar because a pick lands on `toolbar.arm` (a host-set tool is
+        // never echoed back as `onToolChanged`, so the buttons are synced by hand). The band is the
+        // whole root below the top bar — this screen has no bottom strip.
+        eraserBar = EraserBar(
+            root = binding.root,
+            bar = binding.eraserBar,
+            anchor = binding.btnEraser,
+            bandBottom = { binding.root.height.takeIf { it > 0 && binding.topBar.height > 0 } },
+            paper = paper,
+            onPicked = { hideEraserBar(); toolbar.arm(it) },
         )
         // The lasso wears the clipboard mark exactly as the notebook's does (arc 8): the one
         // standing hint that a pen tap on bare paper will paste. Re-read after every copy/cut.
@@ -291,6 +324,12 @@ class StickyEditorActivity : AppCompatActivity() {
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (::paper.isInitialized) {
             gestures.onTouchEvent(ev)
+            val action = ev.actionMasked
+            // Every pointer going down, not just the first: with a hand resting on the glass the
+            // pen arrives as ACTION_POINTER_DOWN (the notebook's O2 finding).
+            if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
+                dismissEraserBarOnContact(ev, ev.actionIndex)
+            }
             if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
                 val tool = ev.getToolType(0)
                 val stylus = tool == MotionEvent.TOOL_TYPE_STYLUS || tool == MotionEvent.TOOL_TYPE_ERASER
@@ -309,6 +348,8 @@ class StickyEditorActivity : AppCompatActivity() {
     private fun exit() {
         if (closing) return
         closing = true
+        // The floating bars belong to a screen that is leaving.
+        hideEraserBar()
         flushNow()
         StickyEditorTransfer.leave(ink.strokes)
         setResult(Activity.RESULT_OK)
@@ -361,6 +402,7 @@ class StickyEditorActivity : AppCompatActivity() {
         paper.clearSelection()
         selection = null
         selectionBar.hide()
+        hideEraserBar()   // a floating bar never survives a content swap
         paper.clearForContentSwap()
         paper.loadStrokes(ink.strokes)
         pushExclusions()
@@ -518,19 +560,52 @@ class StickyEditorActivity : AppCompatActivity() {
         paper.setExclusionRects(listOf(Rect(0, 0, maxOf(v.width, 1), maxOf(v.height, 1))))
     }
 
-    /** The top bar sits outside the paper; only the floating bar needs excluding, in paper px. */
+    /** The top bar sits outside the paper; only the floating bars need excluding, in paper px. */
     private fun pushExclusions() {
         if (!shown) { blockAll(); return }
         val v = paper.asView()
         val loc = IntArray(2).also { v.getLocationInWindow(it) }
+        val rects = selectionBar.rects() +
+            (if (::eraserBar.isInitialized) eraserBar.rects() else emptyList())
         paper.setExclusionRects(
-            selectionBar.rects().map { Rect(it.left - loc[0], it.top - loc[1], it.right - loc[0], it.bottom - loc[1]) },
+            rects.map { Rect(it.left - loc[0], it.top - loc[1], it.right - loc[0], it.bottom - loc[1]) },
         )
     }
 
     private fun overChrome(ev: MotionEvent): Boolean {
         val x = ev.x.toInt(); val y = ev.y.toInt()
-        return PaperToolbar.rectOf(binding.topBar)?.contains(x, y) == true || selectionBar.contains(x, y)
+        return PaperToolbar.rectOf(binding.topBar)?.contains(x, y) == true ||
+            selectionBar.contains(x, y) ||
+            (::eraserBar.isInitialized && eraserBar.contains(x, y))
+    }
+
+    // ── The eraser sub-bar (arc 29 / LE2) ────────────────────────────────────
+
+    /**
+     * Open the eraser's sub-bar — Point · Lasso. Gated on the note actually being on the paper,
+     * for the surface-block's reason, and **not** pen-idle gated: one chrome frame at a deliberate
+     * tap, with the pen that tapped it still hovering (the notebook's floating-bar rule).
+     */
+    private fun showEraserBar() {
+        if (!shown || closing) return
+        if (eraserBar.show()) pushExclusions()
+    }
+
+    /** Idempotent — every dismiss path calls it without checking. */
+    private fun hideEraserBar() {
+        if (!::eraserBar.isInitialized || !eraserBar.isShowing) return
+        eraserBar.hide()
+        pushExclusions()
+    }
+
+    /** The bar's outside-tap dismissal — the notebook's rule, the eraser button excluded because
+     *  its own re-tap would otherwise close the bar here and the toolbar would reopen it. */
+    private fun dismissEraserBarOnContact(ev: MotionEvent, index: Int) {
+        if (!::eraserBar.isInitialized || !eraserBar.isShowing) return
+        val x = ev.getX(index).toInt(); val y = ev.getY(index).toInt()
+        if (PaperToolbar.rectOf(binding.btnEraser)?.contains(x, y) == true) return
+        if (eraserBar.contains(x, y)) return
+        hideEraserBar()
     }
 
     private fun toast(text: String) {

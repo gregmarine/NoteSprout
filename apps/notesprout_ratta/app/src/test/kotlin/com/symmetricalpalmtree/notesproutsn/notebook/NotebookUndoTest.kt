@@ -136,9 +136,10 @@ class NotebookUndoTest {
     }
 
     /**
-     * The kind matters as much as the payload: a scribble and a Delete tap replay identically but
-     * must stay tellable apart, the same rule that keeps [Action.Erased] and [Action.Deleted]
-     * separate. A `when` arm that folded them would lose the label a future undo hint needs.
+     * The kind matters as much as the payload: a scribble, a lasso erase and a Delete tap replay
+     * identically but must stay tellable apart, the same rule that keeps [Action.Erased] and
+     * [Action.Deleted] separate. A `when` arm that folded them would lose the label a future undo
+     * hint needs.
      */
     @Test
     fun `a scribble erase is distinguishable from an erase and a delete`() {
@@ -146,12 +147,77 @@ class NotebookUndoTest {
         val erased: Action = Action.Erased("p", strokes)
         val deleted: Action = Action.Deleted("p", strokes)
         val scribbled: Action = Action.ScribbleErased("p", strokes)
+        val looped: Action = Action.LassoErased("p", strokes)
 
         assertTrue(scribbled is Action.ScribbleErased)
         assertTrue(scribbled !is Action.Deleted)
         assertTrue(scribbled !is Action.Erased)
         assertTrue(erased !is Action.ScribbleErased)
         assertTrue(deleted !is Action.ScribbleErased)
+        // Arc 29 / LE2: the fourth erase-shaped kind is none of the other three, in either
+        // direction — drawing a loop around something is its own act.
+        assertTrue(looped is Action.LassoErased)
+        assertTrue(looped !is Action.ScribbleErased)
+        assertTrue(looped !is Action.Deleted)
+        assertTrue(looped !is Action.Erased)
+        assertTrue(erased !is Action.LassoErased)
+        assertTrue(deleted !is Action.LassoErased)
+        assertTrue(scribbled !is Action.LassoErased)
+    }
+
+    // ── Arc 29: the lasso eraser ────────────────────────────────────────────
+
+    /**
+     * A lasso erase (arc 29 / LE2) is one closed outline that can take ink, a heading, a link, a
+     * text, a shape and a sticky **at once** — one gesture, one entry, or an undo would put back
+     * only part of what vanished. Everything rides in the shape [Action.ScribbleErased] set: whole
+     * strokes and whole link / sticky snapshots, ids for the kinds that revive in place.
+     */
+    @Test
+    fun `a lasso erase carries every kind in one entry`() {
+        val h = Heading("h1", "# T", 1, 0f, 0f, 10f, 10f, 0)
+        val link = PageLink(
+            id = "l1", payload = "p", chrome = 0,
+            x = 0f, y = 0f, width = 20f, height = 20f, order = 0,
+            strokes = listOf(stroke("wrapped")), headings = emptyList(),
+        )
+        val note = sticky("k1", listOf(stroke("child-1")))
+        val s = UndoRedoStack<Action>()
+        val looped = Action.LassoErased(
+            "p1", listOf(stroke("a"), stroke("b")), listOf(h.id), listOf(link),
+            textIds = listOf("t1"), shapeIds = listOf("s1"), stickies = listOf(note),
+        )
+        s.record(looped)
+
+        val popped = s.popUndo()!!
+        assertSame(looped, popped)
+        assertEquals("p1", popped.pageId)
+        popped as Action.LassoErased
+        // The strokes ride whole: an undo restores geometry, not just ids.
+        assertEquals(listOf("a", "b"), popped.strokes.map { it.id })
+        assertEquals(listOf("h1"), popped.headingIds)
+        // The link rides as a full snapshot — restoring it has to bring its wrapped children back.
+        assertEquals(listOf("wrapped"), popped.links.single().strokes.map { it.id })
+        assertEquals(listOf("t1"), popped.textIds)
+        assertEquals(listOf("s1"), popped.shapeIds)
+        // And the sticky as a content-carrying one, for `StickyStore.restore`'s childIds.
+        assertEquals(listOf("child-1"), popped.stickies.single().childIds)
+    }
+
+    /** Ink-only and content-only loops are both legal; the engine never reports two empties, and
+     *  every field past the strokes is a trailing default, exactly as the scribble's are. */
+    @Test
+    fun `a lasso erase defaults its content lists to empty`() {
+        val inkOnly = Action.LassoErased("p", listOf(stroke("a")))
+        assertEquals(emptyList<String>(), inkOnly.headingIds)
+        assertEquals(emptyList<PageLink>(), inkOnly.links)
+        assertEquals(emptyList<String>(), inkOnly.textIds)
+        assertEquals(emptyList<String>(), inkOnly.shapeIds)
+        assertEquals(emptyList<PageSticky>(), inkOnly.stickies)
+
+        val contentOnly = Action.LassoErased("p", emptyList(), listOf("h1"))
+        assertEquals(emptyList<Stroke>(), contentOnly.strokes)
+        assertEquals(listOf("h1"), contentOnly.headingIds)
     }
 
     // ── Arc 28: texts, shapes and sticky notes ──────────────────────────────

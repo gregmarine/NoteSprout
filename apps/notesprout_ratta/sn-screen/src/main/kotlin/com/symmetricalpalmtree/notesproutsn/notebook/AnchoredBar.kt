@@ -9,7 +9,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import androidx.appcompat.widget.AppCompatImageButton
 import androidx.appcompat.widget.TooltipCompat
-import com.symmetricalpalmtree.notesproutsn.R
+import com.symmetricalpalmtree.notesproutsn.screen.R
 
 /**
  * A small bordered bar of icon buttons hung **under a top-bar button** (arc 21 / W2) — the shape
@@ -28,6 +28,9 @@ import com.symmetricalpalmtree.notesproutsn.R
  * gesture, an outside tap), and unioning [rects] into the exclusion rects and the `overChrome`
  * test — a pen landing on a floating bar must never ink, and a finger tapping one must not read
  * as a page gesture.
+ *
+ * Moved from `:app` into `:sn-screen` in arc 29 / LE2 so the eraser sub-bar ([EraserBar]) can be
+ * shared by all four paper surfaces rather than copied into each one.
  */
 class AnchoredBar(
     private val root: ViewGroup,

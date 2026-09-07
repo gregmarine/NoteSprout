@@ -4,4 +4,8 @@
          the action sheet's close-X content description. Every other string stays in `:app`. -->
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>
+    <!-- The eraser sub-bar's two long-press hints (arc 29 / LE2) — here, not in `:app`, because
+         all four paper surfaces share the one EraserBar. -->
+    <string name="eraser_point">Point eraser</string>
+    <string name="eraser_lasso">Lasso eraser</string>
 </resources>
