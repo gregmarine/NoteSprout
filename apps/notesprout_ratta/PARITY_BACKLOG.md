@@ -21,7 +21,8 @@ reference is `docs/encryption.md`, the plan and ledger `ENCRYPTION_PLAN.md`). It
 and ledger `RESTORE_PLAN.md`). Item 3 **DONE** (arc 28 "Objects", H1–H7 landed 2026-09-06, complete + frozen; the reference is
 `docs/objects.md`, the plan and ledger `OBJECTS_PLAN.md`). Item 4 **DONE** (arc 29 "Loop", LE1–LE4
 landed 2026-09-06/07, complete + frozen; the reference is `docs/notebook.md` § Toolbar + § Undo, the
-plan and ledger `LOOP_PLAN.md`). Items 5–7 not started. No ordering has been decided — the numbering below is the order the user listed
+plan and ledger `LOOP_PLAN.md`). Item 5 **IN PROGRESS** (arc 30 "Page", wizard locked 2026-09-08; the plan
+and ledger is the standalone `PAGE_PLAN.md` — read it, not `RATTA_PLAN.md`). Items 6–7 not started. No ordering has been decided — the numbering below is the order the user listed
 them in, not a priority.
 
 ---
@@ -210,7 +211,7 @@ as a bug (`apps/notesprout_ratta/CLAUDE.md`, `docs/scratchpad.md`). Shared ink h
 
 ---
 
-## 5. Page erase and page export
+## 5. Page erase and page export — 🔄 IN PROGRESS (arc 30 "Page", `PAGE_PLAN.md`, wizard locked 2026-09-08)
 
 **User's call:** "Page erase and page export are needed."
 

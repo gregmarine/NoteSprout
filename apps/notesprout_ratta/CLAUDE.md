@@ -342,6 +342,15 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   user's call — do not re-raise); version stays `0.1.0-ratta`; 1472 `:app` / 2832 tests. Onyx's
   side of the engine change is mechanical and **untested** (SN is Ratta-only). **`docs/notebook.md`
   is the reference; read the standalone `LOOP_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**
+- **Arc 30 "Page" is IN PROGRESS (wizard locked 2026-09-08; PE1 ⬜ · PE2 ⬜ · PE3 ⬜)** — page erase +
+  page export (`PARITY_BACKLOG.md` item 5): an **Erase page** row on the page sheet (confirm →
+  one soft-delete transaction over `liveDescendantIds`, page row / order / size / template kept,
+  `Action.PageErased` replayed by id) and an **Export page** row that closes the notebook, runs
+  `ExportActivity` seeded to that page (a This page · Whole notebook latch, present only from that
+  door; Soil hidden at page scope; the host filters the `TYPE_PAGE` rows before every bake —
+  `ExportSpec` and every exporter untouched) and relaunches the notebook on finish. Host-only, no
+  point, no API bump, no new row, no code review. **Read the standalone `PAGE_PLAN.md`, not
+  `RATTA_PLAN.md`, for any work on it.**
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by
