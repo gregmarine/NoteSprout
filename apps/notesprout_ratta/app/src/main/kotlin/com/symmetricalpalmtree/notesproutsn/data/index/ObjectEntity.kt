@@ -66,6 +66,30 @@ object ObjectType {
      * as a fresh config, whose worst case is re-copying everything — the safe direction.
      */
     const val BACKUP = "backup"
+
+    /**
+     * A saved **export preset** (arc 31 / HV3) — one named combination of everything the Export
+     * screen asks that is not the scope: which exporter, its option values, the host's Source
+     * answer, the destination and, for the cloud, the folder. The same additive-row-type pattern as
+     * [NAMING], [CLIPBOARD] and [BACKUP], and for the same reason: `notesprout.db` is
+     * Room-validated and format-compatible with Paper, so a new `@Entity` would change the identity
+     * hash (a pinning test stands on it) and a Paper index would fail validation. It also means a
+     * preset rides backup and restore with everything else in the index, which prefs would not.
+     *
+     * `id` = a fresh UUID (there are many, unlike the singleton [CLIPBOARD] and [BACKUP] rows) ·
+     * `name` = the preset's name, unique among alive presets by [IndexRepository.nameTaken] ·
+     * `parentId` = null (presets live in no folder) · `flags` = the grammar version of the blob ·
+     * `blob` = the [com.symmetricalpalmtree.notesproutsn.data.export.ExportPreset] JSON, UTF-8.
+     * Soft-deleted on delete, like every row the user can remove, and `updatedAt` is bumped by a
+     * rename and by nothing else (the sacred rule). A corrupt blob is **skipped** by the listing —
+     * a preset nobody can read is one row missing from a radio list, never a screen that crashes.
+     *
+     * **Never the secret** — a passphrase or export password is not an option value and is not in
+     * the blob; a preset that needs one leaves the fields empty for the user to type. **Never the
+     * scope** either: this page versus the whole notebook belongs to the door the screen was opened
+     * from, not to a saved answer.
+     */
+    const val EXPORT_PRESET = "export_preset"
 }
 
 /** Notebook `flags` bits. */

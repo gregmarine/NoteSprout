@@ -55,8 +55,20 @@ class ExportPanel(private val context: Context) {
         layoutParams = wrapRow()
     }
 
-    /** One of several — the family's radio, checked by state, never by colour. */
-    fun choice(text: String, checked: Boolean, onPick: () -> Unit): View =
+    /**
+     * One of several — the family's radio, checked by state, never by colour.
+     *
+     * [onLongPress] is the Preset row's own (arc 31 / HV3): a saved preset's rename and delete live
+     * behind a long press on its radio, exactly as the library's cards carry their sheet. It is set
+     * only when given, so every other radio on this screen keeps the system's default long-press
+     * behaviour rather than a listener that swallows it.
+     */
+    fun choice(
+        text: String,
+        checked: Boolean,
+        onLongPress: (() -> Unit)? = null,
+        onPick: () -> Unit,
+    ): View =
         AppCompatRadioButton(context).apply {
             this.text = text
             textSize = 16f
@@ -68,6 +80,7 @@ class ExportPanel(private val context: Context) {
             // A click listener, not a checked-change one: the panel is re-rendered whole after
             // every pick, and a change listener would fire again as that render sets the state.
             setOnClickListener { onPick() }
+            if (onLongPress != null) setOnLongClickListener { onLongPress(); true }
             setPadding(padV, padV, padV, padV)
             layoutParams = wrapRow()
         }

@@ -289,6 +289,32 @@
         <item quantity="other">%1$d of %2$d images were exported.</item>
     </plurals>
 
+    <!-- Export presets (arc 31 / HV3): a named, saved combination of format, options, Source and
+         destination. Never a password (a preset that needs one leaves the fields empty to type
+         into) and never the scope (that is the door's question). The row is absent with nothing to
+         list; the Save action is always there. The cloud folder is the one new piece of screen
+         state a preset can carry — "Chosen at export" is what every export did before this arc,
+         and still the default. -->
+    <string name="export_preset_caption">Preset</string>
+    <string name="export_preset_none">None</string>
+    <string name="export_preset_save_action">Save preset…</string>
+    <string name="export_preset_save_title">Save preset</string>
+    <string name="export_preset_save_confirm">Save</string>
+    <string name="export_preset_name_hint">Preset name</string>
+    <string name="export_preset_exists_title">Name already used</string>
+    <string name="export_preset_exists_body">A preset with this name already exists. Choose another name.</string>
+    <string name="export_preset_saved">Preset saved</string>
+    <string name="export_preset_rename">Rename…</string>
+    <string name="export_preset_delete">Delete…</string>
+    <string name="export_preset_rename_title">Rename preset</string>
+    <string name="export_preset_delete_title">Delete preset %1$s?</string>
+    <string name="export_preset_delete_body">The export choices it saved are forgotten. Nothing that was exported is touched.</string>
+    <string name="export_preset_delete_confirm">Delete</string>
+    <string name="export_preset_cloud_fallback">No cloud account is connected — exporting to this device instead</string>
+    <string name="export_cloud_folder_row">Folder: %1$s</string>
+    <string name="export_cloud_folder_ask">Chosen at export</string>
+    <string name="export_stage_listing">Checking the folder…</string>
+
     <!-- Import (arc 16 / I1). Export's tone, in the other direction: a toast only confirms an
          import that happened, and every failure is a sentence naming what went wrong — never a
          path, never a secret — and saying that the library was left as it was. -->

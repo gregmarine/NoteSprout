@@ -182,4 +182,15 @@ interface ObjectDao {
 
     @Query("SELECT blob FROM objects WHERE id = :id AND type = 'backup'")
     suspend fun backupBlob(id: String): ByteArray?
+
+    // ── Export presets (arc 31 / HV3) ────────────────────────────────────────
+
+    /**
+     * Every alive row of [type] **with its blob**, by name — the export presets (arc 31 / HV3). The
+     * blob-free listings cannot serve this: the preset IS its blob, and each is a few hundred
+     * bytes, so there is nothing here for a two-step read to save. `id` breaks the tie so the order
+     * is total and the radio list cannot reshuffle under a rename.
+     */
+    @Query("SELECT * FROM objects WHERE type = :type AND deletedAt IS NULL ORDER BY name COLLATE NOCASE, id")
+    suspend fun allAliveRowsOfType(type: String): List<ObjectEntity>
 }

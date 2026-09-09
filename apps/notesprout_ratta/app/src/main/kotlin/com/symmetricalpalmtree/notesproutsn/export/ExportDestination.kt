@@ -76,4 +76,19 @@ object ExportDestination {
      */
     fun providerName(status: CloudStatus?, extensionLabel: String): String =
         status?.providerName?.takeIf { it.isNotBlank() } ?: extensionLabel
+
+    /** What the breadcrumb between one folder and the next is drawn with. */
+    const val PATH_SEPARATOR = " › "
+
+    /**
+     * The **cloud folder row's** words (arc 31 / HV3): the chosen folder as a breadcrumb under the
+     * export root — `Exports › Term 1`. Null [path] means *no folder has been chosen*, which is
+     * every export before this arc and is still the default: the caller draws its own "chosen at
+     * export" sentence for it rather than a path that does not exist.
+     *
+     * The first segment is replaced by [rootLabel] rather than appended to: a path from the browser
+     * already begins at the export root, and printing it twice would read as a folder inside itself.
+     */
+    fun folderLabel(path: List<String>?, rootLabel: String): String? =
+        path?.let { (listOf(rootLabel) + it.drop(1)).joinToString(PATH_SEPARATOR) }
 }

@@ -708,6 +708,80 @@ the name is the notebook's, suffix-free, as before. Pure, tested (`ExportScopeTe
 **What did not change.** `ExportVerification` (bytes are bytes), every exporter, `ExportSpec`, the
 seam, the keying flow, the cloud leg. The library door: no Scope row, Soil listed, whole notebook.
 
+## Presets (arc 31 / HV3)
+
+A **preset** is a named, saved answer to every question the Export screen asks *except the scope*:
+the exporter, its option values, the host's Source answer, the Destination, and — for the cloud —
+the folder. It is the first thing in the panel, above Scope and Format, because one tap on it
+answers everything below.
+
+**The row.** `@id/presets` holds a caption *Preset*, a radio *None*, one radio per listable preset,
+and a code-built *Save preset…* text button (`Widget.Notesprout.TextButton`'s look set field by
+field — the style sets no `layout_width`, so the panel builds it, as it builds every row). The
+caption and radios are **absent with nothing to list** (GONE, never disabled); the Save button is
+present whenever a format has been described. Tapping the checked radio is a no-op (the chooser's
+rule); tapping *None* moves the tick and nothing else — *None* means "no preset is armed", never
+"reset the form". A long press on a preset radio (`ExportPanel.choice`'s `onLongPress`, set only
+where given) opens an `ActionSheetDialog` titled with its name: *Rename…* / *Delete…*. Names follow
+`NameRules`; a duplicate among alive presets is refused with *Name already used* and the name
+dialog stays up; delete confirms first. Every view and dialog lives in `export/ExportPresetRow`
+(the activity is over the ~800-line rule with a reason that is entirely about the flow) and the
+activity keeps only its side of `ExportPresetRow.Host`: `currentState` / `listedPackages` /
+`cloudAvailable` / `applyPreset` / `presetsChanged`.
+
+**The row in the index.** `ObjectType.EXPORT_PRESET = "export_preset"` — the additive-row pattern
+of `naming` / `clipboard` / `backup`, so the Room identity hash (the format contract with Paper) is
+untouched and a preset rides backup and restore with everything else. `id` = a fresh UUID · `name`
+= the preset's name · `parentId` null · `flags` = grammar version 1 · `blob` = the kotlinx JSON of
+`data/export/ExportPreset` (`version`, `exporter` = the **package name**, `values`,
+`documentSource`, `destination` = `"LOCAL"` | `"CLOUD"` as a string, `cloudPath` = names under the
+provider's root or null). Soft-deleted on delete; `updatedAt` bumped by rename only (the sacred
+rule). `IndexRepository.exportPresets` reads `allAliveRowsOfType` (the one blob-carrying listing —
+the preset *is* its blob, a few hundred bytes) in name order and **skips** any row `ExportPreset.decode`
+cannot vouch for: null bytes, malformed JSON, a version above 1, an unknown destination string, a
+blank exporter. One preset missing from a radio list is a small loss; a screen that crashes on a
+bad blob is not.
+
+**Never the secret, never the scope.** A rekey passphrase or an export password is never in
+`values`: applying a preset merges its values through `ExportOptions.specValues`, which keeps only
+*declared choices* of the live descriptor, and a secret is never a declared choice — the filter is
+structural, not a blacklist. A preset for a protected export applies with the password fields
+**empty**, for the user to type. The scope is the door's question (`EXTRA_PAGE_ID`), and a saved
+answer could only contradict it.
+
+**Listing, applying, dropping** (`export/ExportPresets`, pure, JVM-tested). `listable` keeps a
+preset only when its exporter is among the screen's *candidates* — already cut by installation
+**and** by scope, so a preset whose exporter is disabled is hidden until it is re-enabled, and a
+Soil preset is hidden at page scope. Re-read at every discovery (`reload`) and re-cut without a
+read when the Scope row flips (`recut`). `apply` answers the state to adopt and the one thing it may
+overrule: a preset naming the cloud with no connected provider applies as **Local** with a toast
+(`cloudFallback`), the folder kept for the account's return. The activity writes the state under
+an `applyingPreset` latch — every write goes through the same fields a tap would use, and the
+latch is what tells `handChanged()` this hand is the screen's own. **Any hand change** — a format,
+Source, option, Destination or folder tap — drops the tick to *None*. A Scope flip is **not** a hand
+change: the armed preset stays armed unless the new scope hides its exporter. The pick survives a
+rebuild behind the picker with the format pick (`KEY_PRESET`).
+
+**The cloud folder became screen state.** Before this phase the folder was chosen in the browser at
+the Export tap; a preset that "includes the folder" needs the screen to know it before the tap.
+`cloudPath` (null = *chosen at export*, every cloud export's behaviour before this arc and still the
+default) is shown under the checked cloud radio as a value row *Folder: Exports › …* /
+*Folder: Chosen at export* (`ExportDestination.folderLabel`) whose tap opens the same
+`CloudBrowserDialog` in `PICK_FOLDER` (the export tap's `browse(onFolder)` helper, shared) and only
+records the answer — no busy latch, no export. Saved with the pick (`KEY_CLOUD_PATH`), kept across a
+flip to Local for the flip back, forced to null only when the Destination row itself leaves. At the
+Export tap with a folder remembered the browser is **skipped**: `listThenExport` reads one
+`CloudClient.list` behind *Checking the folder…* so the *Replace <name>?* question can still be
+asked, then continues exactly as the browser's pick would. Not-connected and network are the
+browser's own two answers (the Connect offer; *nothing was uploaded*). **Any other refusal does not
+stop the export** (the phase-start call): the folder may have been moved or removed since the
+preset was saved, and `upload` creates its folders on the way past and replaces by name — so the
+path is applied and the upload's own failure, if any, explains. Only the collision question goes
+unanswered then, and its worst case is the replace that would have happened anyway.
+
+**What did not change.** `ExportSpec`, every exporter, the seam, `ExportPrefs.lastExporter` (still
+written on every finished export, preset-driven or not), the keying flow, the verification.
+
 ## Timeouts
 
 A Binder call cannot be cancelled, so both of `ExporterContract`'s timeouts are measured, not
@@ -778,6 +852,12 @@ describes itself honestly. Full model, the resolver, every open site and the fai
 | A `describe()` call fails, or the descriptor is over the `ExporterContract` caps | that exporter dropped with a log line — never shown, never a crash | `ExportActivity.describe` / `loadCandidates` |
 | A descriptor declares an option kind this build cannot draw (a free-standing passphrase kind), or a reserved keying option with a choice id the host has no transform for | that exporter dropped the same way — an unexecutable keying surfacing at export time would be explained as the wrong failure | `ExportOptions.isRenderable` |
 | No app on the device can create a document | problem dialog, "No file picker" | `onExportTap` |
+| A preset name is empty / reserved / off-charset, or already used by an alive preset (HV3) | problem dialog over the name dialog, which stays up | `ExportPresetRow.askSaveName` / `askRename` → `NameRules`, `nameTaken` |
+| A preset row's blob will not decode (HV3) | that preset is skipped from the row — never shown, never a crash | `IndexRepository.exportPresets` → `ExportPreset.decode` |
+| A preset names the cloud but no provider is connected (HV3) | applied as Local; toast "No cloud account is connected — exporting to this device instead" | `ExportPresets.apply` → `cloudFallback` |
+| The remembered cloud folder will not list — not connected (HV3) | the Connect offer; nothing uploaded | `listThenExport` → `CloudNotConnectedException` |
+| The remembered cloud folder will not list — no network (HV3) | problem dialog naming the provider; nothing uploaded | `listThenExport` → `CloudNetworkException` |
+| The remembered cloud folder will not list — any other refusal (HV3) | the export proceeds with no collision check; the upload's own failure explains | `listThenExport` → `ExtensionCallException` → empty listing |
 | A rekey's passphrase field(s) are empty | problem dialog, "Passphrase needed" — **before** the picker | `onExportTap` |
 | A rekey's two fields don't match | problem dialog, "Passphrases don't match" — **before** the picker | `onExportTap` |
 | A protect password field is empty (arc 18 / D2) | problem dialog, "Password needed" — **before** the picker | `onExportTap` → `export_password_missing_*` |

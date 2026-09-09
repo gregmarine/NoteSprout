@@ -7,7 +7,7 @@ cross-session memory for the arc: read it whole at every phase start, together w
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `PAGE_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 HV2 ✅ 2026-09-08.** HV1 ✅ · HV2 ✅ · HV3 ⬜ · HV4 ⬜ · HV5 ⬜ · HV6 ⬜.
+**Status: 🔄 HV3 ✅ 2026-09-09.** HV1 ✅ · HV2 ✅ · HV3 ✅ · HV4 ⬜ · HV5 ⬜ · HV6 ⬜.
 Baseline before the arc: 1487 `:app` / 2847 JVM tests, g-paper 0.1.28, `API_VERSION` 8, thirteen
 modules, version `0.1.0-ratta`.
 
@@ -327,7 +327,7 @@ Export page**; the folder picker's root breadcrumb is the existing **"Templates"
   cancel at the name / at the folder writes nothing · a reserved name refused · a huge photo-paper
   page over 6 MiB → TooBig dialog.
 
-### ⬜ HV3 — Presets (Opus on a Fable brief · Sonnet strings · Fable review · Sonnet adb walk)
+### ✅ HV3 — Presets (Opus on a Fable brief · Sonnet strings · Fable review · Sonnet adb walk)
 
 **Questions to resolve at phase start:** app version; the Save action's placement (planner: under
 the Preset row in the panel); whether applying a preset with a stale cloud folder browses or
@@ -461,6 +461,42 @@ interrupt the progress dialog. Strings: `export_exporting_image`, `export_cloud_
 `export_done_images_partial`. `docs/extensions.md` `API_VERSION` row → 9. Tests: `:extension-api`
 +1 (230), `:app` +14 (**1501**), `:ext-image` 15 → **2877** total. Both doors offer PNG (phase-start
 answer 3). Version stays `0.1.0-ratta`. **Nomad walk (Sonnet over adb, 2026-09-08) PASSED:** library door → 5 PNGs named by heading / page N · repeat → ` (1)` from the provider · page sheet → single-file picker, `Objects - page 5.png`, ` (2)` on the third collision · template off exports (inconclusive on a paper-less notebook) · PDF unchanged · cloud folder → the once-always confirmation → 5 uploads; no crash. The SAF picker turned out adb-drivable with tricks (memory `reference_supernote_documentsui_picker_adb`).
+
+### HV3 — Presets (2026-09-09, Fable brief + review · Opus the row and the screen · Sonnet adb walk)
+
+**Phase-start answers:** version stays `0.1.0-ratta`; *Save preset…* sits under the Preset row in the
+panel; a stale cloud folder is **applied** and the upload's own failure explains (no verification
+on apply). **Outcome.** `ObjectType.EXPORT_PRESET` (additive, identity hash untouched) · `ObjectDao.
+allAliveRowsOfType` (the one blob-carrying listing, by name) · `IndexRepository.exportPresets` (a
+row `ExportPreset.decode` cannot vouch for is skipped) / `createExportPreset` / `renameExportPreset`
+(the only `updatedAt` bump) / `deleteExportPreset` (soft) · `data/export/ExportPreset` (kotlinx,
+version 1, `exporter` = package, `values`, `documentSource`, `destination` as a string, `cloudPath`
+nullable) · pure `export/ExportPresets` (`listable` over the screen's candidates — installation
+**and** scope in one question; `capture`; `apply` with `cloudFallback`; `rowVisible`) ·
+`export/ExportPresetRow` (every view and dialog: the caption + None + one radio per preset, the
+code-built Save button, `NameDialog` save/rename with `NameRules` + `nameTaken` refusals that keep
+the dialog up, the long-press `ActionSheetDialog` Rename · Delete with a confirm, `reload` at every
+discovery and `recut` at a Scope flip) · `ExportPanel.choice` grew `onLongPress` ·
+`ExportActivity` +~180 lines (the `Host` impl, the `applyingPreset` latch around `handChanged()` at
+every hand write, **the cloud folder as screen state** `cloudPath` with a *Folder: …* value row under
+the cloud radio opening the shared `browse(onFolder)`, and `listThenExport` — one `CloudClient.list`
+behind *Checking the folder…* so the replace question is still asked; not-connected → the Connect
+offer, network → problem, anything else → proceed with an empty listing) · layout `@id/presets`
+above `@id/scope` · nineteen strings · `docs/export.md` § Presets + six failure rows. **Fable's one
+review change over Opus:** a Scope flip is *not* a hand change — the armed preset stays armed unless
+the new scope hides its exporter (`recut`). Tests: `:app` 1512 → **1538** (`ExportPresetTest` 8,
+`ExportPresetsTest` 9, `ExportPresetStoreTest` 7 over `FakeObjectDao`, `ExportDestinationTest` +2),
+**2914** total. Version stays `0.1.0-ratta`. **Nomad walk (Sonnet over adb, 2026-09-09) PASSED 11/11:** clean screen shows only *Save preset…* ·
+"drive" saved (PDF, template off, Drive folder `Exports › Walk` via the browser's *Save here*) → toast,
+row ticked · hand change → None, re-apply restores toggle / destination / folder exactly · duplicate
+"drive" refused with the name dialog kept · "soil" saved (Keep encrypted, local) · long-press → Rename…
+→ "drive2" · reopen: both persist, None ticked · apply "drive2" + Export → browser skipped → *Exported
+/ Your notebook was exported to Google Drive* (the *Checking the folder…* stage too brief to capture; no
+same-named file so no replace question) · page-sheet door: "soil" hidden at This page, back at Whole,
+"drive2" stays ticked across both flips, "soil" armed at Whole → This page → None · Delete… with the
+confirm, both gone, the caption and radios with them, *Save preset…* stays · crash log empty. Walk
+notes: presets are library-wide (by design — a preset is an answer about *how*, not *which*
+notebook); the page sheet is a long press on the canvas (arc-8 door, unchanged).
 
 ### HV2 — Save as template (2026-09-08, Fable brief + review · Opus the flow · Sonnet adb walk)
 

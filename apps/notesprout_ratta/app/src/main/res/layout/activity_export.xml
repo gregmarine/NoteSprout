@@ -89,6 +89,17 @@
             android:paddingTop="12dp"
             android:paddingBottom="16dp">
 
+            <!-- Presets (arc 31 / HV3): the saved combinations, first in the panel because a
+                 preset answers every question below it in one tap. Built in code like the rows
+                 under it — the row count is the content — and GONE when there is nothing to list
+                 and nothing to save, never a control that cannot be operated. -->
+            <LinearLayout
+                android:id="@+id/presets"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone" />
+
             <!-- Scope (arc 30 / PE2): the host's first question, above the format because it
                  decides which formats are listed. Built in code like the rows below it, and on
                  screen only from the page sheet's Export row — GONE from the library door, never

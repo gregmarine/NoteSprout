@@ -2,6 +2,7 @@ package com.symmetricalpalmtree.notesproutsn.export
 
 import com.symmetricalpalmtree.notesproutsn.extension.CloudStatus
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -81,5 +82,24 @@ class ExportDestinationTest {
             ExportDestination.providerName(status(connected = true, configured = true), "NSE · Google Drive"),
         )
         assertEquals("NSE · Google Drive", ExportDestination.providerName(null, "NSE · Google Drive"))
+    }
+
+    // ── The folder row's words (arc 31 / HV3) ────────────────────────────────
+
+    @Test
+    fun `no folder chosen has no label of its own`() {
+        assertNull(ExportDestination.folderLabel(null, "Exports"))
+    }
+
+    @Test
+    fun `the export root is named once, whatever the path calls it`() {
+        assertEquals("Exports", ExportDestination.folderLabel(listOf("Exports"), "Exports"))
+        assertEquals(
+            "Exports › Term 1 › Week 3",
+            ExportDestination.folderLabel(listOf("Exports", "Term 1", "Week 3"), "Exports"),
+        )
+        // The first segment is replaced, never appended to — a path that began elsewhere still
+        // reads as one folder under the export root rather than as a folder inside itself.
+        assertEquals("Exports › Term 1", ExportDestination.folderLabel(listOf("Other", "Term 1"), "Exports"))
     }
 }

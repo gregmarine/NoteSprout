@@ -6,6 +6,7 @@ import com.symmetricalpalmtree.notesproutsn.data.soil.KEY_SCOPE_GLOBAL
 import com.symmetricalpalmtree.notesproutsn.crypto.KeyScope
 import com.symmetricalpalmtree.notesproutsn.crypto.NotebookUnlocks
 import com.symmetricalpalmtree.notesproutsn.data.backup.BackupStore
+import com.symmetricalpalmtree.notesproutsn.data.export.ExportPreset
 import java.util.UUID
 
 /**
@@ -564,6 +565,54 @@ class IndexRepository(private val dao: ObjectDao = SnIndex.dao()) {
      * (`TemplateShelves.searchCards`). A blank query never reaches this call.
      */
     suspend fun allTemplates(): List<ObjectSummary> = dao.allAliveOfType(ObjectType.TEMPLATE)
+
+    // ── Export presets (arc 31 / HV3) ────────────────────────────────────────
+
+    // One additive row type, no schema change, no migration (see [ObjectType.EXPORT_PRESET]) — and
+    // no sentinel: there are many presets, each with its own UUID, unlike the clipboard's and the
+    // backup config's single rows.
+
+    /**
+     * Every alive preset with its decoded blob, in the query's name order. A row whose blob will
+     * not decode is **skipped** — the rule the Export screen stands on: one preset missing from a
+     * radio list is a small loss, a screen that crashes on a bad blob is not.
+     */
+    suspend fun exportPresets(): List<Pair<ObjectSummary, ExportPreset>> =
+        dao.allAliveRowsOfType(ObjectType.EXPORT_PRESET).mapNotNull { row ->
+            ExportPreset.decode(row.blob)?.let { preset ->
+                ObjectSummary(
+                    row.id, row.type, row.name, row.parentId, row.createdAt, row.updatedAt,
+                    row.pageCount, row.flags, row.templateKind, row.keyScope,
+                ) to preset
+            }
+        }
+
+    /** Mint a preset row. Null — and **nothing written** — if the preset will not encode, so a row
+     *  that could only ever be skipped never reaches the index. The caller has already validated
+     *  [name] ([NameRules]) and checked [nameTaken]. */
+    suspend fun createExportPreset(
+        name: String,
+        preset: ExportPreset,
+        now: Long = System.currentTimeMillis(),
+    ): ObjectEntity? {
+        val bytes = ExportPreset.encode(preset) ?: return null
+        val row = ObjectEntity(
+            id = UUID.randomUUID().toString(), type = ObjectType.EXPORT_PRESET, name = name,
+            parentId = null, createdAt = now, updatedAt = now, flags = preset.version, blob = bytes,
+        )
+        dao.upsert(row)
+        return row
+    }
+
+    /** Rename a preset — the one thing that bumps its `updatedAt` (the sacred rule: a name is the
+     *  preset's whole content as far as the index is concerned). */
+    suspend fun renameExportPreset(id: String, name: String, now: Long = System.currentTimeMillis()) =
+        dao.rename(id, name, now)
+
+    /** Soft-delete a preset, as every removable row is removed. The name frees up immediately —
+     *  [nameTaken] counts alive siblings only. */
+    suspend fun deleteExportPreset(id: String, now: Long = System.currentTimeMillis()) =
+        dao.softDelete(id, now)
 
     private companion object {
         const val MAX_ANCESTRY_HOPS = 50

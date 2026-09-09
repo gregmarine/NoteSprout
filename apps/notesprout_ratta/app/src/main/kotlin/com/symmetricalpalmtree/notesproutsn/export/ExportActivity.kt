@@ -149,10 +149,24 @@ import java.io.File
  *     deleted only after the truncating open has already destroyed its old content, and the
  *     dialog says what actually happened to the file either way.
  */
-class ExportActivity : AppCompatActivity() {
+class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
 
     private lateinit var binding: ActivityExportBinding
     private lateinit var panel: ExportPanel
+
+    /** **The Preset row** (arc 31 / HV3) — the saved combinations, and every view and dialog that
+     *  belongs to them. This screen keeps only its side of the contract ([ExportPresetRow.Host]). */
+    private lateinit var presets: ExportPresetRow
+
+    /** True only while [applyPreset] writes the panel's answers: those writes run through the same
+     *  fields a tap does, and a preset applying itself must not read as the user dropping the pick. */
+    private var applyingPreset = false
+
+    /** The cloud folder this export is aimed at (names under the provider's root), or **null** =
+     *  *chosen at export*, which is what every cloud export did before this arc. Screen state, so
+     *  a preset can carry it (arc 31 / HV3): kept across a flip to Local, and forced to null only
+     *  when the Destination row itself leaves. */
+    private var cloudPath: List<String>? = null
     private val repo by lazy { IndexRepository() }
     private val exportPrefs by lazy { ExportPrefs(this) }
 
@@ -367,6 +381,7 @@ class ExportActivity : AppCompatActivity() {
         // the screen clears a navigation bar if the device has one.
         TopGuard.applyInsetPadding(binding.root)
         panel = ExportPanel(this)
+        presets = ExportPresetRow(this, panel, binding.presets, repo, this)
 
         binding.notebookName.text = notebookName
         // Leaving mid-export would cancel the flow past its verification and cleanup while the
@@ -397,6 +412,9 @@ class ExportActivity : AppCompatActivity() {
             if (state.getBoolean(KEY_SCOPE_WHOLE)) scope = ExportScope.Whole
             if (state.getBoolean(KEY_DESTINATION)) destinationChoice = ExportDestination.Choice.CLOUD
             state.getBundle(KEY_VALUES)?.let { b -> b.keySet().forEach { k -> b.getString(k)?.let { values[k] = it } } }
+            // The preset pick survives a rebuild behind the picker exactly as the format pick does.
+            presets.selectedId = state.getString(KEY_PRESET)
+            state.getStringArrayList(KEY_CLOUD_PATH)?.let { cloudPath = it.toList() }
         }
         discover()
     }
@@ -429,6 +447,8 @@ class ExportActivity : AppCompatActivity() {
         outState.putBoolean(KEY_SCOPE_WHOLE, scope is ExportScope.Whole)
         outState.putBoolean(KEY_DESTINATION, destinationChoice == ExportDestination.Choice.CLOUD)
         outState.putBundle(KEY_VALUES, Bundle().also { b -> values.forEach { (k, v) -> b.putString(k, v) } })
+        if (::presets.isInitialized) outState.putString(KEY_PRESET, presets.selectedId)
+        cloudPath?.let { outState.putStringArrayList(KEY_CLOUD_PATH, ArrayList(it)) }
     }
 
     /**
@@ -471,6 +491,9 @@ class ExportActivity : AppCompatActivity() {
             // does its own no-substitution reselect.
             if (busy || isFinishing || isDestroyed) return@launch
             candidates = kept
+            // Re-listed at every discovery (arc 31 / HV3): an exporter disabled under a standing
+            // screen takes its presets with it, and re-enabling brings them back.
+            presets.reload()
             Slog.d(TAG) { "${kept.size} usable exporter(s)" }
             if (kept.isEmpty()) {
                 problemAndClose(R.string.export_none_title, R.string.export_none_body)
@@ -516,6 +539,9 @@ class ExportActivity : AppCompatActivity() {
         if (next == scope) return
         scope = next
         candidates = listedNow()
+        // Not a hand change — the scope is the door's question, never a preset's. The row re-cuts
+        // itself to what is listed now and drops the pick only if its exporter went with the scope.
+        presets.recut()
         if (candidates.isEmpty()) {
             // Cannot happen while the row is on screen (it is offered only when page scope lists
             // something, and Whole lists everything) — but a screen must never stand empty.
@@ -697,6 +723,10 @@ class ExportActivity : AppCompatActivity() {
     /** The chooser and the options, rebuilt whole after every pick — one frame, one deliberate act. */
     private fun render() {
         val c = current() ?: return
+        // First in the panel: one tap on a preset answers every question below it. The container's
+        // visibility is the row's own (GONE with nothing to list and nothing to save), and a render
+        // before the first reload has answered simply draws none.
+        presets.render()
         // The host's first question (arc 30 / PE2), above the format because it decides which
         // formats are listed: this page, or the whole notebook. Present only from the page-sheet
         // door — the library door has no row, not a settled one (GONE, never disabled).
@@ -729,7 +759,7 @@ class ExportActivity : AppCompatActivity() {
                     // = false) would silently reset every option and wipe a typed secret on a
                     // grazed tap (easy on e-ink) — the D3 review's finding.
                     panel.choice(candidate.info.formatLabel, checked) {
-                        if (!checked) select(candidate, keepValues = false)
+                        if (!checked) { handChanged(); select(candidate, keepValues = false) }
                     }
                 )
             }
@@ -748,7 +778,7 @@ class ExportActivity : AppCompatActivity() {
                     // reason: a grazed tap on e-ink must not rebuild the panel under a half-typed
                     // secret.
                     panel.choice(getString(labelRes), checked) {
-                        if (!checked) { documentSource = isDocument; render() }
+                        if (!checked) { handChanged(); documentSource = isDocument; render() }
                     }
                 )
             }
@@ -776,6 +806,7 @@ class ExportActivity : AppCompatActivity() {
                     d.choiceIds.forEachIndexed { i, choiceId ->
                         binding.options.addView(
                             panel.choice(optionLabel(d, choiceId, d.choiceLabels[i]), values[d.id] == choiceId) {
+                                handChanged()
                                 values[d.id] = choiceId
                                 render()
                             }
@@ -786,6 +817,7 @@ class ExportActivity : AppCompatActivity() {
                     val on = values[d.id] == "1"
                     binding.options.addView(
                         panel.toggle(d.label, on) {
+                            handChanged()
                             values[d.id] = if (on) "0" else "1"
                             render()
                         }
@@ -862,13 +894,14 @@ class ExportActivity : AppCompatActivity() {
         // GONE, never disabled: with no provider there is only one place a file can go, and a
         // control that cannot be operated reads as broken rather than as settled.
         binding.destination.visibility = if (visible) View.VISIBLE else View.GONE
-        if (!visible) return
+        // The row left the screen, so its folder goes with it — the Source row's rule again.
+        if (!visible) { cloudPath = null; return }
 
         binding.destination.addView(panel.caption(getString(R.string.export_destination_caption)))
         val local = destinationChoice == ExportDestination.Choice.LOCAL
         binding.destination.addView(
             panel.choice(getString(R.string.export_destination_local), local) {
-                if (!local) { destinationChoice = ExportDestination.Choice.LOCAL; render() }
+                if (!local) { handChanged(); destinationChoice = ExportDestination.Choice.LOCAL; render() }
             }
         )
         binding.destination.addView(
@@ -876,6 +909,36 @@ class ExportActivity : AppCompatActivity() {
                 if (local) onCloudDestinationTap()
             }
         )
+        // The folder, under the radio that makes it mean anything (arc 31 / HV3): a value with one
+        // thing behind it, defaulting to what every cloud export did before presets existed.
+        if (!local) {
+            val label = ExportDestination.folderLabel(cloudPath, CLOUD_EXPORTS_FOLDER)
+                ?: getString(R.string.export_cloud_folder_ask)
+            binding.destination.addView(
+                panel.value(getString(R.string.export_cloud_folder_row, label)).apply {
+                    isClickable = true
+                    setOnClickListener { onFolderRowTap() }
+                }
+            )
+        }
+    }
+
+    /** The folder row's tap: the export leg's own browser, answering nothing but the folder. **No
+     *  busy latch** (this is not an export), but a second showing is guarded, and a tap during an
+     *  export is not a question this screen is taking. */
+    private fun onFolderRowTap() {
+        if (busy || browser != null) return
+        browse { pick ->
+            cloudPath = pick.path
+            handChanged()
+            render()
+        }
+    }
+
+    /** A hand-written answer anywhere on the panel drops back to *None* — unless the hand is this
+     *  screen's own, applying a preset. */
+    private fun handChanged() {
+        if (!applyingPreset) presets.onHandChange()
     }
 
     /**
@@ -886,6 +949,7 @@ class ExportActivity : AppCompatActivity() {
     private fun onCloudDestinationTap() {
         when (ExportDestination.onCloudTap(cloudStatus)) {
             ExportDestination.Tap.SELECT -> {
+                handChanged()
                 destinationChoice = ExportDestination.Choice.CLOUD
                 render()
             }
@@ -1019,7 +1083,16 @@ class ExportActivity : AppCompatActivity() {
         // start a second flow.
         if (destinationChoice == ExportDestination.Choice.CLOUD) {
             busy = true
-            openCloudBrowser(c)
+            // A folder already chosen (arc 31 / HV3 — a preset's, or this screen's own folder row)
+            // is not asked for again: the browser exists to answer a question that has an answer.
+            val remembered = cloudPath
+            if (remembered != null) listThenExport(c, remembered)
+            // A per-page export cannot name its files before the bake, so it asks about the folder
+            // once, up front (arc 31 / HV1) instead of about one name.
+            else browse { pick ->
+                if (ExportDelivery.perPage(c.delivery, scope)) confirmFolderThenExport(pick.path)
+                else confirmThenUpload(c, pick.path, pick.listing)
+            }
             return
         }
         // The per-page fork (arc 31 / HV1). A folder, not a file: the host names one file per page
@@ -1088,8 +1161,11 @@ class ExportActivity : AppCompatActivity() {
      * Every way out of the browser lands on one of three things, and the latch comes off in all of
      * them: a folder (which may still stop at the replace confirmation), the Connect offer (the
      * provider has no account, so there was nothing to browse), or the picker-cancel rule.
+     *
+     * Shared since arc 31 / HV3 by the export leg and the Destination row's own folder row — one
+     * question, two uses for the answer, which is why [onFolder] is the caller's.
      */
-    private fun openCloudBrowser(c: Candidate) {
+    private fun browse(onFolder: (CloudBrowserDialog.Pick.Folder) -> Unit) {
         val ref = cloudRef
         if (ref == null) {
             cancelledAtThePicker()
@@ -1106,11 +1182,7 @@ class ExportActivity : AppCompatActivity() {
             onPicked = { pick ->
                 browser = null
                 when (pick) {
-                    // A per-page export cannot name its files before the bake, so it asks about
-                    // the folder once, up front (arc 31 / HV1) instead of about one name.
-                    is CloudBrowserDialog.Pick.Folder ->
-                        if (ExportDelivery.perPage(c.delivery, scope)) confirmFolderThenExport(pick.path)
-                        else confirmThenUpload(c, pick.path, pick.listing)
+                    is CloudBrowserDialog.Pick.Folder -> onFolder(pick)
                     // PICK_FOLDER cannot answer with a file; if it ever did, it is not a place to
                     // save and the honest thing is to end the flow rather than to guess.
                     is CloudBrowserDialog.Pick.File -> cancelledAtThePicker()
@@ -1135,6 +1207,59 @@ class ExportActivity : AppCompatActivity() {
         )
         browser = dialog
         dialog.show()
+    }
+
+    /**
+     * **The remembered folder's leg** (arc 31 / HV3) — the browser skipped, but not what it hands
+     * on: the *Replace <name>?* question is asked against a listing, so one `list` is read in its
+     * place, behind the progress dialog (an unchanging screen reads as a stall on e-ink).
+     *
+     * Not connected and no network are the browser's own two answers. Any **other** refusal does
+     * not stop the export (the phase-start call): the folder may have been moved or removed since
+     * the preset was saved, and an upload creates its folders on the way past and replaces by name
+     * — so the path is applied and the upload's own failure, if any, is what explains it. Only the
+     * "is this name already there?" question goes unanswered, and its worst case is the replace
+     * that would have happened anyway.
+     */
+    private fun listThenExport(c: Candidate, path: List<String>) {
+        showProgress(R.string.export_stage_listing)
+        lifecycleScope.launch {
+            val ref = cloudRef
+            if (ref == null) {
+                hideProgress()
+                cancelledAtThePicker()
+                Dialogs.problem(this@ExportActivity, R.string.export_failed_title, getString(R.string.export_cloud_gone_body))
+                return@launch
+            }
+            val listing = try {
+                CloudClient.list(this@ExportActivity, ref, path.toTypedArray())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: CloudNotConnectedException) {
+                hideProgress()
+                cancelledAtThePicker()
+                loadCloud()
+                if (isFinishing || isDestroyed) return@launch
+                render()
+                offerConnect()
+                return@launch
+            } catch (e: CloudNetworkException) {
+                hideProgress()
+                cancelledAtThePicker()
+                Dialogs.problem(
+                    this@ExportActivity, R.string.export_failed_title,
+                    getString(R.string.export_cloud_network_body, cloudName()),
+                )
+                return@launch
+            } catch (e: ExtensionCallException) {
+                Slog.d(TAG) { "the saved folder would not list: ${e.javaClass.simpleName}" }
+                emptyList()
+            }
+            hideProgress()
+            if (isFinishing || isDestroyed) { cancelledAtThePicker(); return@launch }
+            if (ExportDelivery.perPage(c.delivery, scope)) confirmFolderThenExport(path)
+            else confirmThenUpload(c, path, listing)
+        }
     }
 
     /**
@@ -2001,6 +2126,56 @@ class ExportActivity : AppCompatActivity() {
         ).also { it.setOnDismissListener { finish() } }.show()
     }
 
+    // ── The Preset row's host (arc 31 / HV3) ─────────────────────────────────
+
+    /** What a preset would capture: this screen's answers, minus the scope and minus any secret —
+     *  neither is in [ExportPresets.State], and neither may ever be. Null before a format has been
+     *  described: there is nothing to save yet. */
+    override fun currentState(): ExportPresets.State? = current()?.let {
+        ExportPresets.State(
+            exporter = it.ref.packageName,
+            values = LinkedHashMap(values),
+            documentSource = documentSource,
+            destination = destinationChoice,
+            cloudPath = cloudPath,
+        )
+    }
+
+    override fun listedPackages(): Set<String> = candidates.map { it.ref.packageName }.toSet()
+
+    override fun cloudAvailable(): Boolean = cloudRef != null && cloudStatus?.connected == true
+
+    /**
+     * Adopt a preset's answers — every write through the same fields a tap would use, under the
+     * latch that tells [handChanged] this hand is the screen's own.
+     *
+     * `select(keepValues = true)` runs the values back through [ExportOptions.specValues], so a
+     * value the chosen exporter does not declare becomes that option's default rather than crossing
+     * as it stands. That is also the secret filter — a passphrase is never a declared choice — and
+     * the password fields are cleared because a preset never carried one.
+     */
+    override fun applyPreset(state: ExportPresets.State) {
+        applyingPreset = true
+        try {
+            chosenPackage = state.exporter
+            values.clear()
+            values.putAll(state.values)
+            documentSource = state.documentSource
+            destinationChoice = state.destination
+            cloudPath = state.cloudPath
+            binding.editPassphrase.setText("")
+            binding.editPassphraseConfirm.setText("")
+            // Gone between the listing and the tap: the panel is left exactly as it was, and the
+            // next discovery re-lists without it.
+            val c = current() ?: return
+            select(c, keepValues = true)
+        } finally {
+            applyingPreset = false
+        }
+    }
+
+    override fun presetsChanged() = render()
+
     private fun versionCode(): Int = runCatching {
         packageManager.getPackageInfo(packageName, 0).longVersionCode.toInt()
     }.getOrDefault(0)
@@ -2012,6 +2187,8 @@ class ExportActivity : AppCompatActivity() {
         private const val KEY_SOURCE = "export.documentSource"
         private const val KEY_SCOPE_WHOLE = "export.scopeWhole"
         private const val KEY_DESTINATION = "export.cloudDestination"
+        private const val KEY_PRESET = "export.preset"
+        private const val KEY_CLOUD_PATH = "export.cloudPath"
 
         /** The one folder of the provider's tree an export ever writes into (decision 5). The
          *  browser opens on it and never climbs above it; `Exports/` itself is created by the

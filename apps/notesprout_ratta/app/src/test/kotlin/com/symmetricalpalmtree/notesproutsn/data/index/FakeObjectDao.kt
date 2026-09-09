@@ -126,6 +126,11 @@ class FakeObjectDao : ObjectDao {
     override suspend fun backupBlob(id: String): ByteArray? =
         rows[id]?.takeIf { it.type == "backup" }?.blob
 
+    /** The real query's `ORDER BY name COLLATE NOCASE, id` (arc 31 / HV3), blob and all. */
+    override suspend fun allAliveRowsOfType(type: String): List<ObjectEntity> =
+        rows.values.filter { it.type == type && it.deletedAt == null }
+            .sortedWith(compareBy({ it.name.lowercase() }, { it.id }))
+
     private fun ObjectEntity.toSummary() =
         ObjectSummary(id, type, name, parentId, createdAt, updatedAt, pageCount, flags, templateKind, keyScope)
 }
