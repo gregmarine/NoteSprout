@@ -124,12 +124,21 @@ class DocumentEditorEntry(
      * failed open. Discovery is IO; the button is left as it was until the answer arrives.
      */
     fun refresh() {
-        activity.lifecycleScope.launch {
-            val found = ExtensionRegistry.documentEditor(activity)
-            if (activity.isFinishing || activity.isDestroyed) return@launch
-            ref = found
-            button.visibility = if (found == null) View.GONE else View.VISIBLE
-        }
+        activity.lifecycleScope.launch { discovered() }
+    }
+
+    /**
+     * [refresh]'s body as something a caller can **await** (arc 32 / RS2) — see
+     * [ExtensionScreenEntry.discovered] for why the cold-launch replay may not read [isAvailable]
+     * instead: `refresh()`'s discovery and the replay are two coroutines whose finishing order is
+     * a race either way.
+     */
+    suspend fun discovered(): Boolean {
+        val found = ExtensionRegistry.documentEditor(activity)
+        if (activity.isFinishing || activity.isDestroyed) return false
+        ref = found
+        button.visibility = if (found == null) View.GONE else View.VISIBLE
+        return found != null
     }
 
     /** Whether a trusted extension is installed right now. */

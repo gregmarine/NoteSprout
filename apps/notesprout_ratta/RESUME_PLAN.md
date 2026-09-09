@@ -7,7 +7,7 @@ together with the root `CLAUDE.md` and `apps/notesprout_ratta/CLAUDE.md`. **Do n
 `RATTA_PLAN.md` for this arc** unless a standing trap needs checking; its protocol and traps are
 summarized at the end so this file is enough. `HARVEST_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 wizard locked 2026-09-09 — RS1 ✅ 2026-09-09 · RS2 ⬜ · RS3 ⬜.**
+**Status: 🔄 wizard locked 2026-09-09 — RS1 ✅ 2026-09-09 · RS2 ✅ 2026-09-09 · RS3 ⬜.**
 Baseline before the arc: 1564 `:app` / 2945 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. Host-only: no point, no API bump, no schema change, no g-paper
 change, no new module.
@@ -223,12 +223,17 @@ must refresh in place, not duplicate).
 - Walk: today's behaviour unchanged (notebook comes back, page kept, via-link trail kept, cancelled
   own-key open lands on the library and does not retry); the migration from a pre-arc install.
 
-### ⬜ RS2 — The chain above (Opus on a Fable brief · Fable review of the lifecycle edges · Sonnet adb walk · own-key by hand)
+### ✅ RS2 — The chain above (landed 2026-09-09) (Opus on a Fable brief · Fable review of the lifecycle edges · Sonnet adb walk · own-key by hand)
 
 **Questions to resolve at phase start:** version; whether the library-level reopen waits for the
 entry's first `refresh()` or for a service-discovery callback (planner: the existing `refresh()`
 in `onResume` runs before the first-layout listener — verify the order on the Nomad before
 choosing).
+**Answered 2026-09-09:** version stays `0.1.0-ratta`; **the replay runs its own discovery** — the
+entries gain a `suspend fun discovered(): Boolean` (runs `discover`, sets `ref`, shows/hides the
+button) and every reopen awaits it before `open()`. Chosen from the code, not the Nomad:
+`refresh()`'s discovery is IO in one coroutine and the first-layout replay is another after two
+index reads, so their finishing order is a race either way.
 
 - Read first: `openSession`'s tail where `opened = true` (both arms); `openIntoEditor`;
   `DocumentHostHooks` — what `open()` does without a document row; `onCalendarClosed`/`onPadClosed`
@@ -247,6 +252,12 @@ choosing).
   targets (decision 1).
 - A replayed notebook is recorded in `RecentsPrefs` exactly as a tapped one is (it goes through
   the same `onCreate`).
+- **A text document consumes the whole above-list on its editor launch** (RS2): a `DOCUMENT_EDITOR`
+  entry silently (the route is already launching the editor), anything else logged and dropped —
+  a text document reopens into its editor and nothing stands on a page it never shows. If the
+  editor extension is missing the pages come up with nothing above them.
+- **The reopen awaits the entry's own discovery** (`discovered()`), never `isAvailable` — the
+  RS2 phase-start answer.
 
 ## Standing traps that bind this arc
 
@@ -272,7 +283,13 @@ choosing).
   top lives in its own process and stays on the glass, and `am start` is *delivered to the
   currently running top-most instance* — no cold launch happens. A restore walk kills the
   extension process(es) too (`am force-stop …ext.calendar.dev` / `…ext.scratchpad.dev` /
-  `…ext.document.dev`) before the host, then `am start`s Bootstrap.
+  `…ext.document.dev`), then `am start`s Bootstrap. **The order is HOST FIRST, then the
+  extensions** (RS2 walk): an extension killed while the host still lives hands the host a
+  cancelled result, whose `onResult` pops the entry — the stack then reads `[NOTEBOOK]` and the
+  walk reports a drop that never happened. One shell command for all four force-stops.
+- **Hand-writing the prefs file over `run-as`:** a piped heredoc into `run-as … sh -c "cat > …"`
+  fails on the Nomad; `adb push` the XML to `/data/local/tmp` and `run-as … sh -c "cat
+  /data/local/tmp/x > shared_prefs/sn_view_state.xml"` instead (host force-stopped first).
 - **`adb shell dumpsys window` on the Nomad does not print `mResumedActivity`** — use
   `dumpsys activity activities | grep mResumedActivity`.
 
@@ -334,3 +351,46 @@ walked: via-link (the flag rides the entry exactly as the old key did — codec-
 own-key cancel (the same `pop` on the same line; the Nomad library is all GLOBAL) — both by the
 user's hand if wanted.
 
+### RS2 — Outcome (2026-09-09)
+
+**Landed:** `ReplayPlan.legalAbove` (the two legal shapes — one screen or `CALENDAR, SCRATCH_PAD`
+— anything else cut to its longest legal prefix; a `NOTEBOOK` first is nothing) applied in `of`,
+and `ReplayPlan.decodeAbove` (surface names off the Intent, an unknown name dropped, then
+`legalAbove`). `ExtensionScreenEntry.discovered()` / `DocumentEditorEntry.discovered()` — the
+awaitable body of `refresh()` (runs discovery, sets `ref`, shows or hides the button; `refresh()`
+now launches it). **NotebookActivity:** `EXTRA_RESUME_ABOVE` (host-internal `ArrayList<String>`
+of surface names, read once on a cold create beside `initialPageId`, ignored on a task rebuild);
+`replayAbove()` as the last line of `loadCanvas` — consume-once, after `opened = true` and the
+overlay is down, so behind the own-key prompt by construction; each arm awaits `discovered()` and
+re-checks `standingForReplay()` (`opened && !closing && !isFinishing && !isDestroyed`) after every
+suspension: `[CALENDAR]` / `[SCRATCH_PAD]` → the entry's `open()`; the pair → `openPadOverCalendar()`
+(the three lines `onCalendarClosed` used, now shared: re-attach the calendar's entry, set the
+latch, open the pad; calendar missing → chain dropped, pad missing → the calendar alone);
+`[DOCUMENT_EDITOR]` → `documentEntry.open()` only when `session.documents.get(displayedPageId)`
+answers a row (decision 4 — no seed flow, no recognition, nothing staged); `openIntoEditor(launch
+= true)` consumes the list first (a bare `[DOCUMENT_EDITOR]` silently). **LibraryActivity:**
+`openNotebook(…, resumeAbove)` rides the extra; `replayStack`'s notebook arm hands `plan.above`
+down; `replayLibraryLevel` opens the calendar / the pad / the pad over the latched calendar with
+the same discovery-await and drop lines, and logs a library-level `DOCUMENT_EDITOR` as dropped.
+Every drop is one `Slog.d` naming the surface, never an id.
+
+**Tests:** 1591 → **1606** `:app` (`ReplayPlanTest` +15: every legal shape unchanged, each
+truncation, `decodeAbove` with unknown / all-unknown / null / empty), 2972 → **2987** across the
+modules, all green. Version stays `0.1.0-ratta`. No code review (decision 6).
+
+**Nomad walk (adb, Sonnet + Fable):** notebook → calendar / pad / document editor, each killed
+(host first) and cold-started → the extension screen resumed over `NotebookActivity` with its
+`restore: reopening […] above the notebook` line and the stack re-formed, Back → notebook →
+library with the stack shrinking to `[]` · the calendar's pad door → pad on top, Back → the
+calendar comes back, Back → notebook · library-level calendar, and the calendar's pad over the
+library · a hand-written dead notebook id with a `CALENDAR` above → the library, `the notebook is
+gone — chain dropped`, `[]` · the calendar uninstalled behind a `NOTEBOOK CALENDAR` stack → the
+notebook alone with `the calendar is not installed — dropped` (reinstalled after) · a text
+document (created for the walk from the New notebook screen's Text radio) killed behind its
+editor → the editor exactly once (one `START … DocumentEditorActivity`, no `already showing`, no
+`restore:` line), Back → library · crash log empty throughout. **Not walked:** the own-key
+notebook (Nomad library is all GLOBAL) — by the user's hand if wanted: prompt → cancel → library
+with the stack cleared; prompt → key → the calendar comes back.
+
+**Trap found and recorded above:** the first walk agent killed the extensions before the host and
+reported RS2 as "not built" — the host had popped the entry on the cancelled result.

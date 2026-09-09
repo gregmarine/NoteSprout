@@ -10,6 +10,10 @@ import org.junit.Test
  * it up to (not including) the next NOTEBOOK entry, a library-level stack reports only its top and
  * whether the calendar's pad door latch applies, and anything that cannot be stood on is
  * [ReplayPlan.Nothing].
+ *
+ * Plus (arc 32 / RS2) [ReplayPlan.legalAbove]'s normalization — the five shapes SN can actually
+ * put back, and the truncation of everything else to its longest legal prefix — and
+ * [ReplayPlan.decodeAbove], the `EXTRA_RESUME_ABOVE` read that treats a surface name as untrusted.
  */
 class ReplayPlanTest {
 
@@ -97,5 +101,115 @@ class ReplayPlanTest {
     fun `a notebook on top of a library-level entry is not a shape and answers Nothing`() {
         val stack = listOf(entry(Surface.CALENDAR), entry(Surface.NOTEBOOK, notebookId = "nb-1"))
         assertEquals(ReplayPlan.Nothing, ReplayPlan.of(stack))
+    }
+
+    // ── legalAbove (RS2) ─────────────────────────────────────────────────────
+
+    @Test
+    fun `legalAbove leaves an empty list empty`() {
+        assertEquals(emptyList<Surface>(), ReplayPlan.legalAbove(emptyList()))
+    }
+
+    @Test
+    fun `legalAbove leaves a lone calendar unchanged`() {
+        assertEquals(listOf(Surface.CALENDAR), ReplayPlan.legalAbove(listOf(Surface.CALENDAR)))
+    }
+
+    @Test
+    fun `legalAbove leaves a lone scratch pad unchanged`() {
+        assertEquals(listOf(Surface.SCRATCH_PAD), ReplayPlan.legalAbove(listOf(Surface.SCRATCH_PAD)))
+    }
+
+    @Test
+    fun `legalAbove leaves a lone document editor unchanged`() {
+        assertEquals(listOf(Surface.DOCUMENT_EDITOR), ReplayPlan.legalAbove(listOf(Surface.DOCUMENT_EDITOR)))
+    }
+
+    @Test
+    fun `legalAbove leaves the calendar-then-pad pair unchanged`() {
+        val pair = listOf(Surface.CALENDAR, Surface.SCRATCH_PAD)
+        assertEquals(pair, ReplayPlan.legalAbove(pair))
+    }
+
+    @Test
+    fun `legalAbove truncates an editor above a calendar to the calendar`() {
+        assertEquals(
+            listOf(Surface.CALENDAR),
+            ReplayPlan.legalAbove(listOf(Surface.CALENDAR, Surface.DOCUMENT_EDITOR)),
+        )
+    }
+
+    @Test
+    fun `legalAbove truncates a calendar above a pad to the pad`() {
+        assertEquals(
+            listOf(Surface.SCRATCH_PAD),
+            ReplayPlan.legalAbove(listOf(Surface.SCRATCH_PAD, Surface.CALENDAR)),
+        )
+    }
+
+    @Test
+    fun `legalAbove drops everything when a notebook leads`() {
+        assertEquals(
+            emptyList<Surface>(),
+            ReplayPlan.legalAbove(listOf(Surface.NOTEBOOK, Surface.CALENDAR)),
+        )
+    }
+
+    @Test
+    fun `legalAbove keeps only the pair when a third surface follows it`() {
+        assertEquals(
+            listOf(Surface.CALENDAR, Surface.SCRATCH_PAD),
+            ReplayPlan.legalAbove(listOf(Surface.CALENDAR, Surface.SCRATCH_PAD, Surface.CALENDAR)),
+        )
+    }
+
+    @Test
+    fun `of normalizes an illegal chain above the notebook`() {
+        val stack = listOf(
+            entry(Surface.NOTEBOOK, notebookId = "nb-1"),
+            entry(Surface.SCRATCH_PAD),
+            entry(Surface.CALENDAR),
+        )
+        assertEquals(
+            ReplayPlan.Notebook("nb-1", false, listOf(Surface.SCRATCH_PAD)),
+            ReplayPlan.of(stack),
+        )
+    }
+
+    // ── decodeAbove (RS2) ────────────────────────────────────────────────────
+
+    @Test
+    fun `decodeAbove reads surface names in order`() {
+        assertEquals(
+            listOf(Surface.CALENDAR, Surface.SCRATCH_PAD),
+            ReplayPlan.decodeAbove(listOf("CALENDAR", "SCRATCH_PAD")),
+        )
+    }
+
+    @Test
+    fun `decodeAbove drops an unknown name rather than crashing`() {
+        assertEquals(
+            listOf(Surface.CALENDAR, Surface.SCRATCH_PAD),
+            ReplayPlan.decodeAbove(listOf("CALENDAR", "BOGUS", "SCRATCH_PAD")),
+        )
+    }
+
+    @Test
+    fun `decodeAbove normalizes what it decoded`() {
+        assertEquals(
+            listOf(Surface.CALENDAR),
+            ReplayPlan.decodeAbove(listOf("CALENDAR", "DOCUMENT_EDITOR")),
+        )
+    }
+
+    @Test
+    fun `decodeAbove answers empty for null and for an empty list`() {
+        assertEquals(emptyList<Surface>(), ReplayPlan.decodeAbove(null))
+        assertEquals(emptyList<Surface>(), ReplayPlan.decodeAbove(emptyList()))
+    }
+
+    @Test
+    fun `decodeAbove answers empty when every name is unknown`() {
+        assertEquals(emptyList<Surface>(), ReplayPlan.decodeAbove(listOf("BOGUS", "ALSO_BOGUS")))
     }
 }

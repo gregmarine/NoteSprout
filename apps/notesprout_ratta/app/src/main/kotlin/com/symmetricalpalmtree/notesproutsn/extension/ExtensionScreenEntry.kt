@@ -196,12 +196,25 @@ open class ExtensionScreenEntry<I : Any, P>(
      * failed open. Discovery is IO; the button is left as it was until the answer arrives.
      */
     fun refresh() {
-        activity.lifecycleScope.launch {
-            val found = discover(activity)
-            if (activity.isFinishing || activity.isDestroyed) return@launch
-            ref = found
-            button.visibility = if (found == null) View.GONE else View.VISIBLE
-        }
+        activity.lifecycleScope.launch { discovered() }
+    }
+
+    /**
+     * [refresh]'s body as something a caller can **await** (arc 32 / RS2): the same discovery, the
+     * same [ref] and the same button visibility, answering whether a trusted extension was found.
+     *
+     * The cold-launch replay needs this rather than [isAvailable]: `refresh()`'s discovery is IO in
+     * one coroutine and the replay is another, so which of them finishes first is a race — a reopen
+     * reading [isAvailable] would drop the screen roughly half the time. A caller that awaits this
+     * has the answer by definition. False also when the caller went away mid-discovery, so the
+     * result doubles as "still worth opening".
+     */
+    suspend fun discovered(): Boolean {
+        val found = discover(activity)
+        if (activity.isFinishing || activity.isDestroyed) return false
+        ref = found
+        button.visibility = if (found == null) View.GONE else View.VISIBLE
+        return found != null
     }
 
     /** Whether a trusted extension is installed right now — what the notebook's selection toolbar

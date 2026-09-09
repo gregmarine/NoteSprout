@@ -32,6 +32,7 @@ import com.symmetricalpalmtree.notesproutsn.data.index.ObjectSummary
 import com.symmetricalpalmtree.notesproutsn.data.index.ObjectType
 import com.symmetricalpalmtree.notesproutsn.data.prefs.BrowseMode
 import com.symmetricalpalmtree.notesproutsn.data.prefs.BrowseState
+import com.symmetricalpalmtree.notesproutsn.data.prefs.Surface
 import com.symmetricalpalmtree.notesproutsn.data.prefs.SurfaceEntry
 import com.symmetricalpalmtree.notesproutsn.data.prefs.SurfaceStack
 import com.symmetricalpalmtree.notesproutsn.data.prefs.RecentsPrefs
@@ -97,11 +98,22 @@ class LibraryActivity : AppCompatActivity() {
 
     private fun onCalendarClosed(resultCode: Int) {
         if (resultCode != ExtensionContract.RESULT_CALENDAR_OPEN_SCRATCH_PAD) return
-        // The latch, persisted structurally (arc 32 / RS1): a CALENDAR entry beneath the pad's, so
-        // a cold launch puts the chain back. The calendar's own entry popped itself at its result,
-        // and this callback runs in a POSTED coroutine — after this screen's onResume, whose
-        // markTop has already dropped everything above it — so the re-attach lands on top and the
-        // pad's push goes above it.
+        openPadOverCalendar()
+    }
+
+    /**
+     * The pad raised with the calendar behind it — the calendar's own door (arc 23 / Y4) and the
+     * shape a `CALENDAR, SCRATCH_PAD` stack is put back in on a cold launch (arc 32 / RS2), so both
+     * roads run the same three lines.
+     *
+     * The latch is persisted **structurally**: a CALENDAR entry beneath the pad's, so a cold launch
+     * puts the chain back. The calendar's own entry popped itself at its result, and
+     * [onCalendarClosed] runs in a POSTED coroutine — after this screen's `onResume`, whose
+     * `markTop` has already dropped everything above it — so the re-attach lands on top and the
+     * pad's push goes above it. On the replay road the `onResume` reset has already run for the
+     * same reason: the first-layout listener fires after it.
+     */
+    private fun openPadOverCalendar() {
         stack.attach(calendar.stackEntry)
         reopenCalendarAfterPad = true
         scratchPad.open()
@@ -332,11 +344,21 @@ class LibraryActivity : AppCompatActivity() {
      * at tap time, and the launch runs only once that frame has been drawn — the notebook then
      * carries the same box from its own first frame until the page lands.
      */
-    private fun openNotebook(id: String, name: String, viaLink: Boolean = false, pageId: String? = null) {
+    private fun openNotebook(
+        id: String,
+        name: String,
+        viaLink: Boolean = false,
+        pageId: String? = null,
+        /** The extension screens that stood above this notebook (arc 32 / RS2) — the replay's road
+         *  and nothing else's; the notebook raises them itself once its page is on the paper. */
+        resumeAbove: List<Surface> = emptyList(),
+    ) {
         if (launching) return
         launching = true
         OpeningOverlay.showThen(this) {
-            startActivity(NotebookActivity.intent(this, id, name, viaLink, initialPageId = pageId))
+            startActivity(
+                NotebookActivity.intent(this, id, name, viaLink, initialPageId = pageId, resumeAbove = resumeAbove)
+            )
         }
     }
 
@@ -392,16 +414,19 @@ class LibraryActivity : AppCompatActivity() {
      * that fails any gate empties the whole chain, since nothing above it can stand. The stack was
      * read once and cleared in `onCreate`, so nothing here is retried on the next launch.
      *
-     * RS1 replays the notebook alone: the surfaces above it are logged and dropped, and a
-     * library-level entry (the calendar or the pad over the library itself) is logged and dropped.
-     * RS2 hands the chain down as `EXTRA_RESUME_ABOVE` and opens the library-level screen.
+     * A chain above the notebook is **handed down** as `EXTRA_RESUME_ABOVE` — the notebook raises
+     * it itself once its page is on the paper, because an extension screen can only be launched by
+     * the host screen it sits over. A library-level entry (the calendar or the pad over the library
+     * itself, the calendar's pad door included) is opened here, through the same entries a tap goes
+     * through, each one awaiting its own discovery first: the `onResume` refresh and this replay
+     * are two coroutines whose finishing order is a race. An extension that is not installed is one
+     * log line naming the surface — never an id.
      */
     private fun replayStack() {
         val stack = restoreStack
         restoreStack = emptyList()
         when (val plan = ReplayPlan.of(stack)) {
             is ReplayPlan.Notebook -> {
-                if (plan.above.isNotEmpty()) Slog.d(TAG) { "restore: ${plan.above} above the notebook dropped (RS1)" }
                 // Reopen the way it was open (K4): a via-link notebook restored without the flag
                 // would read as a fresh open, clear the persisted trail, and lose the walk-back.
                 lifecycleScope.launch {
@@ -415,13 +440,65 @@ class LibraryActivity : AppCompatActivity() {
                         Slog.d(TAG) { "restore: the notebook has no .soil — chain dropped" }
                         return@launch
                     }
-                    openNotebook(s.id, s.name, plan.viaLink)
+                    openNotebook(s.id, s.name, plan.viaLink, resumeAbove = plan.above)
                 }
             }
-            is ReplayPlan.LibraryLevel -> Slog.d(TAG) { "restore: library-level ${plan.top} dropped (RS1)" }
+            is ReplayPlan.LibraryLevel -> replayLibraryLevel(plan)
             ReplayPlan.Nothing -> Unit
         }
     }
+
+    /**
+     * The screen that stood over the library itself (arc 32 / RS2) — one screen, or the calendar's
+     * pad door as the pad with the calendar latched behind it. Nothing deeper exists here.
+     *
+     * The `onResume` reset has already run by the time this does (the first-layout listener fires
+     * after it), so the attach and the entry's own push land on an empty stack, which is exactly
+     * what the glass will look like.
+     */
+    private fun replayLibraryLevel(plan: ReplayPlan.LibraryLevel) {
+        Slog.d(TAG) { "restore: reopening ${plan.top} over the library" }
+        lifecycleScope.launch {
+            when (plan.top) {
+                Surface.CALENDAR -> {
+                    if (!calendar.discovered()) {
+                        Slog.d(TAG) { "restore: the calendar is not installed — dropped" }
+                        return@launch
+                    }
+                    if (standingForReplay()) calendar.open()
+                }
+                Surface.SCRATCH_PAD -> {
+                    if (!plan.calendarBeneath) {
+                        if (!scratchPad.discovered()) {
+                            Slog.d(TAG) { "restore: the scratch pad is not installed — dropped" }
+                            return@launch
+                        }
+                        if (standingForReplay()) scratchPad.open()
+                        return@launch
+                    }
+                    if (!calendar.discovered()) {
+                        Slog.d(TAG) { "restore: the calendar is not installed — chain dropped" }
+                        return@launch
+                    }
+                    if (!standingForReplay()) return@launch
+                    if (!scratchPad.discovered()) {
+                        Slog.d(TAG) { "restore: the scratch pad is not installed — the calendar comes back alone" }
+                        if (standingForReplay()) calendar.open()
+                        return@launch
+                    }
+                    if (!standingForReplay()) return@launch
+                    openPadOverCalendar()
+                }
+                // Not a shape this screen can produce — the editor only ever stands over a
+                // notebook — so it is dropped rather than guessed at.
+                Surface.DOCUMENT_EDITOR -> Slog.d(TAG) { "restore: library-level DOCUMENT_EDITOR dropped" }
+                Surface.NOTEBOOK -> Unit   // ReplayPlan never answers LibraryLevel(NOTEBOOK).
+            }
+        }
+    }
+
+    /** Still worth raising a screen over — re-asked after every suspension in [replayLibraryLevel]. */
+    private fun standingForReplay(): Boolean = !isFinishing && !isDestroyed
 
     override fun onPause() {
         super.onPause()

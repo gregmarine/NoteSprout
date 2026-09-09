@@ -12,8 +12,10 @@ import com.symmetricalpalmtree.notesproutsn.data.prefs.SurfaceEntry
  * (alive row · type NOTEBOOK · `.soil` on disk · a trusted service) are the caller's — they are
  * IO, and a failed one drops the entry by the rules in `RESUME_PLAN.md`.
  *
- * **RS1 carries the notebook arm only**; [Notebook.above] is recorded so RS2 can hand it down,
- * and [LibraryLevel] is shaped but not yet acted on.
+ * **RS2 acts on both arms**: the library hands [Notebook.above] down to `NotebookActivity` as
+ * `EXTRA_RESUME_ABOVE` and reopens a [LibraryLevel] screen itself. Above-lists are normalized by
+ * [legalAbove] on both roads — the stack is untrusted input on a cold launch, and only the shapes
+ * SN can actually put back are ever acted on.
  */
 sealed class ReplayPlan {
 
@@ -35,7 +37,7 @@ sealed class ReplayPlan {
                 // (a link followed into another notebook mid-switch) cannot be replayed and ends the
                 // chain there.
                 val above = stack.drop(1).map { it.surface }.takeWhile { it != Surface.NOTEBOOK }
-                return Notebook(id, bottom.viaLink, above)
+                return Notebook(id, bottom.viaLink, legalAbove(above))
             }
             // Library level: the calendar's pad door is a CALENDAR beneath a SCRATCH_PAD; the top
             // entry is what is reopened, the one beneath is the latch.
@@ -44,6 +46,36 @@ sealed class ReplayPlan {
             val calendarBeneath = top == Surface.SCRATCH_PAD && stack.size >= 2 &&
                 stack[stack.size - 2].surface == Surface.CALENDAR
             return LibraryLevel(top, calendarBeneath)
+        }
+
+        /**
+         * The chain above a notebook, cut down to what SN can actually reopen (arc 32 / RS2).
+         * Exactly one extension screen is showing at a time, so the only legal shapes are nothing,
+         * one screen, or `CALENDAR, SCRATCH_PAD` — the calendar's own pad door, the one place two
+         * of them are stacked. Anything else is a stack this build did not write (or wrote across
+         * a surface it has since dropped), and is truncated to its **longest legal prefix** rather
+         * than refused: what is below the first illegal entry was really open, and the entries
+         * above a dropped one can never stand.
+         */
+        fun legalAbove(above: List<Surface>): List<Surface> {
+            val first = above.firstOrNull() ?: return emptyList()
+            // A NOTEBOOK above a notebook is not a screen this replay can raise; nothing stands.
+            if (first == Surface.NOTEBOOK) return emptyList()
+            if (first == Surface.CALENDAR && above.getOrNull(1) == Surface.SCRATCH_PAD) {
+                return listOf(Surface.CALENDAR, Surface.SCRATCH_PAD)
+            }
+            return listOf(first)
+        }
+
+        /**
+         * `EXTRA_RESUME_ABOVE`'s read (arc 32 / RS2): surface **names** off an Intent extra, back
+         * into surfaces. Untrusted the way the stored blob is — a name this build does not know is
+         * dropped on its own, never a crash — and normalized by [legalAbove] afterwards, so the
+         * caller only ever holds a shape it can act on.
+         */
+        fun decodeAbove(names: List<String>?): List<Surface> {
+            if (names.isNullOrEmpty()) return emptyList()
+            return legalAbove(names.mapNotNull { runCatching { Surface.valueOf(it) }.getOrNull() })
         }
     }
 }

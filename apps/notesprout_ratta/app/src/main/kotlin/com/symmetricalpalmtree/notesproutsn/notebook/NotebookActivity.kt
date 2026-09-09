@@ -76,6 +76,7 @@ import com.symmetricalpalmtree.notesproutsn.extension.TransferCaps
 import com.symmetricalpalmtree.notesproutsn.extension.TransferSelection
 import com.symmetricalpalmtree.notesproutsn.extension.WireStroke
 import com.symmetricalpalmtree.notesproutsn.library.NameDialog
+import com.symmetricalpalmtree.notesproutsn.library.ReplayPlan
 import com.symmetricalpalmtree.notesproutsn.library.NameRules
 import com.symmetricalpalmtree.notesproutsn.notebook.NotebookUndo.Action
 import com.symmetricalpalmtree.notesproutsn.templates.TemplatePick
@@ -365,6 +366,16 @@ class NotebookActivity : AppCompatActivity() {
      */
     private var initialPageId: String? = null
 
+    /**
+     * The chain of extension screens that stood above this notebook when the process died (arc 32 /
+     * RS2), read from `EXTRA_RESUME_ABOVE` on a **fresh create only** — [initialPageId]'s rule and
+     * its reason: Android redelivers the original Intent on a task rebuild, and a screen the user
+     * has since backed out of must not come back. **Consumed once**, at whichever of [loadCanvas]
+     * or [openIntoEditor] the open ends in; emptied as it is read, so the second run of a
+     * re-entrant load is a no-op.
+     */
+    private var resumeAbove: List<Surface> = emptyList()
+
     /** True while a lasso selection is up — the gesture detector stands down on it. */
     private var selectionActive = false
 
@@ -456,6 +467,9 @@ class NotebookActivity : AppCompatActivity() {
         notebookName = name
         viaLink = intent.getBooleanExtra(EXTRA_VIA_LINK, false)
         if (savedInstanceState == null) initialPageId = intent.getStringExtra(EXTRA_INITIAL_PAGE_ID)
+        if (savedInstanceState == null) {
+            resumeAbove = ReplayPlan.decodeAbove(intent.getStringArrayListExtra(EXTRA_RESUME_ABOVE))
+        }
         // The surface-stack token (arc 32 / RS1): saved across a same-process recreate so the
         // attach below refreshes this screen's entry in place instead of stacking a second one.
         stackToken = savedInstanceState?.getString(KEY_STACK_TOKEN) ?: UUID.randomUUID().toString()
@@ -1050,7 +1064,102 @@ class NotebookActivity : AppCompatActivity() {
         contentsFlow.refresh()
         Slog.d(TAG) { "page ${page.id} loaded: ${strokes.size} strokes, ${page.width}x${page.height}" }
         warmUpRecognizer()
+        // Last, and only here: the chain above this notebook goes back up **after** `opened` is
+        // true, after the "Opening…" box is down, and therefore after the own-key prompt has
+        // succeeded — the same gate every extension button reads. Consume-once makes the deferred
+        // path's second run of this tail a no-op.
+        replayAbove()
     }
+
+    /**
+     * Put the extension screen that stood above this notebook back on top of it (arc 32 / RS2) —
+     * the chain the library handed down in `EXTRA_RESUME_ABOVE`, raised through the **entries**,
+     * never an Intent of our own: an extension screen refuses any caller that is not a
+     * `startActivityForResult` from the host, and each one needs a store lease, a held bind and a
+     * `begin()` before its Intent means anything. So the reopen is exactly the tap the user would
+     * have made, `beforeLaunch`'s `releaseForHandoff` and the entry's own box included.
+     *
+     * **Consumed once**, on the way in: [loadCanvas] can run twice (the text-document route defers
+     * it), and the second run must not raise a second screen. Nothing is retried and nothing is
+     * queued — a screen this launch could not put back is simply gone, and the button for it is
+     * one tap away.
+     *
+     * Each reopen **awaits its entry's own discovery** rather than reading `isAvailable`: the
+     * `onResume` refresh and this replay are two coroutines whose finishing order is a race. An
+     * extension that is not installed, not trusted, or below its floor is one log line naming the
+     * surface — never an id — and the chain ends there.
+     */
+    private fun replayAbove() {
+        val above = resumeAbove
+        resumeAbove = emptyList()
+        if (above.isEmpty() || !opened || closing) return
+        Slog.d(TAG) { "restore: reopening $above above the notebook" }
+        lifecycleScope.launch {
+            if (above == PAD_OVER_CALENDAR) {
+                // The calendar's pad door: the pad on top, the calendar latched behind it.
+                if (!calendar.discovered()) {
+                    Slog.d(TAG) { "restore: the calendar is not installed — chain above dropped" }
+                    return@launch
+                }
+                if (!standingForReplay()) return@launch
+                if (!scratchPad.discovered()) {
+                    Slog.d(TAG) { "restore: the scratch pad is not installed — the calendar comes back alone" }
+                    if (standingForReplay()) calendar.open()
+                    return@launch
+                }
+                if (!standingForReplay()) return@launch
+                openPadOverCalendar()
+                return@launch
+            }
+            when (above.firstOrNull()) {
+                Surface.CALENDAR -> {
+                    if (!calendar.discovered()) {
+                        Slog.d(TAG) { "restore: the calendar is not installed — dropped" }
+                        return@launch
+                    }
+                    if (standingForReplay()) calendar.open()
+                }
+                Surface.SCRATCH_PAD -> {
+                    if (!scratchPad.discovered()) {
+                        Slog.d(TAG) { "restore: the scratch pad is not installed — dropped" }
+                        return@launch
+                    }
+                    if (standingForReplay()) scratchPad.open()
+                }
+                Surface.DOCUMENT_EDITOR -> {
+                    if (!documentEntry.discovered()) {
+                        Slog.d(TAG) { "restore: the document editor is not installed — dropped" }
+                        return@launch
+                    }
+                    if (!standingForReplay()) return@launch
+                    // Decision 4: the editor is reopened **directly** — no seed flow, no
+                    // recognition, nothing staged. So it is only reopened where there is something
+                    // to open: the page the notebook landed on has to have a document row.
+                    val pageId = displayedPageId
+                    if (pageId.isEmpty()) return@launch
+                    val documented = withContext(Dispatchers.IO) {
+                        try {
+                            session.documents.get(pageId) != null
+                        } catch (e: Exception) {
+                            Slog.d(TAG) { "restore: document read failed: ${e.javaClass.simpleName}" }
+                            false
+                        }
+                    }
+                    if (!standingForReplay()) return@launch
+                    if (!documented) {
+                        Slog.d(TAG) { "restore: the page has no document — the editor is not reopened" }
+                        return@launch
+                    }
+                    documentEntry.open()
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    /** Still worth raising a screen over: the same `opened && !closing` gate every extension button
+     *  reads, plus the two Activity flags, re-asked after every suspension in [replayAbove]. */
+    private fun standingForReplay(): Boolean = opened && !closing && !isFinishing && !isDestroyed
 
     /**
      * The text-document open (M8): the **lightweight** setup and the editor, with no stroke
@@ -1072,6 +1181,18 @@ class NotebookActivity : AppCompatActivity() {
      */
     private suspend fun openIntoEditor(launch: Boolean) {
         displayedPageId = session.currentPage.id
+        if (launch) {
+            // A text document opens *into* the editor by itself, so a restored DOCUMENT_EDITOR
+            // entry is consumed silently here — reopening it would be a second launch over the one
+            // this route is already making. Anything else above a text document has no page to
+            // stand on and is dropped (arc 32 / RS2). The reconnect arm leaves the list alone: a
+            // recreate never carried one.
+            val above = resumeAbove
+            resumeAbove = emptyList()
+            if (above.isNotEmpty() && above != listOf(Surface.DOCUMENT_EDITOR)) {
+                Slog.d(TAG) { "restore: $above above a text document dropped — it reopens into its editor" }
+            }
+        }
         if (launch && !documentShowingRestored && documentHooks.targetPageId == null) {
             documentHooks.restoreTarget(session.currentPage.id, notebookScope = true)
         }
@@ -2882,11 +3003,21 @@ class NotebookActivity : AppCompatActivity() {
     private fun onCalendarClosed(resultCode: Int) {
         if (resultCode != ExtensionContract.RESULT_CALENDAR_OPEN_SCRATCH_PAD) return
         if (!opened || closing) return
-        // The latch, persisted structurally (arc 32 / RS1): a CALENDAR entry beneath the pad's, so
-        // a cold launch puts the chain back. The calendar's own entry popped itself at its result,
-        // and this callback runs in a POSTED coroutine — after this screen's onResume, whose
-        // markTop has already dropped everything above it — so the re-attach lands on top and the
-        // pad's push goes above it.
+        openPadOverCalendar()
+    }
+
+    /**
+     * The pad raised with the calendar behind it — the calendar's own door (arc 23 / Y4) and the
+     * shape a `CALENDAR, SCRATCH_PAD` chain is put back in (arc 32 / RS2), so both roads run the
+     * same three lines.
+     *
+     * The latch is persisted **structurally**: a CALENDAR entry beneath the pad's, so a cold launch
+     * puts the chain back. The calendar's own entry popped itself at its result, and
+     * [onCalendarClosed] runs in a POSTED coroutine — after this screen's `onResume`, whose
+     * `markTop` has already dropped everything above it — so the re-attach lands on top and the
+     * pad's push goes above it.
+     */
+    private fun openPadOverCalendar() {
         stack.attach(calendar.stackEntry)
         reopenCalendarAfterPad = true
         scratchPad.open()
@@ -4084,6 +4215,17 @@ class NotebookActivity : AppCompatActivity() {
         /** Host-internal (K4): the follow's target page, overriding the notebook's own `refId`
          *  for this open only. Applied once — see [initialPageId]. */
         const val EXTRA_INITIAL_PAGE_ID = "initialPageId"
+
+        /** Host-internal (arc 32 / RS2): the extension screens that stood above this notebook when
+         *  the process died, bottom-first, as an `ArrayList<String>` of
+         *  [com.symmetricalpalmtree.notesproutsn.data.prefs.Surface] names. Read once on a cold
+         *  create and ignored on a task rebuild — [EXTRA_INITIAL_PAGE_ID]'s rule. Never crosses to
+         *  any other component: the screens themselves are raised through their entries. */
+        const val EXTRA_RESUME_ABOVE = "resumeAbove"
+
+        /** The one two-deep chain SN has: the calendar's own pad door (arc 23 / Y4). Every other
+         *  legal chain is a single screen — see `ReplayPlan.legalAbove`. */
+        private val PAD_OVER_CALENDAR = listOf(Surface.CALENDAR, Surface.SCRATCH_PAD)
         private const val KEY_STACK_TOKEN = "stackToken"
         /** Set on the Intent by the screen itself once recovery has been offered (U6). */
         private const val EXTRA_RECOVERY_ATTEMPTED = "recoveryAttempted"
@@ -4097,11 +4239,13 @@ class NotebookActivity : AppCompatActivity() {
             notebookName: String,
             viaLink: Boolean = false,
             initialPageId: String? = null,
+            resumeAbove: List<Surface> = emptyList(),
         ): Intent =
             Intent(context, NotebookActivity::class.java)
                 .putExtra(EXTRA_NOTEBOOK_ID, notebookId)
                 .putExtra(EXTRA_NOTEBOOK_NAME, notebookName)
                 .putExtra(EXTRA_VIA_LINK, viaLink)
                 .putExtra(EXTRA_INITIAL_PAGE_ID, initialPageId)
+                .putStringArrayListExtra(EXTRA_RESUME_ABOVE, ArrayList(resumeAbove.map { it.name }))
     }
 }
