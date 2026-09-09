@@ -424,9 +424,13 @@ rebuilt screen is the same story.
 - `EXTRA_INITIAL_PAGE_ID` is **consumed once** — read only when `savedInstanceState == null` — so
   a recreated via-link notebook lands on its *remembered* page, not back on the link target the
   redelivered Intent still names.
-- `BrowseState.lastOpenViaLink` records how the notebook was opened, so a cold launch restore
-  reopens a via-link notebook **as** via-link: the trail survives a mid-chain force-stop, and
-  without the flag the restore would read as a fresh open and clear it.
+- The via-link flag records how the notebook was opened, so a cold launch restore reopens a
+  via-link notebook **as** via-link: the trail survives a mid-chain force-stop, and without the
+  flag the restore would read as a fresh open and clear it. **Since arc 32 / RS1** the flag rides
+  the surface stack's `SurfaceEntry.viaLink` (`data/prefs/SurfaceStack.kt`, prefs `sn_view_state`
+  key `surfaceStack`) rather than the retired `BrowseState.lastOpenViaLink` — the replay
+  (`LibraryActivity.replayStack` → `openNotebook(id, name, viaLink, …)`) restores the same value
+  the same way; only the storage moved. See [`docs/library.md`](library.md) § Launch restore.
 
 ## Encryption (arc 26)
 
@@ -469,8 +473,8 @@ untrusted decode). The stores test against the injected-`transact` seam — no R
 - **Chrome menu**: underline/none only; og's dotted-chevron style excluded (locked).
 - **No search in the picker** — deferred exactly as Paper deferred it (`BACKLOG.md`).
 - **Paper's accepted Intent-redelivery quirk is fixed** (consumed-once `EXTRA_INITIAL_PAGE_ID`),
-  and the via-link flag survives process death (`BrowseState.lastOpenViaLink`) — Paper's restore
-  forgot the story.
+  and the via-link flag survives process death (`SurfaceEntry.viaLink` on the surface stack, since
+  arc 32 / RS1 — `BrowseState.lastOpenViaLink` before it) — Paper's restore forgot the story.
 - **`syncLinkRenderer` exists only since K2** (the Edit path needs a repaint without a reload);
   every K1 mutation shares its frame with a reload — recorded in the code.
 - Trail cap 50 with **silent** dead-entry skips (Paper matched); the trail lives in

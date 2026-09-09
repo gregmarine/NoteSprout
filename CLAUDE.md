@@ -188,6 +188,15 @@ skill (`.claude/skills/device-build-install/SKILL.md`) — invoked automatically
   `ICalendar.render` at `API_VERSION` **9** (two compatible tails, no floor moved, not a ninth
   point) for calendar file export and a papered page on send; no code review. **Arcs 1–31 are all
   complete and frozen.**
+  **Arc 32 "Resume" (launch restore, PARITY_BACKLOG item 7 — the LAST item) is COMPLETE + FROZEN
+  (RS1–RS3 landed 2026-09-09)**: the references are `apps/notesprout_ratta/docs/library.md`
+  (§ Launch restore) and `docs/notebook.md` (§ Cold-launch restore); for any work on it read the
+  standalone `apps/notesprout_ratta/RESUME_PLAN.md` (not `RATTA_PLAN.md`) — a surface stack in
+  prefs replayed on a cold launch so the whole chain of screens comes back (notebook → calendar /
+  scratch pad / document editor, the calendar → pad pair, or a library-level calendar / pad), every
+  missing target dropped; host-only, no point, no API bump, no schema change, no code review.
+  **Arcs 1–32 are all complete and frozen, and `apps/notesprout_ratta/PARITY_BACKLOG.md` is
+  closed — every item done.**
   **No NINTH extension point
   and no other arc without another user decision. Read `apps/notesprout_ratta/RATTA_PLAN.md`
   first for ANY other work there** — it holds the working protocol, model recipe, standing

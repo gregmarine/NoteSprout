@@ -842,9 +842,22 @@ Prefs are device-local plaintext; every name in this app lives in the encrypted 
 | Store | File | Holds |
 |---|---|---|
 | `SortPrefs` | `sn_sort` | `field`, `order` |
-| `BrowseState` | `sn_view_state` | `folderId`, `mode`, `lastOpenNotebookId`, `lastOpenViaLink` (K4 — cold restore reopens a via-link notebook *as* via-link, so the persisted link trail survives a mid-chain process death; see [`docs/links.md`](links.md)) |
+| `BrowseState` | `sn_view_state` | `folderId`, `mode` |
+| `SurfaceStack` (arc 32) | `sn_view_state`, key `surfaceStack` | JSON `List<SurfaceEntry(token, surface, notebookId?, viaLink)>`, bottom-first — the screens the user had open, so a cold launch can put the whole chain back; see [Launch restore](#launch-restore-arc-32) below |
 | `RecentsPrefs` | `sn_recents` | JSON `List<RecentEntry(notebookId, timestamp)>`, max 20, newest first |
 | `LinkTrail` (K4) | `sn_trail` | the link-follow walk-back stack, ids only, cap 50 — owned by the notebook's follow flow; see [`docs/links.md`](links.md) |
+
+`BrowseState`'s pre-arc-32 `lastOpenNotebookId` / `lastOpenViaLink` (K4 — a via-link notebook
+restored *as* via-link, so the persisted link trail survives a mid-chain process death) are
+**gone**, retired into `SurfaceStack`: on the first cold-launch read after the upgrade, a stored
+`lastOpenNotebookId` with no `surfaceStack` key is read as a one-entry `NOTEBOOK` stack (carrying
+`lastOpenViaLink`), and all three keys are removed together. The via-link rule itself is unchanged
+— see [`docs/links.md`](links.md).
+
+`SurfaceStack` holds ids and enum names only, like every other store here, and nothing in it is
+trusted as still existing: `LibraryActivity` re-validates every entry on the way back. A corrupt
+blob reads as an empty stack; an entry naming a surface this build does not know, or carrying a
+blank token, is dropped on its own — never the whole stack, never a crash.
 
 `RecentsPrefs` is written by **`NotebookActivity.onCreate`** (`record(id)` on every open, R3) and
 read by the Recents shelf (R5). Three things prune it: a notebook delete (`remove`), a folder
@@ -856,7 +869,145 @@ of truth.
 device-local browsing state.
 
 **Cold launch** restores `BrowseState.folderId`; if that folder is no longer alive in the index the
-library falls back to the root. Nothing in prefs is trusted as still existing.
+library falls back to the root. Nothing in prefs is trusted as still existing. What screens were
+open on top of the library is a separate question — `SurfaceStack`'s, covered next.
+
+---
+
+## Launch restore (arc 32)
+
+A cold launch (`savedInstanceState == null`, and only on `BootstrapRoute.Next.LIBRARY` — the
+`RECOVERY_KEY` and `ENCRYPTION` routes never reach the library's cold-launch code, so the gate is
+structural) reopens the **whole chain** of screens the user had open, not just the last notebook:
+library → notebook → one extension screen over it, or library → the calendar, or the calendar's own
+pad door (the calendar latched beneath the pad). Back walks out exactly as it always has. The
+surfaces that can ride the stack are `NOTEBOOK`, `CALENDAR`, `SCRATCH_PAD` and `DOCUMENT_EDITOR`
+only (decision 1) — Templates, Backup, Encryption, Import, Tags, Export, Restore, every picker, New
+notebook and the sticky editor are never restore targets, because a surface that is not named
+cannot be restored.
+
+### The stack model
+
+`SurfaceStackCodec` (`data/prefs/SurfaceStack.kt`) is the pure algebra, JVM-tested and
+Context-free: `attach` appends a `SurfaceEntry`, or refreshes it in place when its token is already
+there (a same-process recreate must not duplicate itself); `markTop` drops everything above a
+token and is a no-op for a token that never attached; `pop` removes an entry by token wherever it
+sits; `decode`/`migrate` are the untrusted-input rules above. `SurfaceStack` is the prefs door over
+it — one in-memory list mirrored to `sn_view_state` on every mutation, Main thread only.
+
+**Tokens are per Activity/entry instance, not per surface** — the same notebook can legitimately
+be on the stack twice (a link followed into itself), and a screen that finishes itself into
+another (`switchToNotebook`, `closeAndLaunch` on a link follow) attaches the new instance's token
+before the old one pops its own.
+
+**Who maintains it:**
+
+- `NotebookActivity` mints a `stackToken` per instance (`UUID`, saved under `KEY_STACK_TOKEN` in
+  `onSaveInstanceState` so a same-process recreate refreshes in place, not a fresh attach),
+  attaches in `onCreate` where the old `lastOpenNotebookId` write used to be, `markTop`s as the
+  first line of `onResume`, and `pop`s at its four old clear sites (recovery declined, the
+  passphrase prompt cancelled, `failOpen`, `close`).
+- `LibraryActivity` `reset()`s in `onResume` — nothing can be above a resumed library, since an
+  extension screen over it is a result and the notebook is always finished before the library
+  resumes.
+- `ExtensionScreenEntry` / `DocumentEditorEntry` push their own `stackEntry` right after
+  `launcher.launch` actually launches (never at the tap — the open can still fail with nothing on
+  the glass before that), and pop synchronously at the top of `onResult` and in `close()`.
+
+Nothing ever pops or attaches from `onDestroy` — a killed process gets none, which is the whole
+point of a stack that survives it.
+
+**The calendar → pad latch is structural.** `onCalendarClosed` (library and notebook both) and the
+calendar's own pad door re-attach `calendar.stackEntry` immediately before `scratchPad.open()` in
+`openPadOverCalendar()` — the callback runs posted, so after the host's own `onResume` `markTop`
+has already dropped everything above it, and the re-attach lands the `CALENDAR` entry back on top
+before the pad's push goes above it. That is what keeps `CALENDAR` beneath `SCRATCH_PAD` in the
+persisted stack.
+
+### The replay
+
+On a cold launch, `LibraryActivity.onCreate` calls `stack.snapshotAndClear()` **before** `onResume`
+resets the stack — read once, cleared at once, so a target that fails to reopen is never retried on
+the next launch (`reopenLastNotebookIfNeeded`'s old discipline, kept). `replayStack()` (its
+successor) runs from the first-layout listener over the local copy through the pure
+`ReplayPlan.of(stack)`:
+
+- `Notebook(id, viaLink, above)` — a `NOTEBOOK` entry at the bottom, with the surfaces above it as
+  a `List<Surface>`;
+- `LibraryLevel(top, calendarBeneath)` — an extension screen open over the library itself, with
+  nothing beneath it;
+- `Nothing` — an empty stack, or one whose bottom cannot be stood on.
+
+`ReplayPlan.legalAbove` normalizes an above-list to the only two shapes SN can actually reopen —
+one screen, or `CALENDAR, SCRATCH_PAD` (exactly one extension screen is ever showing at a time, so
+nothing deeper exists) — cutting anything else to its longest legal prefix, and treating a
+`NOTEBOOK` first as nothing standing at all.
+
+**The notebook arm.** The three validity gates are kept verbatim: an alive index row, type
+`NOTEBOOK`, and its `.soil` present on disk. All three hold → `openNotebook(id, name, viaLink,
+resumeAbove = plan.above)` — still the one door into `NotebookActivity` — with the above-list
+riding `NotebookActivity.EXTRA_RESUME_ABOVE` as an `ArrayList<String>` of surface names, read once
+on a cold create (`ReplayPlan.decodeAbove`, the same unknown-name-dropped rule as the stack's own
+codec) and ignored on a task rebuild, exactly like `EXTRA_INITIAL_PAGE_ID`. The notebook itself
+raises the chain: `replayAbove()` runs as the last line of `loadCanvas`'s landing tail, after
+`opened = true` and after the "Opening…" overlay is down — so behind the own-key prompt by
+construction, since nothing above the notebook can stand before the open has succeeded — and is
+consumed once (`resumeAbove` cleared on read), so a second run of that tail (the text-document
+route defers it) never raises a second screen. `[CALENDAR]` / `[SCRATCH_PAD]` → the entry's
+`open()`; the pair → `openPadOverCalendar()` (the same three lines the calendar's own pad door
+uses: re-attach, latch, open); `[DOCUMENT_EDITOR]` → `documentEntry.open()` only when
+`session.documents.get(displayedPageId)` answers a row (decision 4 — no seed flow, no recognition,
+nothing staged; no document row drops the entry and the notebook comes back alone). A text
+document's own `openIntoEditor(launch = true)` consumes the above-list **first**, before its own
+launch: a bare `[DOCUMENT_EDITOR]` is silently absorbed (the route is already opening the editor),
+anything else above a text document is logged and dropped — there is no page for it to stand on.
+
+**The library-level arm.** `replayLibraryLevel` opens `calendar.open()` / `scratchPad.open()`, or
+the pad over the latched calendar (`openPadOverCalendar()`), each awaiting the entry's own
+`suspend fun discovered()` first rather than reading `isAvailable` — `refresh()`'s own discovery
+(fired from `onResume`) and this replay are two coroutines whose finishing order is a race, so a
+caller that awaits `discovered()` has the real answer instead of one it might lose the race to. A
+library-level `DOCUMENT_EDITOR` is logged and dropped — the editor only ever stands over a
+notebook, so it is not a shape the library can reopen.
+
+**Drop rules.** A notebook that is not alive, not type `NOTEBOOK`, or has no `.soil` on disk empties
+the **whole** chain — nothing above it can stand. A missing, untrusted, or below-floor extension
+ends the chain at that point (the library or notebook simply comes back alone). A document editor
+whose landing page has no document row is dropped (decision 4). Every drop is one `Slog.d` line
+naming the surface, never an id — the standing rule against logging identity. A target that fails
+is never retried on the next launch; the stack was already cleared on the way in.
+
+**Device-local by rule.** `SurfaceStack` is never backed up and never restored — the same rule as
+every other prefs store in this file. A whole-library restore (arc 27) relaunches through
+Bootstrap with `CLEAR_TASK`, so the replay after one runs against a stack this device wrote
+*before* the restore, and every entry is re-validated exactly as any other cold launch's is; a
+notebook the restore did not bring back is dropped like any other missing target.
+
+**Walked on the Nomad (RS1 + RS2):** a notebook opened into the calendar, the pad, or the document
+editor, each force-stopped and cold-started, came back with the extension screen resumed over
+`NotebookActivity` and its `restore:` log line; Back walked notebook → library with the stack
+shrinking to `[]` at each step. The calendar's own pad door restored pad-over-calendar, Back
+returning to the calendar. A library-level calendar, and the calendar's pad over the library, both
+restored. A dead notebook (deleted since the stack was written) with a `CALENDAR` entry above it
+dropped the whole chain to the library with one log line and an empty stack. An uninstalled
+calendar behind a `NOTEBOOK CALENDAR` stack came back to the notebook alone. A text document
+killed behind its editor came back into the editor exactly once — no `already showing`, no
+`restore:` line, because `openIntoEditor` had already consumed the entry. The pre-arc migration
+(a device left in a notebook under the old build) came up as a one-entry `NOTEBOOK` stack with
+both legacy keys gone. Crash log empty throughout.
+
+**Walk trap:** `am force-stop` the **host first**, then the extension process(es)
+(`…ext.calendar.dev` / `…ext.scratchpad.dev` / `…ext.document.dev`), in one shell command, before
+`am start`ing Bootstrap. An extension killed while the host still lives hands the host a cancelled
+result, whose `onResult` pops the entry before the process actually dies — the stack then reads as
+if the chain above the notebook had never existed, and the walk reports a drop that never
+happened. `am force-stop` on the host alone is *not* a device death either: an extension screen on
+top lives in its own process and stays on the glass, and `am start` is delivered to the
+already-running top-most instance rather than causing a cold launch.
+
+**Tests:** `SurfaceStackCodecTest` (15) + `ReplayPlanTest` (27, after RS2's +15) — the model, the
+codec's untrusted-input rules, the migration, every legal above-shape and its truncation, and
+`decodeAbove` against unknown / all-unknown / null / empty names.
 
 ---
 

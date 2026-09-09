@@ -7,7 +7,10 @@ together with the root `CLAUDE.md` and `apps/notesprout_ratta/CLAUDE.md`. **Do n
 `RATTA_PLAN.md` for this arc** unless a standing trap needs checking; its protocol and traps are
 summarized at the end so this file is enough. `HARVEST_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 wizard locked 2026-09-09 — RS1 ✅ 2026-09-09 · RS2 ✅ 2026-09-09 · RS3 ⬜.**
+**Status: ✅ ARC COMPLETE + FROZEN 2026-09-09 — RS1 ✅ · RS2 ✅ · RS3 ✅ (all 2026-09-09).** The
+references are `docs/library.md` § Launch restore and `docs/notebook.md` § Cold-launch restore;
+this file is the ledger. `PARITY_BACKLOG.md` item 7 — the last item — is DONE and the backlog is
+closed. No next arc is planned; the user decides.
 Baseline before the arc: 1564 `:app` / 2945 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. Host-only: no point, no API bump, no schema change, no g-paper
 change, no new module.
@@ -240,7 +243,7 @@ index reads, so their finishing order is a race either way.
   on both hosts; `EXTRA_INITIAL_PAGE_ID`'s consume.
 - Walk: D2's list.
 
-### ⬜ RS3 — Docs, ledger, freeze (Sonnet docs fan-out · Fable read-back, ledger, backlog, CLAUDE.md, memory · no code, no code review)
+### ✅ RS3 — Docs, ledger, freeze (landed 2026-09-09) (Sonnet docs fan-out · Fable read-back, ledger, backlog, CLAUDE.md, memory · no code, no code review)
 
 ## Planner calls the wizard didn't cover (implementer follows; the user can override at phase start)
 
@@ -394,3 +397,25 @@ with the stack cleared; prompt → key → the calendar comes back.
 
 **Trap found and recorded above:** the first walk agent killed the extensions before the host and
 reported RS2 as "not built" — the host had popped the entry on the cancelled result.
+
+### RS3 — Outcome (2026-09-09)
+
+**Docs (no code):** `docs/library.md` — § Prefs (the `BrowseState` row loses `lastOpenNotebookId` /
+`lastOpenViaLink`; a `SurfaceStack` row; the migration and the untrusted-decode rules) and a new
+§ Launch restore (what it is, the surface allowlist, the stack model and who maintains it, the
+structural calendar → pad latch, the replay's three plans and two arms, the drop rules, device-local
+by rule, the Nomad walks, the host-first walk trap, the tests). `docs/notebook.md` — § Open (the
+attach + `EXTRA_RESUME_ABOVE` beside `EXTRA_INITIAL_PAGE_ID`), § Close & lifecycle (markTop / the
+four pops), § Cold-launch restore rewritten (the chain, `replayAbove()` behind the own-key prompt,
+the arms, the text-document rule, the via-link flag on the entry), the entries' push/pop.
+`docs/extensions.md` — boundary row 49 (a reopen goes through the entry, never a rebuilt Intent;
+nothing new crosses; no extension knows a restore is happening). `docs/links.md` — the via-link
+flag rides `SurfaceEntry.viaLink` now, the K4 rule kept. `PARITY_BACKLOG.md` item 7 DONE + the
+status line + the header (**the backlog is closed — every item done**). Both `CLAUDE.md` (root:
+the arc-32 bullet + "arcs 1–32 frozen, backlog closed"; app: the arc-32 entry with the shape as
+built and the walk trap). `RATTA_PLAN.md` header. Memory.
+
+**Final numbers:** 1606 `:app` / 2987 JVM tests across the modules, `API_VERSION` 9, fourteen
+modules, g-paper 0.1.28, version `0.1.0-ratta`. No code review (decision 6). Arc 32 is complete
+and frozen; arcs 1–32 are all frozen. **`PARITY_BACKLOG.md` has no open item — the next arc, if
+any, is a fresh user decision.**

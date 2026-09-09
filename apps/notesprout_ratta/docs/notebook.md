@@ -217,8 +217,15 @@ sticky editor's own mirror, and [`docs/scratchpad.md`](scratchpad.md) /
 `IndexGuard.ready` → extras (`EXTRA_NOTEBOOK_ID`, `EXTRA_NOTEBOOK_NAME`; K4 adds
 `EXTRA_VIA_LINK` + `EXTRA_INITIAL_PAGE_ID` — the initial page is **consumed once**, read only when
 `savedInstanceState == null`, so a recreated via-link notebook lands on its remembered page rather
-than re-following the redelivered Intent; [`docs/links.md`](links.md)) →
-`BrowseState.lastOpenNotebookId = id` (+ `lastOpenViaLink`, K4), `RecentsPrefs.record(id)` → `repo.alive(id)` (else problem
+than re-following the redelivered Intent; [`docs/links.md`](links.md)). Arc 32 / RS2 adds a second
+consume-once extra beside it, `EXTRA_RESUME_ABOVE` — an `ArrayList<String>` of surface names, also
+read only on a fresh create and ignored on a task rebuild, host-internal (the library never keeps a
+copy). `stack.attach(SurfaceEntry(stackToken, NOTEBOOK, id, viaLink))` replaces the old
+`BrowseState.lastOpenNotebookId = id` (+ `lastOpenViaLink`, K4) write — `stackToken` is a `UUID`
+minted per instance and saved under `KEY_STACK_TOKEN` in `onSaveInstanceState`, so a same-process
+recreate refreshes this screen's entry in place instead of stacking a second one
+([`docs/library.md`](library.md) § Launch restore has the stack itself). Then
+`RecentsPrefs.record(id)` → `repo.alive(id)` (else problem
 dialog + finish) → `session.open()`: `KeySession` passphrase → file must exist and be non-empty
 (**never created here**) → `SoilDatabase.open` (raw-key fast path via `KeyOpener` when cached) →
 page rows (none → fail) → last-open page from the notebook row's `refId` → template decoded with
@@ -1042,7 +1049,10 @@ cluster, immediately before Recents (see [Layout](#layout-activity_notebookxml) 
 `DocumentSeedFlow.start()` — flush this page's ink, then hand the page's stored document straight
 to the editor, or, on an undocumented page, recognize it behind a "Reading this page…" popup and a
 consent flow first — and only then launches the editor through `DocumentEditorEntry`, the
-scratch-pad-shaped client for the fifth point.
+scratch-pad-shaped client for the fifth point. **On the surface stack since arc 32 / RS1:** the
+entry pushes its `SurfaceEntry` the instant the launch has actually happened, and pops it
+synchronously at the top of `onResult` and in `close()` — before this screen's own `onResume` marks
+itself the top, since ActivityResult callbacks always run first.
 
 **The notebook is STOPPED behind the editor, not sealed.** Unlike a page flip or a plain close, the
 Document button calls **no `releaseForHandoff()`**: the editor draws no ink of its own, so the EPD
@@ -1337,7 +1347,9 @@ in-flight field the tool restore needs — `toolBeforeTransferPaste` — is one 
 only one transfer can have just landed.
 
 The body itself: drain the still-held bind — `HeldInkClient.drainOutgoing`, via `ScratchPadClient`
-/ `CalendarClient`, run from `ExtensionScreenEntry.onResult` once the extension's screen returns —
+/ `CalendarClient`, run from `ExtensionScreenEntry.onResult` once the extension's screen returns
+(the same `onResult` that pops the entry's `SurfaceEntry` off the surface stack, synchronously, at
+the top of the callback — arc 32 / RS1) —
 mint fresh ids (nothing from the wire is trusted beyond its geometry — `TransferCaps.toStrokes`),
 write the strokes in one transaction appended after the displayed page's current max `"order"` with
 relative order preserved (the arc-8 rebase rule), record one `Action.ObjectsPasted` step, then arm
@@ -1540,16 +1552,23 @@ has no entry to update, and `refreshToPage` finds no index and stays put.
 
 ## Close & lifecycle
 
-- `onResume` → `paper.resumeDrawing()`.
+- `onResume` → **`stack.markTop(stackToken)` first** (arc 32 / RS1 — resumed means the top of the
+  surface stack, so whatever entry stood above this one has closed; guarded on `::stack.isInitialized`
+  because an `IndexGuard` bounce still gets this callback with nothing attached; runs **after** every
+  result callback, which is why an extension entry's own pop always precedes it), then
+  `paper.resumeDrawing()`.
 - `onStop` (not closing) → app-scoped: `CoverSnapshot` + `saveLastOpened` (cheap durability point).
 - Toolbar back / system back → **`backPressed()`** (K4 — in a via-link notebook both Backs walk
   the link trail first, exactly like a swipe-up; only an empty trail falls through to `close()`) →
-  `close()`: `lastOpenNotebookId = null` → app-scoped `NonCancellable`: cover → `saveLastOpened`
+  `close()`: `stack.pop(stackToken)` (arc 32 / RS1, replacing the old `lastOpenNotebookId = null`)
+  → app-scoped `NonCancellable`: cover → `saveLastOpened`
   → `refreshMeta` (name + folder path from the index) → `seal()` (`flushTouch` → `drain` →
   **purge** → `wal_checkpoint(TRUNCATE)` → close) → `finish()`. Each step guarded; idempotent
   (`closing` flag; `onStop` stands down once closing). K4 adds `close(andThen)`: a cross-notebook
   hop launches the next screen **strictly after the seal completes** — the seal/reopen race is not
-  survivable any other way ([`docs/links.md`](links.md)).
+  survivable any other way ([`docs/links.md`](links.md)). `stack.pop(stackToken)` runs at the same
+  four sites the old id-clear did: the recovery-declined leave, the cancelled passphrase prompt,
+  `failOpen`, and `close()` itself — never from `onDestroy`, which a killed process never gets.
 - **Seal-time compaction (arc 17 / K1)** — the purge above is `SoilCompactor.compact`: after the
   writer is closed (no queued write can race the deletes), before `db.seal` (the checkpoint
   absorbs the `VACUUM`), every soft-deleted row is hard-deleted and the space given back. Undo is
@@ -1572,12 +1591,69 @@ has no entry to update, and `refreshToPage` finds no index and stays put.
   the release.
 - `onDestroy` → `IndexGuard.bounced` first, then `paper.release()`; if the session is still open
   and no close ran (e.g. finish from a failed open), seal it.
-- **Cold-launch restore:** the library's `reopenLastNotebookIfNeeded()` (cold launch only) reads
-  `BrowseState.lastOpenNotebookId` — set on notebook open, cleared on close — and puts the
-  notebook back on top of the library, but only when its index row is alive **and** its `.soil`
-  exists. Read once, cleared regardless of outcome. K4 rides `lastOpenViaLink` along with it, so
-  a via-link notebook is restored *as* via-link — without it the restore would read as a fresh
-  open and clear the persisted link trail ([`docs/links.md`](links.md)).
+
+### Cold-launch restore (arc 32 / RS1–RS2)
+
+The library's `replayStack()` replaces the old `reopenLastNotebookIfNeeded()` — same read-once,
+cleared-regardless discipline, same three validity gates (alive index row · type NOTEBOOK · `.soil`
+on disk) — but reads the whole surface stack instead of one id, and can hand a **chain** down to
+this screen rather than just the notebook. The stack itself, the gates, and the library-level arm
+(an extension screen open with no notebook beneath it) are [`docs/library.md`](library.md) § Launch
+restore; this section covers only what happens once `openNotebook(…, resumeAbove)` reaches here.
+
+- **`EXTRA_RESUME_ABOVE` rides the launch** — the surfaces (`CALENDAR`, `SCRATCH_PAD`, or
+  `CALENDAR, SCRATCH_PAD`, or `DOCUMENT_EDITOR`) that stood above this notebook, decoded once into
+  `resumeAbove` and consumed at whichever of `loadCanvas` or `openIntoEditor` the open ends in.
+- **`replayAbove()` is the last line of `loadCanvas`** — consume-once, after `opened = true` and the
+  "Opening…" overlay is down, so it runs behind the own-key passphrase prompt **by construction**:
+  nothing above this notebook can stand until the notebook itself is on the paper (decision 3 — a
+  cancelled prompt pops this entry and clears everything above it along with it). Each arm **awaits
+  the entry's own `discovered()`** — `ExtensionScreenEntry.discovered()` /
+  `DocumentEditorEntry.discovered()`, `refresh()`'s body made awaitable — rather than reading
+  `isAvailable`: the `onResume` refresh and this replay are two coroutines whose finishing order is
+  a race, so a reopen that read `isAvailable` could drop a screen that is installed. After every
+  suspension the arm
+  re-checks `standingForReplay()` (`opened && !closing && !isFinishing && !isDestroyed`) before
+  raising anything.
+- **The arms** (`ReplayPlan.decodeAbove` → `ReplayPlan.legalAbove`'s two legal shapes — anything
+  else is cut to its longest legal prefix, logged, because a `NOTEBOOK` first is nothing this
+  replay can raise): `[CALENDAR]` / `[SCRATCH_PAD]` → the entry's `open()` with no `InkSend` (there
+  is nothing to send), through the entry's `beforeLaunch` (`releaseForHandoff`) exactly as a tap;
+  the pair `[CALENDAR, SCRATCH_PAD]` → `openPadOverCalendar()` — the same three lines
+  `onCalendarClosed` already used for the calendar's own pad door, now shared: re-attach
+  `calendar.stackEntry`, arm the `reopenCalendarAfterPad` latch, open the pad, so a plain pad close
+  brings the calendar back exactly as today; calendar missing → the whole chain dropped, pad
+  missing → the calendar comes back alone. `[DOCUMENT_EDITOR]` → `documentEntry.open()` only when
+  `session.documents.get(displayedPageId)` answers a row — no `DocumentSeedFlow`, no recognition,
+  nothing staged (decision 4); no row → dropped, the notebook comes back alone.
+- **Text documents consume the whole above-list on their own launch:** `openIntoEditor(launch =
+  true)` reads and empties `resumeAbove` before anything else — a bare `[DOCUMENT_EDITOR]` above a
+  text-document notebook is consumed silently (the route is already launching the editor; never a
+  second launch), anything else is logged and dropped, since a text document has no page for
+  another screen to stand on.
+- **Every drop is one `Slog.d` line naming the surface, never an id.** Per-surface position rides
+  nothing on the stack: the notebook lands on its own `refId` page (`saveLastOpened`), and the
+  calendar / pad / editor land on their own persisted positions, exactly as an ordinary tap would.
+- **The via-link flag rides the entry** (`SurfaceEntry.viaLink`), so a restored via-link notebook is
+  reopened *as* via-link and the persisted `LinkTrail` survives — K4's rule, unchanged, just moved
+  off `BrowseState.lastOpenViaLink` onto the stack entry ([`docs/links.md`](links.md)).
+- **The extension entries maintain their own place on the stack**, not the host's lifecycle:
+  `ExtensionScreenEntry` and `DocumentEditorEntry` push their `SurfaceEntry` the instant
+  `launcher.launch` has actually succeeded — never at the tap, where the open can still fail with
+  nothing on the glass — and pop it synchronously at the top of `onResult` and in `close()`.
+  ActivityResult callbacks run **before** `onResume`, so the pop always precedes this screen's own
+  `markTop` finding the stack.
+- **Nomad walk (RS2, Sonnet + Fable over adb):** the notebook, killed behind the calendar / the pad
+  / the document editor (host force-stopped first, then the extension process — killing the
+  extension alone hands the host a cancelled result whose `onResult` pops the entry before the walk
+  ever gets to look), came back cold with the screen resumed on top and its `restore: reopening […]
+  above the notebook` line, Back walked out through the notebook to the library with the stack
+  shrinking to `[]`; the calendar's pad door restored pad-over-calendar, Back brought the calendar
+  back; an uninstalled calendar behind a restored `NOTEBOOK CALENDAR` stack came back with the
+  notebook alone and "the calendar is not installed — dropped"; a text document killed behind its
+  editor came back to the editor exactly once. Own-key notebooks were not walked on the Nomad (its
+  library is all GLOBAL) — by hand: prompt → cancel → library with the stack cleared; prompt → key
+  → the chain above comes back.
 - **`endTransformIfRunning()` (arc 28 / H4)** persists and records a running transform mode through
   `onTransformEnded` rather than dropping it on the silent `release` path — called at **eight**
   sites: `close()`, `onStop`, the top of `navigateTo` (before `drain()`, so a same-page refresh

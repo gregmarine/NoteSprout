@@ -1,6 +1,6 @@
 # PARITY_BACKLOG.md — the og-parity work still wanted in Notesprout SN (branch `ratta`)
 
-**What this file is.** Arcs 1–27 are complete and frozen (arc 26 closed item 1 below, arc 27 item 2). On 2026-09-05 the user asked for a gap
+**What this file is.** Arcs 1–32 are complete and frozen — every item below is DONE (arc 26 closed item 1, arc 27 item 2, arcs 28–32 items 3–7). On 2026-09-05 the user asked for a gap
 review of `apps/notesprout_android` (og Notesprout) against `apps/notesprout_ratta` (Notesprout SN)
 before declaring the ratta effort a success. That review found more gaps than the user wants to
 close; **this file holds the seven he chose**, in the order he named them.
@@ -27,7 +27,7 @@ plan and ledger `PAGE_PLAN.md`). Item 6 **DONE** (arc 31 "Harvest", HV1–HV6 la
 frozen; the references are `docs/export.md` § Images / § Presets / § Calendar mode, `docs/calendar.md`
 § Export + § Calendar → notebook, `docs/templates.md` § Save as template, `docs/notebook.md` § The
 received page, `docs/extensions.md` (the delivery tail + the calendar point's render); the plan and
-ledger is the standalone `HARVEST_PLAN.md` — read it, not `RATTA_PLAN.md`). Item 7 **PLANNED** (arc 32 "Resume", wizard locked 2026-09-09; the plan and ledger is the standalone `RESUME_PLAN.md` — read it, not `RATTA_PLAN.md`; RS1–RS3 not started).
+ledger is the standalone `HARVEST_PLAN.md` — read it, not `RATTA_PLAN.md`). Item 7 **DONE** (arc 32 "Resume", RS1–RS3 landed 2026-09-09, complete + frozen; the references are `docs/library.md` § Launch restore + `docs/notebook.md` § Cold-launch restore, the plan and ledger the standalone `RESUME_PLAN.md` — read it, not `RATTA_PLAN.md`). **Every item on this list is done; the backlog is closed.**
 
 ---
 
@@ -301,11 +301,26 @@ Four sub-efforts:
 
 ---
 
-## 7. Launch restore — return to the last screen — 🔄 PLANNED (arc 32 "Resume", `RESUME_PLAN.md`, wizard locked 2026-09-09)
+## 7. Launch restore — return to the last screen — ✅ DONE (arc 32 "Resume", RS1–RS3 landed 2026-09-09; plan and ledger `RESUME_PLAN.md`)
 
 **User's call:** "Launch restore should go back to whatever screen/view the user last had open."
 
-**Where SN is today.** A cold launch reopens the **last notebook** and nothing else — one of the
+**The references are `docs/library.md` § Launch restore and `docs/notebook.md` § Cold-launch
+restore; the plan and ledger `RESUME_PLAN.md`** — read those, not this. What landed: a **surface
+stack** in prefs (`sn_view_state` / `surfaceStack` — `SurfaceEntry(token, surface, notebookId?,
+viaLink)`, bottom-first, ids and enum names only, device-local, never backed up or restored)
+maintained from lifecycle by the two host screens and from `open`/`onResult` by the extension
+entries, never `onDestroy`; a pure `ReplayPlan` the library runs on a cold launch — read once,
+cleared regardless — that reopens the **whole chain** (library → notebook → the calendar, the pad,
+the document editor, or the calendar → pad pair; or a library-level calendar / pad) with the old
+three gates kept and every missing target dropped with one log line; the notebook reopens the
+chain above it only once its page is on the paper, so an own-key notebook reopens into its prompt
+first; the editor reopens directly, no seed dialog. Templates and Backup are deliberately not
+targets. Host-only, no point, no API bump, no schema change, no code review; 1606 `:app` / 2987
+tests; walked on the Nomad 8/8.
+
+
+**Where SN was before the arc.** A cold launch reopened the **last notebook** and nothing else — one of the
 three launch sites routed through `LibraryActivity.openNotebook` (`docs/library.md`). Everything
 else opens at the library: the calendar (which keeps its own bookmark, but only once you get
 there), the scratch pad, the document editor, the templates browser, the backup screen.

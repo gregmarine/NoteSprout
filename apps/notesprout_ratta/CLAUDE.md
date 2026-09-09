@@ -429,6 +429,48 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   transaction), the shared `landTransferred` tail. Version stays `0.1.0-ratta`; g-paper 0.1.28;
   1564 `:app` / **2945** tests. Every phase walked on the Nomad by Sonnet over adb (undo/redo and
   the lasso-fragment send by the user's hand).
+- **Arc 32 "Resume" is COMPLETE + FROZEN (wizard locked 2026-09-09; RS1–RS3 landed 2026-09-09)** —
+  launch restore (`PARITY_BACKLOG.md` item 7, the LAST item — **the backlog is closed**). **The
+  references are `docs/library.md` § Launch restore and `docs/notebook.md` § Cold-launch restore;
+  read the standalone `RESUME_PLAN.md`, not `RATTA_PLAN.md`, for any work on it** — three phases,
+  host-only, no point, no API bump, no schema change, no code review (the user's call — do not
+  re-raise). What landed: **RS1** — the surface stack: `data/prefs/SurfaceStack.kt` (`Surface {
+  NOTEBOOK, CALENDAR, SCRATCH_PAD, DOCUMENT_EDITOR }`, `SurfaceEntry(token, surface, notebookId?,
+  viaLink)`, the pure `SurfaceStackCodec` — untrusted decode drops an unknown surface or blank
+  token entry-by-entry, `attach` appends-or-refreshes by token, `markTop` drops everything above,
+  `pop` by token, `migrate` reads the pre-arc `lastOpenNotebookId`/`lastOpenViaLink` once as a
+  one-entry stack — and the prefs door in `sn_view_state` key `surfaceStack`, ids and enum names
+  only, **device-local: never backed up, never restored**); `BrowseState` lost the two legacy
+  properties. **Host screens maintain it from lifecycle, extension entries from `open`/`onResult`,
+  never `onDestroy`:** `NotebookActivity` attaches in `onCreate` with a per-instance token saved
+  under `KEY_STACK_TOKEN`, `markTop` first line of `onResume`, `pop` at its four clear sites;
+  `LibraryActivity` `reset()`s in `onResume` (nothing stands above a resumed library) and
+  `snapshotAndClear()`s in `onCreate` on a cold launch (read once, cleared regardless, before
+  `onResume`'s reset); `ExtensionScreenEntry` / `DocumentEditorEntry` push right after
+  `launcher.launch` and pop synchronously at the top of `onResult` and in `close()` (ActivityResult
+  callbacks run BEFORE `onResume`). The calendar → pad latch is **structural**: both hosts'
+  `onCalendarClosed` re-attach `calendar.stackEntry` before `scratchPad.open()` so `CALENDAR` stays
+  beneath `SCRATCH_PAD`. **RS2** — the chain above: pure `library/ReplayPlan.of(stack)` →
+  `Notebook(id, viaLink, above)` · `LibraryLevel(top, calendarBeneath)` · `Nothing`, `legalAbove`
+  (one screen or `CALENDAR, SCRATCH_PAD`, anything else cut to its longest legal prefix) and
+  `decodeAbove`; the library's `replayStack` (the old three gates kept verbatim — alive row · type
+  NOTEBOOK · `.soil` on disk — through `openNotebook`, still the one door) hands the above-list
+  down as the host-internal consume-once `NotebookActivity.EXTRA_RESUME_ABOVE`; `replayAbove()` is
+  the LAST line of `loadCanvas` — after `opened = true` and the overlay is down, so **behind the
+  own-key prompt by construction** (cancel → library, stack cleared) — each arm awaits the entry's
+  own `discovered()` (never `isAvailable`: `refresh()`'s discovery and the replay are two coroutines
+  whose order is a race) and re-checks `standingForReplay()` after every suspension; the pair →
+  `openPadOverCalendar()` shared with `onCalendarClosed`; `[DOCUMENT_EDITOR]` → `documentEntry.
+  open()` only when the landing page has a document row (no seed flow, no recognition); a text
+  document's `openIntoEditor(launch = true)` consumes the whole list (a bare `[DOCUMENT_EDITOR]`
+  silently — never a second launch); `replayLibraryLevel` opens the calendar / pad / pad over the
+  latched calendar the same way. **Missing target → drop that entry and everything above it, keep
+  what is below; every drop one `Slog.d` naming the surface, never an id.** Templates, Backup,
+  Export, Tags, the pickers and the sticky editor are never targets. Version stays `0.1.0-ratta`;
+  1606 `:app` / **2987** tests; walked on the Nomad 8/8 by Sonnet + Fable over adb (own-key by hand
+  if wanted). **Walk trap:** `am force-stop` the HOST FIRST, then the extension processes, in one
+  shell command, then `am start` Bootstrap — an extension killed under a live host hands it a
+  cancelled result that pops the entry, and a walk then reports a drop that never happened.
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by
