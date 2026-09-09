@@ -573,6 +573,9 @@
     <string name="page_template_action">Page template</string>
     <string name="delete_page_action">Delete page</string>
     <string name="delete_page_title">Delete this page?</string>
+    <string name="erase_page_action">Erase page</string>
+    <string name="erase_page_title">Erase this page?</string>
+    <string name="erase_confirm">Erase</string>
 
     <!-- Page clipboard (arc 7) -->
     <string name="copy_page_action">Copy page</string>

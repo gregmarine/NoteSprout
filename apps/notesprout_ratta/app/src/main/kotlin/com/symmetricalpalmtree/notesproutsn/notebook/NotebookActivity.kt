@@ -1788,6 +1788,21 @@ class NotebookActivity : AppCompatActivity() {
         navigateTo(session.currentIndex)   // put the freshly-inserted blank page on the paper
     }
 
+    /**
+     * Erase page (arc 30 / PE1) — the delete's chain with the page row left standing: drain (the
+     * queued stroke commits must land before the id snapshot, or a stroke drawn a moment ago is
+     * missed and orphaned live under an erased page), erase, record, repaint **once** through
+     * [refreshToPage]. An empty page's erase is silent: no transaction, no entry, no repaint.
+     */
+    private suspend fun doErase() {
+        session.store.drain()
+        val pageId = session.currentPage.id
+        val ids = session.eraseCurrent()
+        if (ids.isEmpty()) return
+        undo.record(Action.PageErased(pageId, ids))
+        refreshToPage(pageId)
+    }
+
     private suspend fun doDelete() {
         // Drain first: a stroke commit still queued on the writer would otherwise land AFTER the
         // delete's liveContentIds snapshot and transaction — a permanently live orphan row under a
@@ -1925,6 +1940,7 @@ class NotebookActivity : AppCompatActivity() {
             is Action.LinkCreated -> { session.links.unlink(a.pageId, a.link); session.store.drain(); refreshToPage(a.pageId) }
             is Action.LinkUnlinked -> { session.links.relink(a.pageId, a.link); session.store.drain(); refreshToPage(a.pageId) }
             is Action.LinkEdited -> { session.links.updatePayload(a.linkId, a.before); session.store.drain(); refreshToPage(a.pageId) }
+            is Action.PageErased -> { session.restoreIds(a.objectIds); session.store.drain(); refreshToPage(a.pageId) }
             is Action.Page -> {
                 session.reconcile(a.snapshot.before, a.snapshot.objectIds, emptyList(), a.snapshot.beforeCurrentId)
                 refreshToPage(session.currentPage.id)
@@ -2012,6 +2028,7 @@ class NotebookActivity : AppCompatActivity() {
             is Action.LinkCreated -> { session.links.relink(a.pageId, a.link); session.store.drain(); refreshToPage(a.pageId) }
             is Action.LinkUnlinked -> { session.links.unlink(a.pageId, a.link); session.store.drain(); refreshToPage(a.pageId) }
             is Action.LinkEdited -> { session.links.updatePayload(a.linkId, a.after); session.store.drain(); refreshToPage(a.pageId) }
+            is Action.PageErased -> { session.eraseIds(a.objectIds); session.store.drain(); refreshToPage(a.pageId) }
             is Action.Page -> {
                 session.reconcile(a.snapshot.after, emptyList(), a.snapshot.objectIds, a.snapshot.afterCurrentId)
                 refreshToPage(session.currentPage.id)
@@ -3263,6 +3280,7 @@ class NotebookActivity : AppCompatActivity() {
             sheet.addAction(R.drawable.ic_clipboard, getString(R.string.paste_page_action)) { showPasteSheet() }
         }
         sheet.addAction(R.drawable.ic_template, getString(R.string.page_template_action)) { openTemplatePicker() }
+        sheet.addAction(R.drawable.ic_erase_page, getString(R.string.erase_page_action)) { confirmErasePage() }
         sheet.addAction(R.drawable.ic_trash, getString(R.string.delete_page_action)) { confirmDeletePage() }
         sheet.show()
     }
@@ -3418,6 +3436,17 @@ class NotebookActivity : AppCompatActivity() {
     private fun toast(text: String) {
         if (isFinishing || isDestroyed) return
         Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
+    }
+
+    /** "Erase this page?" — the delete confirm's shape (arc 30 / PE1); Erase runs [doErase]. */
+    private fun confirmErasePage() {
+        Dialogs.style(
+            AlertDialog.Builder(this)
+                .setTitle(R.string.erase_page_title)
+                .setPositiveButton(R.string.erase_confirm) { _, _ -> runPageOp { doErase() } }
+                .setNegativeButton(R.string.cancel, null)
+                .create()
+        ).show()
     }
 
     private fun confirmDeletePage() {

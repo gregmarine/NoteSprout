@@ -423,4 +423,32 @@ class NotebookUndoTest {
         assertEquals(emptyList<Stroke>(), contentOnly.strokes)
         assertEquals(listOf("h1"), contentOnly.headingIds)
     }
+
+    /**
+     * Arc 30 (PE1): a page erase is ids only — the rows stay in place, dated out, so nothing but
+     * the list is needed to put them back — and it is its own kind, neither a [Action.Page]
+     * (the page row is untouched) nor a [Action.Deleted] (no per-type snapshots). Both replay
+     * arms in [NotebookActivity] are exhaustive `when`s, so a kind that slipped into the wrong
+     * arm would revive a page's content as a page.
+     */
+    @Test
+    fun `a page erase carries its ids and rides the stack as its own kind`() {
+        val s = UndoRedoStack<Action>()
+        val erased = Action.PageErased("p3", listOf("s1", "h1", "doc", "st1", "st1-child", "lnk", "lnk-child"))
+        s.record(erased)
+
+        assertEquals("p3", erased.pageId)
+        val popped = s.popUndo()!!
+        assertSame(erased, popped)
+        assertTrue(popped is Action.PageErased)
+        assertTrue(popped !is Action.Page)
+        assertTrue(popped !is Action.Deleted)
+        assertTrue(popped !is Action.LassoErased)
+        // Undo puts the same ids back; redo takes the same ids away — one list serves both roads.
+        s.pushRedo(popped)
+        assertEquals(
+            listOf("s1", "h1", "doc", "st1", "st1-child", "lnk", "lnk-child"),
+            (s.popRedo() as Action.PageErased).objectIds,
+        )
+    }
 }

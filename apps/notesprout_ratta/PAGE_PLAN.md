@@ -6,7 +6,7 @@ the cross-session memory for the arc: read it whole at every phase start, togeth
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this file
 is enough. `LOOP_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — wizard locked 2026-09-08.** PE1 ⬜ · PE2 ⬜ · PE3 ⬜. When frozen the
+**Status: 🔄 IN PROGRESS — wizard locked 2026-09-08.** PE1 ✅ (2026-09-08) · PE2 ⬜ · PE3 ⬜. When frozen the
 references will be `docs/notebook.md` (the page sheet, the erase, the undo row) and `docs/export.md`
 (the scope seam, the notebook door).
 
@@ -193,7 +193,7 @@ builds the scope seam they will ride on and nothing more.
 
 ## Phases
 
-### ⬜ PE1 — Erase page (Opus code on a Fable brief · Fable review · walk by hand)
+### ✅ PE1 — Erase page (landed 2026-09-08) (Opus code on a Fable brief · Fable review · walk by hand)
 
 **Questions to resolve at phase start:** app version (stays `0.1.0-ratta`?); whether the page's
 `document` row is part of the erase (planner: yes); whether an empty page's Erase is silent
@@ -285,3 +285,27 @@ ask.
 ## Ledger
 
 *(one Outcome entry per phase as it closes)*
+
+### PE1 — Erase page · Outcome (2026-09-08)
+
+- **Phase-start answers:** version stays `0.1.0-ratta`; the page's `document` row **is** erased;
+  an empty page's Erase is **silent** (dialog shown, confirm writes nothing).
+- **The read-before-coding, decided:** `StrokeStore` keeps **no in-memory mirror** — `revive` is a
+  bare `dao.restore` queued on the writer, and `reconcile` already restores a page delete's content
+  ids with the same bare DAO call. So `PageErased(pageId, objectIds)` is ids only, no stroke split;
+  revert = `NotebookSession.restoreIds`, reapply = `NotebookSession.eraseIds` (each one
+  `withTransaction`, then `mirror(now)` to touch the index), then `store.drain()` +
+  `refreshToPage` — one repaint.
+- `NotebookSession.eraseCurrent(): List<String>` — `liveDescendantIds` → empty = return, no
+  transaction; else one `softDelete`. Page row, `order`, template, `currentIndex` untouched.
+- `NotebookActivity`: `confirmErasePage()` (plain `AlertDialog` through `Dialogs.style`,
+  `erase_page_title` / `erase_confirm` / `cancel`) → `runPageOp { doErase() }`; `doErase` = drain →
+  `eraseCurrent` → record if non-empty → `refreshToPage`. Both exhaustive `when`s gained the arm.
+  Sheet row **Erase page** between Page template and Delete; `ic_erase_page` in `:sn-screen` is
+  og's `ic_erase_all` byte-for-byte (Tabler `file-x`, 24 dp / stroke 2 / round).
+- No `NotebookSession` test: the session opens a real Room DB (`FakeSoilDao` cannot drive it).
+  `NotebookUndoTest` +1 (ids ride the stack, own kind vs `Page` / `Deleted` / `LassoErased`).
+- **Tests: 1473 `:app`** (was 1472) / 2833 total. NUL scan clean.
+- **Nomad walk passed (all five items)**, incl. `am crash` → reopen persists the erased state.
+- Code written by Fable directly (the seams were settled; no Opus brief needed). No code review
+  (decision 6).

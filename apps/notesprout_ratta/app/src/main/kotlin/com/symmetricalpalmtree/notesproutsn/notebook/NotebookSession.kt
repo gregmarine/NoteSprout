@@ -464,6 +464,48 @@ class NotebookSession(
     }
 
     /**
+     * **Erase page** (arc 30 / PE1): soft-delete every live object on the current page in one
+     * transaction and keep the page itself — its row, `"order"`, size and template are untouched,
+     * and [currentIndex] does not move. The read is [deleteCurrent]'s own
+     * [SoilDao.liveDescendantIds] (strokes, headings, links + their wrapped children, the page's
+     * `document`, texts, shapes, stickies + their content), so the erase is type-agnostic the way
+     * the delete is. Returns the ids it dated out — the undo entry's whole payload
+     * ([NotebookUndo.Action.PageErased]) — or an empty list when the page had nothing, in which
+     * case **nothing is written** (no transaction, no `updatedAt` churn). The caller drains the
+     * writer first (the delete's rule: a queued stroke commit must land before the id snapshot).
+     */
+    suspend fun eraseCurrent(): List<String> = withContext(Dispatchers.IO) {
+        val page = currentPage
+        val ids = db.dao().liveDescendantIds(page.id)
+        if (ids.isEmpty()) return@withContext emptyList()
+        val now = System.currentTimeMillis()
+        db.withTransaction { db.dao().softDelete(ids, now) }
+        mirror(now)
+        Slog.d(TAG) { "erased ${page.id}: ${ids.size} objects" }
+        ids
+    }
+
+    /**
+     * The replay road for [eraseCurrent]'s ids — a bare in-place [SoilDao.restore] /
+     * [SoilDao.softDelete] in one transaction, exactly what [reconcile] does for a page delete's
+     * content. No store is consulted: [StrokeStore.revive] is the same DAO call queued on the
+     * writer, and none of the stores keeps an in-memory mirror a bare restore could miss.
+     */
+    suspend fun restoreIds(ids: List<String>) = withContext(Dispatchers.IO) {
+        if (ids.isEmpty()) return@withContext
+        val now = System.currentTimeMillis()
+        db.withTransaction { db.dao().restore(ids, now) }
+        mirror(now)
+    }
+
+    suspend fun eraseIds(ids: List<String>) = withContext(Dispatchers.IO) {
+        if (ids.isEmpty()) return@withContext
+        val now = System.currentTimeMillis()
+        db.withTransaction { db.dao().softDelete(ids, now) }
+        mirror(now)
+    }
+
+    /**
      * Soft-delete the current page and its live content (strokes + headings), then land on the
      * previous page. Deleting the **only** page puts a fresh blank in its place instead — a
      * notebook always has ≥ 1 page, and an empty one would have nothing to draw on and nothing to

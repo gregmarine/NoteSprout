@@ -269,6 +269,19 @@ object NotebookUndo {
             val stickies: List<PageSticky> = emptyList(),
         ) : Action
 
+        /**
+         * A whole page **erased** (arc 30 / PE1): every live object on the page dated out in one
+         * transaction, the page row itself untouched. Ids only, for the heading's reason writ
+         * large — nothing moves and nothing is re-minted, so the soft-deleted rows keep every
+         * column and revive in place; sticky children and link-wrapped children are in the list
+         * already ([SoilDao.liveDescendantIds]). Revert = [NotebookSession.restoreIds], reapply =
+         * [NotebookSession.eraseIds]. Its own kind rather than a widened [Deleted]: a `Deleted`
+         * needs snapshots for links and stickies because a lasso delete re-minted nothing either
+         * but its stores replay per type; the erase replays through the two DAO calls alone.
+         * Never recorded empty — an erase of an empty page is nothing.
+         */
+        data class PageErased(override val pageId: String, val objectIds: List<String>) : Action
+
         /** A page insert or delete, replayable both ways through [NotebookSession.reconcile]. */
         data class Page(val snapshot: NotebookSession.Structural) : Action {
             override val pageId: String get() = snapshot.afterCurrentId

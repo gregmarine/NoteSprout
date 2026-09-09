@@ -342,7 +342,7 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   user's call — do not re-raise); version stays `0.1.0-ratta`; 1472 `:app` / 2832 tests. Onyx's
   side of the engine change is mechanical and **untested** (SN is Ratta-only). **`docs/notebook.md`
   is the reference; read the standalone `LOOP_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**
-- **Arc 30 "Page" is IN PROGRESS (wizard locked 2026-09-08; PE1 ⬜ · PE2 ⬜ · PE3 ⬜)** — page erase +
+- **Arc 30 "Page" is IN PROGRESS (wizard locked 2026-09-08; PE1 ✅ 2026-09-08 · PE2 ⬜ · PE3 ⬜)** — page erase +
   page export (`PARITY_BACKLOG.md` item 5): an **Erase page** row on the page sheet (confirm →
   one soft-delete transaction over `liveDescendantIds`, page row / order / size / template kept,
   `Action.PageErased` replayed by id) and an **Export page** row that closes the notebook, runs
