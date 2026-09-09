@@ -1164,7 +1164,7 @@ paper is full-bleed and the chrome is two thin bars.
 | 2-finger vertical swipe ↓ | open the **Recents** (T1 — its upward twin is unassigned) |
 | 2-finger stationary double-tap | undo |
 | 3-finger stationary double-tap | redo |
-| 1-finger long-press | the **page sheet** — Copy / Cut / Paste / Page template (arc 12, the whole library since arc 13; [`docs/templates.md`](templates.md)) / Erase page (arc 30 / PE1) / Delete (B1; [`docs/clipboard.md`](clipboard.md)) / Export page (arc 30 / PE2, only while an exporter is installed; [`docs/export.md`](export.md) § Scope) |
+| 1-finger long-press | the **page sheet** — Copy / Cut / Paste / Page template (arc 12, the whole library since arc 13; [`docs/templates.md`](templates.md)) / Erase page (arc 30 / PE1) / Delete (B1; [`docs/clipboard.md`](clipboard.md)) / Export page (arc 30 / PE2, only while an exporter is installed; [`docs/export.md`](export.md) § Scope) / Save as template (arc 31 / HV2; [`docs/templates.md`](templates.md) § Save as template) |
 
 Thresholds (Paper-v0 parity — the numbers are the feel):
 
@@ -1341,13 +1341,17 @@ See [`docs/scratchpad.md`](scratchpad.md) § The transfers and [`docs/calendar.m
 each sender's own half.
 
 The long-press **asks**; it never acts. `showPageSheet` opens an `ActionSheetDialog` with
-**Copy page · Cut page · Paste page · Page template · Erase page · Delete page · Export page** (seven
-rows since arc 30) — Paste present only when the clipboard holds a page, Export page only while a
-trusted exporter is installed (**absent, never disabled**: a greyed control is invisible on e-ink).
+**Copy page · Cut page · Paste page · Page template · Erase page · Delete page · Export page · Save as
+template** (eight rows since arc 31 / HV2) — Paste present only when the clipboard holds a page,
+Export page only while a trusted exporter is installed, Save as template only while the page has a
+usable size (**absent, never disabled**: a greyed control is invisible on e-ink).
 Copy and Cut confirm with a toast; Paste opens a second sheet for the placement (before/after); Page
 template opens the template library (below); Erase page and Delete go to their confirm dialogs;
-Export page closes the notebook into the Export screen (below). The whole clipboard side is
-[`docs/clipboard.md`](clipboard.md).
+Export page closes the notebook into the Export screen (below); Save as template (arc 31 / HV2,
+`notebook/SaveAsTemplateFlow`) rasters the page as the export bake would — paper + ink through the
+shared `PageRaster`, after a `drain()` — and lands it in the template library with fit pinned to Fit,
+no `.soil` write, no undo entry: [`docs/templates.md`](templates.md) § Save as template. The whole
+clipboard side is [`docs/clipboard.md`](clipboard.md).
 
 The delete confirm is the bare question "Delete this page?" with **no warning body** — a deleted
 page and its ink come straight back via undo (soft delete + `reconcile`), so "cannot be recovered"

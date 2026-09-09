@@ -222,6 +222,31 @@ stands down inside Default for the same reason.
 A card exported and re-imported comes back **byte-for-byte the size of the original blob** — the
 round trip is stable.
 
+### Save as template (arc 31 / HV2)
+
+The third door into the library, and the first from a **page**: the notebook's page sheet ends with
+**Save as template** (`ic_photo_plus`, after Export page; absent when the page row carries no usable
+size). `notebook/SaveAsTemplateFlow` runs it inside the page-op lock: `store.drain()` → the page
+rastered **as the export bakes it** — white RGB_565, the page's paper scaled into the page rect, then
+`PagePreview.drawContent`, WEBP q100 — through `notebook/PageRaster`, which is the bake's own
+`bakePage`/`decodeTemplate` moved out of `ExportRender` so the two can never drift → the import's
+6 MiB cap (`TemplateImport.overCap`, the same TooBig dialog) → **name** (`NameDialog`, seeded by
+`TemplateSeedName`: the topmost heading reduced to the name charset, else `page N`; confirm "Next")
+→ **folder** (`FolderPickerActivity.pickIntent` in `TEMPLATE_FOLDER` mode with `PickVerb.SAVE_TEMPLATE`
+— header "Save to…", root "Templates", button "Save here"; the Default sentinel is not offered, as the
+browser's Move does not) → the reserved-name and `nameTaken` checks, either of which **re-asks the
+name in the same folder** (the tree is walked once per save) → `repo.createTemplate(KIND_IMAGE,
+TemplateFit.FIT, bytes)` → toast "Template saved". Fit is pinned: the picture is a page of this
+library at a page's aspect, so Fit is the one mode that cannot crop or distort it; re-fitting is the
+browser's long-press row.
+
+The page's bytes are **fields on the flow, never instance state**, and the picker is the last thing
+asked: a screen Android rebuilt behind it says "Saving was interrupted" and writes nothing (the
+export secret's rule). Nothing is written to the `.soil`, no undo entry, no recents row, no cover.
+Walked on the Nomad 2026-09-08 (Sonnet over adb): row · seed `page 5` · picker chrome · saved ·
+card with the page's ink as thumbnail · a Heading seeds its text · duplicate refused with the folder
+kept · both cancels write nothing · applied from the new-notebook screen, the page is the paper.
+
 ---
 
 ## Chrome

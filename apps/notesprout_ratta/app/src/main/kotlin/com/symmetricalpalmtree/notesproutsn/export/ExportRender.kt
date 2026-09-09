@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Rect
 import android.graphics.Typeface
 import android.util.Log
 import androidx.appcompat.content.res.AppCompatResources
@@ -13,7 +12,6 @@ import com.symmetricalpalmtree.gpaper.core.model.Stroke
 import com.symmetricalpalmtree.gpaper.core.render.StrokeRasterizer
 import com.symmetricalpalmtree.notesproutsn.R
 import com.symmetricalpalmtree.notesproutsn.crypto.KeyResolver
-import com.symmetricalpalmtree.notesproutsn.core.Bitmaps
 import com.symmetricalpalmtree.notesproutsn.core.Slog
 import com.symmetricalpalmtree.notesproutsn.data.soil.SoilDao
 import com.symmetricalpalmtree.notesproutsn.data.soil.SoilDatabase
@@ -21,10 +19,9 @@ import com.symmetricalpalmtree.notesproutsn.data.soil.SoilObjectEntity
 import com.symmetricalpalmtree.notesproutsn.data.soil.SoilSchema
 import com.symmetricalpalmtree.notesproutsn.data.template.BuiltInTemplates
 import com.symmetricalpalmtree.notesproutsn.extension.PageBundle
-import com.symmetricalpalmtree.notesproutsn.notebook.NotebookSession
-import com.symmetricalpalmtree.notesproutsn.notebook.PageContent
 import com.symmetricalpalmtree.notesproutsn.notebook.PageLabels
 import com.symmetricalpalmtree.notesproutsn.notebook.PagePreview
+import com.symmetricalpalmtree.notesproutsn.notebook.PageRaster
 import com.symmetricalpalmtree.notesproutsn.notebook.PageReads
 import com.symmetricalpalmtree.notesproutsn.notebook.StickyRows
 import com.symmetricalpalmtree.notesproutsn.notebook.StrokeRows
@@ -70,7 +67,10 @@ import java.io.IOException
  * the screen's furniture, not the page's content. Pixels are [Bitmap.Config.RGB_565] over an opaque ground and
  * WEBP lossy q100 ([BuiltInTemplates.toWebp] — the app's one measured encoder, the F5 finding),
  * at the **page's own** size and scale 1: a page authored on another panel keeps its own edge, and
- * the screen's size never enters this file.
+ * the screen's size never enters this file. Those last two paragraphs' worth of drawing is
+ * [PageRaster]'s since arc 31 / HV2 — page-to-template wants the same picture, and one recipe with
+ * two readers is the only way it stays the same picture. What stays here is the *bake*: the scope,
+ * the plan, the endnotes, the one-page-at-a-time loop and the template held across pages.
  *
  * **Endnotes (arc 28 / D7).** For an exporter that reads the version-2 bundle, every sticky note
  * with content becomes one more page after the notebook's: its strokes on white at the note's
@@ -293,11 +293,11 @@ object ExportRender {
                         template?.recycle()
                         template = null
                         templateId = page.templateId
-                        template = decodeTemplate(dao, page.templateId)
+                        template = PageRaster.decodeTemplate(dao, page.templateId)
                     }
                     val content = PageReads.content(dao, page.id)
                     pageTitles += PageLabels.titleOf(content)
-                    val image = bakePage(
+                    val image = PageRaster.toWebp(
                         page.widthPx, page.heightPx, template, content, metrics.density, paints,
                     )
                     writer.writePage(page.widthPx, page.heightPx, image)
@@ -387,55 +387,4 @@ object ExportRender {
         textSize = Endnotes.CAPTION_TEXT_PX
         typeface = Typeface.SANS_SERIF
     }
-
-    /** The page's paper, or null for blank — and null again when the row has gone or will not
-     *  decode: paper that will not draw is not paper that is absent, but a page is still the ink
-     *  that is on it, so the bake goes ahead on white (the arc-13 rule read from the export side). */
-    private suspend fun decodeTemplate(dao: SoilDao, templateId: String): Bitmap? {
-        if (templateId.isEmpty()) return null
-        val row: SoilObjectEntity = dao.byId(templateId) ?: return null
-        val bitmap = Bitmaps.decodeBounded(row.blob, NotebookSession.MAX_TEMPLATE_EDGE)
-        if (bitmap == null) Log.w(TAG, "a page's template would not decode — rendering it on white")
-        return bitmap
-    }
-
-    /**
-     * One page, full fidelity at its own pixel size. Opaque by construction: erased to white, and
-     * every layer lands on top, which is what makes [Bitmap.Config.RGB_565] correct here rather
-     * than merely cheaper (the F5 rule — half the bytes and no alpha to lose).
-     *
-     * [template] is drawn into the whole page rect rather than blitted 1:1. It is authored at the
-     * page's size in every file this app writes, so the rect is normally a no-op scale; a template
-     * that disagrees (a page pasted from a panel of another size, a sampled decode of an oversized
-     * import) then rules the page edge to edge instead of leaving a bare band.
-     */
-    private fun bakePage(
-        widthPx: Int,
-        heightPx: Int,
-        template: Bitmap?,
-        content: PageContent,
-        density: Float,
-        paints: PagePreview.Paints,
-    ): ByteArray {
-        val bitmap = try {
-            Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.RGB_565)
-        } catch (e: OutOfMemoryError) {
-            throw IOException("a ${widthPx}x$heightPx page would not allocate", e)
-        }
-        return try {
-            bitmap.eraseColor(Color.WHITE)
-            val canvas = Canvas(bitmap)
-            if (template != null) {
-                canvas.drawBitmap(template, null, Rect(0, 0, widthPx, heightPx), templatePaint)
-            }
-            PagePreview.drawContent(canvas, content, density, paints)
-            BuiltInTemplates.toWebp(bitmap)
-        } finally {
-            // Before the next page starts — the memory rule, kept where it cannot be forgotten.
-            bitmap.recycle()
-        }
-    }
-
-    /** Filtered because a template may be scaled into the page rect; no alpha involved either way. */
-    private val templatePaint = Paint(Paint.FILTER_BITMAP_FLAG)
 }

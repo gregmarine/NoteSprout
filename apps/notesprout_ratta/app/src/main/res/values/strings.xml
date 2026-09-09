@@ -605,6 +605,18 @@
     <string name="erase_confirm">Erase</string>
     <string name="export_page_action">Export page</string>
 
+    <!-- Save as template (arc 31 / HV2) -->
+    <string name="save_as_template_action">Save as template</string>
+    <string name="template_save_name_title">Name this template</string>
+    <string name="template_save_confirm">Next</string>
+    <string name="template_saved">Template saved</string>
+    <string name="template_save_to_title">Save to…</string>
+    <string name="template_save_here">Save here</string>
+    <string name="template_save_failed_title">Couldn\'t save the template</string>
+    <string name="template_save_failed_body">The page could not be drawn. Try again.</string>
+    <string name="template_save_interrupted_title">Saving was interrupted</string>
+    <string name="template_save_interrupted_body">The screen was rebuilt while the folder was being chosen. Long-press the page and choose Save as template again.</string>
+
     <!-- Page clipboard (arc 7) -->
     <string name="copy_page_action">Copy page</string>
     <string name="cut_page_action">Cut page</string>

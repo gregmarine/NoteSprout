@@ -7,7 +7,7 @@ cross-session memory for the arc: read it whole at every phase start, together w
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `PAGE_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 HV1 ✅ 2026-09-08.** HV1 ✅ · HV2 ⬜ · HV3 ⬜ · HV4 ⬜ · HV5 ⬜ · HV6 ⬜.
+**Status: 🔄 HV2 ✅ 2026-09-08.** HV1 ✅ · HV2 ✅ · HV3 ⬜ · HV4 ⬜ · HV5 ⬜ · HV6 ⬜.
 Baseline before the arc: 1487 `:app` / 2847 JVM tests, g-paper 0.1.28, `API_VERSION` 8, thirteen
 modules, version `0.1.0-ratta`.
 
@@ -313,11 +313,11 @@ doors — the library door's whole-notebook export is exactly the folder case.
   files, names, `(1)` on a repeat) · cloud folder N files · template toggle off · Document source
   as PNG (the preview pages) · the PDF exporter unchanged · uninstall `:ext-image` → PNG gone.
 
-### ⬜ HV2 — Save as template (Opus on a Fable brief · Fable review · walk by hand)
+### ✅ HV2 — Save as template (Opus on a Fable brief · Fable review · walk by hand)
 
-**Questions to resolve at phase start:** app version; the row's position (planner: after Export
-page); the folder picker's root label; whether a heading-less page seeds "page N" or the notebook
-name (planner: "page N").
+**Phase-start answers (2026-09-08):** version stays `0.1.0-ratta`; the row is **last, after
+Export page**; the folder picker's root breadcrumb is the existing **"Templates"**
+(`templates_title`); a heading-less page seeds **"page N"** (a heading seeds its text).
 
 - D2. Read first: how the neighbour prefetch reads a page's content for `PagePreview`
   (`PageReads.content` vs the session's cache); `TemplateTransfer`'s dialog chain to copy the
@@ -461,3 +461,36 @@ interrupt the progress dialog. Strings: `export_exporting_image`, `export_cloud_
 `export_done_images_partial`. `docs/extensions.md` `API_VERSION` row → 9. Tests: `:extension-api`
 +1 (230), `:app` +14 (**1501**), `:ext-image` 15 → **2877** total. Both doors offer PNG (phase-start
 answer 3). Version stays `0.1.0-ratta`. **Nomad walk (Sonnet over adb, 2026-09-08) PASSED:** library door → 5 PNGs named by heading / page N · repeat → ` (1)` from the provider · page sheet → single-file picker, `Objects - page 5.png`, ` (2)` on the third collision · template off exports (inconclusive on a paper-less notebook) · PDF unchanged · cloud folder → the once-always confirmation → 5 uploads; no crash. The SAF picker turned out adb-drivable with tricks (memory `reference_supernote_documentsui_picker_adb`).
+
+### HV2 — Save as template (2026-09-08, Fable brief + review · Opus the flow · Sonnet adb walk)
+
+**Outcome.** The page sheet's **eighth row, last, `ic_photo_plus`** (already in `:sn-screen` — no new
+icon), absent when the page row has no usable size. `notebook/SaveAsTemplateFlow` (out of
+`NotebookActivity`, which grew one field and one `addAction`): inside `runPageOp`, `store.drain()`
+→ **`notebook/PageRaster`** — `ExportRender`'s private `bakePage` / `decodeTemplate` /
+`templatePaint` moved out verbatim and the bake repointed, so a template made from a page is the
+picture the page exports as — → `TemplateImport.overCap` (the import's TooBig dialog, before any
+question) → `NameDialog` seeded by **`TemplateSeedName.of(title, n)`** (pure: the topmost heading
+reduced to `NameRules.CHARSET`, spaces collapsed, capped at `MAX_TITLE_CHARS`, else `page N`; never a
+seed the dialog would refuse — Fable's review fix over the brief) with confirm "Next" →
+`FolderPickerActivity.pickIntent` grown with `browseFolderType` / `rootLabel` / **`PickVerb`**
+(`IMPORT` default keeps the import door untouched; `SAVE_TEMPLATE` = "Save to…" / "Save here", root
+"Templates") → reserved-name and `nameTaken` checks, each **re-asking the name in the same folder**
+(the refusal dialog sits on the re-opened name dialog, the import's look) → `createTemplate(KIND_IMAGE,
+TemplateFit.FIT, bytes)` → toast `template_saved`. Bytes and name are flow fields, never instance
+state; a rebuilt screen gets "Saving was interrupted". No `.soil` write, no undo, no recents, no
+cover. Strings: ten (`save_as_template_action` … `template_save_interrupted_body`). Tests: `:app`
++11 (`TemplateSeedNameTest`) → **1512**, **2888** total; `PageRaster` is Android-bound (no JVM test,
+said in its KDoc). Version stays `0.1.0-ratta`. **Nomad walk (Sonnet over adb, 2026-09-08) PASSED:**
+row last after Export page · seed `page 5` on a heading-less last page · picker chrome "Save to…" /
+"Templates" / "Save here" · saved (12 018 B, logcat) · Templates screen shows the card with the page's
+ink as its thumbnail · duplicate refused ("already exists here") with the name dialog underneath and
+the folder kept · cancel at the name and cancel at the picker write nothing · no crash. The
+reserved-name refusal was not walked (needs typing; the check is the import's line, shared). Second
+pass: a real Heading object on the Objects notebook's page 3 seeded `Heading` (a bold Markdown *text*
+object on the Sample notebook seeded `page 1` — texts are not headings, as designed) · saved (34 264 B)
+· the new-notebook screen's inline template picker offered the card → the new notebook's first page
+wore the saved page (heading, link, stars, line, scribble, sticky icon) as its paper and the library
+cover matched. Not walked: the reserved-name refusal and the > 6 MiB TooBig dialog (both are the
+import's own lines, shared verbatim).
+

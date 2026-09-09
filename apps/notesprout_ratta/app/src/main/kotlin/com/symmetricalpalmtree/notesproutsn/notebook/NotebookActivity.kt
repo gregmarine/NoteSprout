@@ -241,6 +241,22 @@ class NotebookActivity : AppCompatActivity() {
 
     private val repo by lazy { IndexRepository() }
 
+    /**
+     * **Save as template** (arc 31 / HV2) — the page sheet's last row, whole, out of this file on
+     * the [StickyFlow] pattern. It registers its own folder-picker launcher at construction (this
+     * field is initialised before STARTED, like [templatePickLauncher]), holds the page's pixels
+     * across that picker itself, and writes only to the template library: no `.soil` write, no undo
+     * entry, nothing about this notebook changes. `repo` is passed as a lambda because it is
+     * `by lazy` for `IndexGuard`'s sake and this field is built before `onCreate` runs.
+     */
+    private val saveAsTemplateFlow = SaveAsTemplateFlow(
+        activity = this,
+        repo = { repo },
+        session = { session },
+        alive = { opened && !closing },
+        runPageOp = { block -> runPageOp(block) },
+    )
+
     /** The global clipboard's one index row (arc 7) — the payload, read and written only here. */
     private val clipStore by lazy { ClipStore() }
 
@@ -3287,6 +3303,13 @@ class NotebookActivity : AppCompatActivity() {
         // canExport rule) — answered at every resume rather than in an IO beat under the sheet.
         if (exportAvailable) {
             sheet.addAction(R.drawable.ic_download, getString(R.string.export_page_action)) { exportPage() }
+        }
+        // Arc 31 / HV2, last: absent — never disabled — when the page carries no usable size, the
+        // one state in which there is nothing to draw.
+        if (saveAsTemplateFlow.canRaster(displayedPageId)) {
+            sheet.addAction(R.drawable.ic_photo_plus, getString(R.string.save_as_template_action)) {
+                saveAsTemplateFlow.start(displayedPageId)
+            }
         }
         sheet.show()
     }

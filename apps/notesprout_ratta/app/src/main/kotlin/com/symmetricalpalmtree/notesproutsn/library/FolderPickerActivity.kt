@@ -66,6 +66,9 @@ class FolderPickerActivity : AppCompatActivity() {
      */
     private var pickOnly = false
 
+    /** Which pick this is — the verb on the header and the button, and nothing else (arc 31 / HV2). */
+    private var pickVerb = PickVerb.IMPORT
+
     private var pageIndex = 0
     private var pageCount = 1
 
@@ -93,10 +96,11 @@ class FolderPickerActivity : AppCompatActivity() {
         browseFolderType = intent.getStringExtra(EXTRA_BROWSE_FOLDER_TYPE) ?: ObjectType.FOLDER
         rootLabel = intent.getStringExtra(EXTRA_ROOT_LABEL) ?: getString(R.string.library_root)
         pickOnly = intent.getBooleanExtra(EXTRA_PICK_ONLY, false)
+        pickVerb = PickVerb.of(intent.getStringExtra(EXTRA_PICK_VERB))
         if (pickOnly) {
             // The verb is the whole difference the user sees: "Move here" would promise something
             // this screen is not about to do.
-            binding.btnMoveHere.setText(R.string.import_here)
+            binding.btnMoveHere.setText(pickVerb.buttonRes)
         }
         // A folder being moved is hidden from every listing, so its own subtree can never be
         // entered. A notebook or a template carries nothing with it and hides nothing.
@@ -146,7 +150,7 @@ class FolderPickerActivity : AppCompatActivity() {
             val container = binding.breadcrumbContainer
             container.removeAllViews()
             container.addView(
-                label(getString(if (pickOnly) R.string.import_to_title else R.string.move_title), ink)
+                label(getString(if (pickOnly) pickVerb.titleRes else R.string.move_title), ink)
             )
             container.addView(crumb(rootLabel, ink) { navigateTo(null) })
             for (ref in ancestry) {
@@ -275,6 +279,23 @@ class FolderPickerActivity : AppCompatActivity() {
         if (currentFolderId != null) navigateUp() else @Suppress("DEPRECATION") super.onBackPressed()
     }
 
+    /**
+     * What a pick-only walk is **for** — the header and the button, and nothing else. The listing,
+     * the up button, the pager and the stood-down collision checks are identical either way (arc
+     * 31 / HV2): one screen, two errands, no second copy to drift.
+     */
+    enum class PickVerb(val titleRes: Int, val buttonRes: Int) {
+        IMPORT(R.string.import_to_title, R.string.import_here),
+        SAVE_TEMPLATE(R.string.template_save_to_title, R.string.template_save_here),
+        ;
+
+        companion object {
+            /** Anything unreadable is [IMPORT] — the door that existed first, and the safe answer
+             *  for a screen Android rebuilt from an Intent this build no longer recognises. */
+            fun of(name: String?): PickVerb = entries.firstOrNull { it.name == name } ?: IMPORT
+        }
+    }
+
     companion object {
         private const val EXTRA_ITEM_ID = "itemId"
         private const val EXTRA_ITEM_TYPE = "itemType"
@@ -283,6 +304,7 @@ class FolderPickerActivity : AppCompatActivity() {
         private const val EXTRA_BROWSE_FOLDER_TYPE = "browseFolderType"
         private const val EXTRA_ROOT_LABEL = "rootLabel"
         private const val EXTRA_PICK_ONLY = "pickOnly"
+        private const val EXTRA_PICK_VERB = "pickVerb"
 
         /** The chosen folder id in a [pickIntent] result — absent (null) means the library root. */
         const val EXTRA_PICKED_FOLDER_ID = "pickedFolderId"
@@ -305,16 +327,28 @@ class FolderPickerActivity : AppCompatActivity() {
 
         /**
          * The same screen, asked for an answer instead of a move (arc 16 / I1). `RESULT_OK` carries
-         * [EXTRA_PICKED_FOLDER_ID]; a cancel carries nothing. Nothing is written here — the caller
-         * does its own placing, and its own name-conflict question.
+         * [EXTRA_PICKED_FOLDER_ID] — **absent means the root**; a cancel carries nothing. Nothing
+         * is written here — the caller does its own placing, and its own name-conflict question.
+         *
+         * [browseFolderType] and [rootLabel] open the *template* tree the same way the move door
+         * does, and [verb] says which errand's words to wear (arc 31 / HV2). The defaults are the
+         * import's, so its call site is untouched.
          */
-        fun pickIntent(context: Context, startInFolder: String? = null): Intent =
+        fun pickIntent(
+            context: Context,
+            startInFolder: String? = null,
+            browseFolderType: String = ObjectType.FOLDER,
+            rootLabel: String? = null,
+            verb: PickVerb = PickVerb.IMPORT,
+        ): Intent =
             Intent(context, FolderPickerActivity::class.java)
                 .putExtra(EXTRA_ITEM_ID, "")
                 .putExtra(EXTRA_ITEM_TYPE, ObjectType.NOTEBOOK)
                 .putExtra(EXTRA_ITEM_NAME, "")
                 .putExtra(EXTRA_CURRENT_PARENT, startInFolder)
-                .putExtra(EXTRA_BROWSE_FOLDER_TYPE, ObjectType.FOLDER)
+                .putExtra(EXTRA_BROWSE_FOLDER_TYPE, browseFolderType)
+                .putExtra(EXTRA_ROOT_LABEL, rootLabel)
                 .putExtra(EXTRA_PICK_ONLY, true)
+                .putExtra(EXTRA_PICK_VERB, verb.name)
     }
 }
