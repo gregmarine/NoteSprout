@@ -2,6 +2,14 @@ package com.symmetricalpalmtree.notesproutsn.extension
 
 import android.content.Context
 import android.os.IBinder
+import android.os.ParcelFileDescriptor
+import com.symmetricalpalmtree.notesproutsn.core.Slog
+import com.symmetricalpalmtree.notesproutsn.data.extstore.ExtensionStores
+import com.symmetricalpalmtree.notesproutsn.data.extstore.lease
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.IOException
 
 /**
  * The host's client for the one calendar (arc 23 / Y1) — the pad's held bind on `ICalendar`, and
@@ -54,7 +62,85 @@ class CalendarClient(context: Context, ref: ProviderRef) :
 
         override fun end(iface: ICalendar) = iface.end()
 
+        /** The page a parked page-send or an export request came from (arc 31 / HV4). The calendar
+         *  is the only point that has one — and only from API 9; an older one is simply not asked
+         *  (the host reads a target only on a result code an older calendar never returns). */
+        override fun outgoingTarget(iface: ICalendar): CalendarTarget? = iface.outgoingTarget()
+
         override fun describe(placement: CalendarTarget): String =
             "target=${placement.kind}/${placement.date}/${placement.half}"
+
+        /**
+         * **Draw calendar pages into a file** (arc 31 / HV4) — the calendar's one bind-per-call
+         * method, and the only thing on this point that is not the held showing.
+         *
+         * The tag manager's second call shape, to the line: the store is [ExtensionStores.lease]d
+         * on IO **before** the bind (a cold KDF must never sit inside a call budget), it rides the
+         * one call, and it is revoked in `finally` whatever happened. The bind is
+         * [ExtensionBinder.call]'s — signature re-checked at bind, the call on IO under
+         * [ExtensionContract.CALENDAR_RENDER_TIMEOUT_MS], unbind in `finally`.
+         *
+         * [destination] is opened here, write-only, created and truncated, and **closed here** the
+         * moment the transaction has been marshalled — the [ExporterClient.export] rule, for the
+         * same reason: an fd handed across a Binder is duplicated on the far side, and the near
+         * copy is this process's to let go of. What lands in the file is one `PageBundle` v1, one
+         * page per target in order — **untrusted**, so the caller reads its header before trusting
+         * a byte of it ([com.symmetricalpalmtree.notesproutsn.export.CalendarRender]).
+         *
+         * [widthPx] x [heightPx] is the page size for a target with no minted page; a minted one
+         * keeps its own. [flags] is a mask of `RENDER_*`.
+         *
+         * Logs counts, flags and durations — and the targets' kind/date/half triple, which is what
+         * a target *is* and no more: a date is not a secret, and nothing about a calendar's content
+         * is in one.
+         *
+         * @throws ExtensionCallException the store, the bind, the destination or the call failed.
+         */
+        suspend fun render(
+            context: Context,
+            ref: ProviderRef,
+            targets: List<CalendarTarget>,
+            widthPx: Int,
+            heightPx: Int,
+            flags: Int,
+            destination: File,
+        ) {
+            val appContext = context.applicationContext
+            val store = ExtensionStores.lease(appContext, ref.packageName, TAG)
+                ?: throw ExtensionCallException("store unavailable")
+            val t0 = System.currentTimeMillis()
+            try {
+                val pfd = try {
+                    withContext(Dispatchers.IO) {
+                        ParcelFileDescriptor.open(
+                            destination,
+                            ParcelFileDescriptor.MODE_WRITE_ONLY or
+                                ParcelFileDescriptor.MODE_CREATE or
+                                ParcelFileDescriptor.MODE_TRUNCATE,
+                        )
+                    }
+                } catch (e: IOException) {
+                    // Never the path: the host's own cache directory is not the user's business
+                    // and not a log line's either.
+                    throw ExtensionCallException("the render destination would not open", e)
+                }
+                try {
+                    ExtensionBinder.call(
+                        appContext, ref, ExtensionContract.ACTION_CALENDAR, TAG,
+                        asInterface = { ICalendar.Stub.asInterface(it) },
+                        callTimeoutMs = ExtensionContract.CALENDAR_RENDER_TIMEOUT_MS,
+                    ) { iface -> iface.render(store, targets.toTypedArray(), widthPx, heightPx, flags, pfd) }
+                } finally {
+                    runCatching { pfd.close() }
+                }
+                Slog.d(TAG) {
+                    "render: ${targets.size} target(s) [${targets.joinToString { describe(it) }}] " +
+                        "flags=$flags size=${widthPx}x$heightPx → ${destination.length()} bytes " +
+                        "in ${System.currentTimeMillis() - t0} ms"
+                }
+            } finally {
+                store.revoke()
+            }
+        }
     }
 }

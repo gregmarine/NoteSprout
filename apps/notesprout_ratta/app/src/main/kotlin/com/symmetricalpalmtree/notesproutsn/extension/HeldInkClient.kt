@@ -62,6 +62,13 @@ interface HeldInkPoint<I : Any, P> {
 
     fun end(iface: I)
 
+    /**
+     * The page the extension parked something for — an export request or a whole-page send
+     * (arc 31 / HV4). Null when the point has no such question (the scratch pad, whose placement
+     * is the host's own answer) and null when nothing is parked.
+     */
+    fun outgoingTarget(iface: I): P?
+
     /** How the placement reads in the send log line. Names and numbers only — never a stroke. */
     fun describe(placement: P): String
 }
@@ -222,6 +229,21 @@ open class HeldInkClient<I : Any, P>(
         }
         Slog.d(tag) { "drainOutgoing: ${drain.chunks} chunks, ${drain.strokes.size} strokes${if (drain.truncated) " (truncated)" else ""} in ${System.currentTimeMillis() - t0} ms" }
         return DrainedInk(drain.strokes, pageWidth, pageHeight, drain.truncated)
+    }
+
+    /**
+     * The page the extension parked its outgoing thing for, read on the bind that is **still held**
+     * (arc 31 / HV4) — the drain's own rule, for the same reason: [finish] revokes the store and
+     * unbinds, so anything the extension still has to say must be asked before it.
+     *
+     * Names only in the log — a kind, a date and a half, which is what a target *is*. Throws
+     * [ExtensionCallException] (bind dead, timeout, refused).
+     */
+    suspend fun outgoingTarget(): P? {
+        val binding = held ?: throw ExtensionCallException("not open")
+        val target = binding.call(point.callTimeoutMs) { point.outgoingTarget(it) }
+        Slog.d(tag) { "outgoingTarget: ${target?.let { point.describe(it) } ?: "none"}" }
+        return target
     }
 
     /** Settle any orphaned call (a placement still running past its budget — the store must not be

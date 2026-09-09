@@ -4,6 +4,7 @@ package com.symmetricalpalmtree.notesproutsn.extension;
 import com.symmetricalpalmtree.notesproutsn.extension.CalendarTarget;
 import com.symmetricalpalmtree.notesproutsn.extension.IExtensionStore;
 import com.symmetricalpalmtree.notesproutsn.extension.InkBundle;
+import android.os.ParcelFileDescriptor;
 
 /**
  * The CALENDAR point (arc 23 / Y1) -- SN's SEVENTH capability point, the fourth screen-owning one and
@@ -30,4 +31,29 @@ interface ICalendar {
 
     /** The screen is over (result / cancel / host stop): drop the store, clear pending ink. */
     void end();
+
+    // ── Appended at arc 31 / HV4 under API 9 (ExtensionContract.MIN_API_VERSION_FOR_CALENDAR_RENDER).
+    // Both sit AFTER end() so every earlier transaction code is unchanged: a calendar declaring 7
+    // or 8 is bound for the four above and never asked these two.
+
+    /**
+     * Paint [targets] as finished pages into one PageBundle v1 on [destination] (WEBP q100, RGB_565, one
+     * page per target in order; no links). Bind-per-call: [store] is lent for this call alone (the
+     * tag manager's shape) — it is NOT the held showing's store, and a render on the held bind is
+     * handed the same binder the bind already holds. [widthPx] x [heightPx] is the page size for
+     * a target with no minted page; a minted page keeps its own stored size. [flags] is a mask of
+     * ExtensionContract.RENDER_GRID / RENDER_INK / RENDER_RING / RENDER_MARKS — insets 0, a full-page
+     * ruling. Refusals cross as IllegalArgumentException (no targets, over RENDER_MAX_TARGETS,
+     * a flag outside RENDER_ALL, a size outside 1..PageBundle.MAX_DIMENSION_PX) and
+     * IllegalStateException("store unavailable"); the host owns and closes [destination] and verifies the
+     * bundle header before trusting a byte. Writes nothing to the store.
+     */
+    void render(IExtensionStore store, in CalendarTarget[] targets, int widthPx, int heightPx, int flags, in ParcelFileDescriptor destination);
+
+    /**
+     * The page a parked page-send (RESULT_CALENDAR_SEND from the top bar's Send page) or an export
+     * request (RESULT_CALENDAR_EXPORT) came from — read on the held bind before end(). Null after
+     * a selection send, and null when nothing is parked.
+     */
+    CalendarTarget outgoingTarget();
 }

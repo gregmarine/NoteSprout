@@ -39,6 +39,8 @@ import com.symmetricalpalmtree.notesproutsn.notebook.PenIdle
  *
  * **Send exists only when there is somewhere to send to**: opened from the library there is no
  * notebook behind us, so the button is absent rather than present-and-failing — GONE, never disabled.
+ * Since arc 31 / HV4 the same button is the **out-door**: Send page, Export (the host has an
+ * exporter — `EXTRA_CALENDAR_EXPORT_ENABLED`), or a sheet offering both; the icon says which.
  *
  * **The title waits for the pen.** Never present an app frame while [PaperView.isPenActive] — the
  * rule is SN-wide, and this bar is the screen's only text that changes.
@@ -61,8 +63,14 @@ class CalendarToolbar(
     private val btnNext: ImageButton,
     private val title: TextView,
     onBack: () -> Unit,
-    /** Send this whole page to the notebook. Never called when [sendEnabled] is false — the button is GONE. */
+    /** Send this whole page to the notebook. Never called when [sendEnabled] is false. */
     onSend: () -> Unit,
+    /** Export this page as a file — the host's Export screen (arc 31 / HV4). Never called when
+     *  [exportEnabled] is false. */
+    onExport: () -> Unit,
+    /** Both doors are open: the screen raises its Send page · Export… sheet. Never called unless
+     *  [sendEnabled] and [exportEnabled] are both true. */
+    onSendOrExport: () -> Unit,
     /** The Events door (arc 24 / Z2): the calendar's own day list, in this same process.
      *  Always available — every day has events, or has room for them. */
     onEvents: () -> Unit,
@@ -84,6 +92,7 @@ class CalendarToolbar(
     onToolTapped: () -> Unit,
     sendEnabled: Boolean,
     scratchPadAvailable: Boolean,
+    exportEnabled: Boolean,
 ) {
 
     private val tools: PaperToolbar
@@ -114,11 +123,26 @@ class CalendarToolbar(
         }
         btnPrev.setOnClickListener { releaseRenderIfIdle(); onPrev() }
         btnNext.setOnClickListener { releaseRenderIfIdle(); onNext() }
-        btnSend.visibility = if (sendEnabled) View.VISIBLE else View.GONE
-        btnSend.setOnClickListener { releaseRenderIfIdle(); onSend() }
+        // ONE out-door button (arc 31 / HV4, the user's call — a twelfth button overflows the
+        // Nomad's bar on the notebook door): Send alone, Export alone (the download icon), or both
+        // behind a two-row sheet. GONE when neither door is open — GONE, never disabled.
+        when {
+            sendEnabled && exportEnabled -> {
+                btnSend.contentDescription = btnSend.context.getString(R.string.cd_calendar_send_or_export)
+                btnSend.setOnClickListener { releaseRenderIfIdle(); onSendOrExport() }
+            }
+            sendEnabled -> btnSend.setOnClickListener { releaseRenderIfIdle(); onSend() }
+            exportEnabled -> {
+                btnSend.setImageResource(R.drawable.ic_download)
+                btnSend.contentDescription = btnSend.context.getString(R.string.cd_calendar_export_page)
+                btnSend.setOnClickListener { releaseRenderIfIdle(); onExport() }
+            }
+        }
+        btnSend.visibility = if (sendEnabled || exportEnabled) View.VISIBLE else View.GONE
         // Always visible, unlike Send and the pad: it needs nothing behind us and opens nothing
         // outside this APK.
         btnEvents.setOnClickListener { releaseRenderIfIdle(); onEvents() }
+        TooltipCompat.setTooltipText(btnSend, btnSend.contentDescription)   // it may have changed above
         btnScratchPad.visibility = if (scratchPadAvailable) View.VISIBLE else View.GONE
         btnScratchPad.setOnClickListener { releaseRenderIfIdle(); onScratchPad() }
         btnToday.setOnClickListener { releaseRenderIfIdle(); onToday() }

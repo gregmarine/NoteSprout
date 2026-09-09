@@ -1,5 +1,6 @@
 package com.symmetricalpalmtree.notesproutsn.export
 
+import com.symmetricalpalmtree.notesproutsn.extension.CalendarTarget
 import com.symmetricalpalmtree.notesproutsn.extension.ExporterContract
 import com.symmetricalpalmtree.notesproutsn.extension.ExporterInfo
 import org.junit.Assert.assertEquals
@@ -88,5 +89,45 @@ class ExportDeliveryTest {
         val info = pages(ExporterContract.DELIVERY_PER_PAGE)
         assertFalse(ExportDelivery.perPage(ExportDelivery.delivery(8, info), ExportScope.Whole))
         assertTrue(ExportDelivery.perPage(ExportDelivery.delivery(9, info), ExportScope.Whole))
+    }
+
+    // ── The calendar (arc 31 / HV4) ──────────────────────────────────────────
+
+    private fun calendar(kind: Int, date: String, half: Int = 0) =
+        ExportScope.Calendar(CalendarTarget(kind, date, half))
+
+    @Test
+    fun aMonthOrAWeekIsOneFileThroughTheOrdinaryPicker() {
+        assertFalse(
+            ExportDelivery.perPage(
+                ExporterContract.DELIVERY_PER_PAGE, calendar(CalendarTarget.KIND_MONTH, "2026-09-01"),
+            )
+        )
+        assertFalse(
+            ExportDelivery.perPage(
+                ExporterContract.DELIVERY_PER_PAGE, calendar(CalendarTarget.KIND_WEEK, "2026-09-06"),
+            )
+        )
+    }
+
+    @Test
+    fun aDayIsTwoPagesAndSoGoesToAFolder() {
+        for (half in listOf(CalendarTarget.HALF_AM, CalendarTarget.HALF_PM)) {
+            assertTrue(
+                ExportDelivery.perPage(
+                    ExporterContract.DELIVERY_PER_PAGE,
+                    calendar(CalendarTarget.KIND_DAY, "2026-09-08", half),
+                )
+            )
+        }
+    }
+
+    @Test
+    fun aOneFileExporterIsNeverPerPageAtACalendarEither() {
+        assertFalse(
+            ExportDelivery.perPage(
+                ExporterContract.DELIVERY_ONE_FILE, calendar(CalendarTarget.KIND_DAY, "2026-09-08"),
+            )
+        )
     }
 }

@@ -341,6 +341,66 @@ object ExtensionContract {
      */
     const val RESULT_CALENDAR_OPEN_SCRATCH_PAD: Int = 2
 
+    // ── Calendar render (arc 31 / HV4 — under API 9, a method floor, not a point) ──────
+    // `ICalendar.render` writes a `PageBundle` v1 of calendar pages (grid · ink · today ring ·
+    // event marks, each by flag) to a host-owned fd on a bind-per-call with a lent store — the tag
+    // manager's shape. `ICalendar.outgoingTarget` names the page a parked page-send or an export
+    // request came from (null after a selection send). Both are appended after `end()`, so every
+    // existing transaction code is unchanged; a calendar declaring 7 or 8 is still bound for
+    // everything else and simply never asked to render.
+
+    /**
+     * Boolean Intent extra on the calendar screen (arc 31 / HV4): the host has an exporter that
+     * takes pages, so the calendar shows its Export door. The **fourth** boolean the launch Intent
+     * carries — still no content, no id, no path. The host passes it only to a calendar declaring
+     * [MIN_API_VERSION_FOR_CALENDAR_RENDER]; an older calendar never sees the extra and shows no door.
+     */
+    const val EXTRA_CALENDAR_EXPORT_ENABLED: String = "calendarExportEnabled"
+
+    /**
+     * The calendar screen's result when its Export door was tapped (arc 31 / HV4): the page on
+     * screen is parked as [ICalendar.outgoingTarget]'s answer and the host reads it on the bind it
+     * still holds, ends the showing, opens its Export screen in calendar mode and brings the
+     * calendar back — at its bookmark — when the export screen closes. Nothing else crosses: no
+     * pixels, no ink, no date on the result Intent.
+     */
+    const val RESULT_CALENDAR_EXPORT: Int = 3
+
+    /** The lowest API version a calendar must declare before the host asks it to `render` (HV4).
+     *  A method floor: `MIN_API_VERSIONS` is untouched, [MIN_API_VERSION_FOR_CALENDAR] still binds. */
+    const val MIN_API_VERSION_FOR_CALENDAR_RENDER: Int = 9
+
+    /** `render` flag: paint the period's ruling (the grid) under the ink; off = a white ground. */
+    const val RENDER_GRID: Int = 1
+
+    /** `render` flag: paint the page's stored ink. */
+    const val RENDER_INK: Int = 2
+
+    /** `render` flag: ring today's number (Month / Week; a Day has no ring). */
+    const val RENDER_RING: Int = 4
+
+    /** `render` flag: draw the event marks (glyphs on Month / Week, labels in a Day's rows). */
+    const val RENDER_MARKS: Int = 8
+
+    /** Every `render` flag — a value outside this mask is refused at the extension (`IllegalArgumentException`). */
+    const val RENDER_ALL: Int = RENDER_GRID or RENDER_INK or RENDER_RING or RENDER_MARKS
+
+    /**
+     * The most pages one `render` may be asked for. An Export of the view on screen is one page
+     * (Month, Week) or two (a Day's halves); the cap is a runaway guard on the fd the host owns,
+     * well under `PageBundle.MAX_PAGES`.
+     */
+    const val RENDER_MAX_TARGETS: Int = 8
+
+    /**
+     * How long the host waits for one `render` (arc 31 / HV4). **Measured, not assumed** (the
+     * export trap — a Binder call cannot be cancelled): on the Nomad a Month with 46 strokes,
+     * ring and marks renders in ≈ 1.0 s and a Day pair in ≈ 1.6 s (`HARVEST_PLAN.md`'s HV4
+     * ledger), so [RENDER_MAX_TARGETS] pages is under 10 s; 30 s is that with a cold-store margin,
+     * and a quarter of the export timeout the first cut borrowed.
+     */
+    const val CALENDAR_RENDER_TIMEOUT_MS: Long = 30_000L
+
     // ── Tags (`ITagManager`, arc 21 / W1, on rows since arc 22 / X3) ──────
     // The three caps below are the arc-21 wizard's, and since X3 they are **policy and nothing
     // else**: the tag index is `tag` / `assignment` rows in the extension's store, so a cap is a

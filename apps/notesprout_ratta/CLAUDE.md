@@ -144,7 +144,7 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   process-local `TagWrites` monitor is gone, with `TagCodec` / `CompactId` and the whole one-blob
   layout)) · `:ext-calendar` (**NSE · Calendar**, arc 23 / Y1 — `:extension-api` + `:sn-screen` +
   `:ext-ink`, never `:app`; one service + a screen: `CalendarService` + `CalendarActivity`; API
-  version **7**; the fourth tier-2 screen and the second with paper; store `CalendarSchema.V1` =
+  version **9** since arc 31 / HV4 (7 from Y1 to HV3); the fourth tier-2 screen and the second with paper; store `CalendarSchema.V1` =
   `period` / `page` / `stroke` / `state`, every SQL string in `CalendarSql`, rows minted on the
   first stroke never on open, NEVER `INSERT OR REPLACE` into `period`/`page` (the cascade takes
   the ink), nothing deletes a period. **Grown in place by arc 24 "Events" (Z1–Z5, 2026-09-02 —
@@ -362,7 +362,7 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   re-raise); version stays `0.1.0-ratta`; 1487 `:app` / 2847 tests. **`docs/notebook.md` (§ Erase
   page, § Export page, § Undo) + `docs/export.md` (§ Scope) are the reference; read the standalone
   `PAGE_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**
-- **Arc 31 "Harvest" is IN PROGRESS (wizard locked 2026-09-08; HV1 ✅ HV2 ✅ 2026-09-08, HV3 ✅ 2026-09-09, HV4–HV6 ⬜)** — the export and
+- **Arc 31 "Harvest" is IN PROGRESS (wizard locked 2026-09-08; HV1 ✅ HV2 ✅ 2026-09-08, HV3 ✅ HV4 ✅ 2026-09-09, HV5–HV6 ⬜)** — the export and
   import extras (`PARITY_BACKLOG.md` item 6): `:ext-image` "NSE · Image Export" (PNG; one file per
   page into a SAF tree / the cloud folder at whole scope, the host bakes once and splits, the
   exporter is called once per page; `ExporterInfo.delivery` tail), a page-sheet **Save as template**
@@ -372,7 +372,7 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   `PageBundle` to a host-owned fd for the Export screen's calendar mode (an Export button on the
   calendar bar, Day = both halves, the calendar reopens after) and for the whole-page send, which
   now inserts a **new page papered with the grid** (ring and marks off so the `IMG#` token dedupes);
-  selection sends stay ink-only. Fourteen modules after HV1; HV2 landed the Save as template row (`SaveAsTemplateFlow` + the shared `PageRaster`, `docs/templates.md` § Save as template). HV3 landed presets (`ObjectType.EXPORT_PRESET`, `ExportPreset` / `ExportPresets` / `ExportPresetRow`, the cloud folder as Export-screen state, `docs/export.md` § Presets). No code review (the user's call).
+  selection sends stay ink-only. Fourteen modules after HV1; HV2 landed the Save as template row (`SaveAsTemplateFlow` + the shared `PageRaster`, `docs/templates.md` § Save as template). HV3 landed presets (`ObjectType.EXPORT_PRESET`, `ExportPreset` / `ExportPresets` / `ExportPresetRow`, the cloud folder as Export-screen state, `docs/export.md` § Presets). HV4 landed the calendar seam + file export: `ICalendar.render` / `outgoingTarget` appended under API 9 (`:ext-calendar` now declares **9**; `MIN_API_VERSION_FOR_CALENDAR_RENDER` is a method floor), `:ext-calendar`'s `RenderRequest` + `CalendarRender` (the screen's bar insets — **not** a full-page grid — g-paper's `StrokeRasterizer` for the ink, `today` nullable for a ring-less paper), the calendar bar's **one out-door button** (Send · Export · a sheet for both — a twelfth button overflows the Nomad), the host's `CalendarClient.render` over the new `ExtensionStores.lease`, `ExportScope.Calendar` + `ExportActivity` calendar mode (no `.soil` opened; the caller reopens the calendar on `onResume`), `CalendarRenderPlan` / `ExportNaming.calendarStem`; render measured ≈ 1 s a Month on the Nomad, timeout 30 s. No code review (the user's call).
   **Read the standalone `HARVEST_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:

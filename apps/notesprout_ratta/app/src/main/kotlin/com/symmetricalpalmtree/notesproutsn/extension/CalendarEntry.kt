@@ -25,6 +25,10 @@ class CalendarEntry(
     /** Ink the calendar sent back, already sanitized and capped; the bind is finished the moment this
      *  returns. */
     onDrained: suspend (DrainedInk) -> Unit = {},
+    /** The calendar closed asking for the page it was showing to be exported (arc 31 / HV4 —
+     *  `RESULT_CALENDAR_EXPORT`). The caller opens the Export screen at that target and brings the
+     *  calendar back when it comes home. */
+    onExport: (CalendarTarget) -> Unit = {},
     /** The showing is over (Y4): `RESULT_CALENDAR_OPEN_SCRATCH_PAD` asks the caller to open the pad
      *  and bring the calendar back afterwards. */
     onClosed: (resultCode: Int) -> Unit = {},
@@ -42,9 +46,23 @@ class CalendarEntry(
     onDrained = onDrained,
     // The calendar's own Scratch Pad door (Y4): it exists only when the host finds a trusted pad —
     // discovery is the host's, an extension never queries for another.
-    decorateIntent = { ctx, intent ->
+    decorateIntent = { ctx, ref, intent ->
         intent.putExtra(ExtensionContract.EXTRA_CALENDAR_SCRATCH_PAD_AVAILABLE, ExtensionRegistry.scratchPad(ctx) != null)
+        // The calendar's Export door (arc 31 / HV4), by the arc-30 rule the page sheet's row
+        // already keeps: **any** exporter installed. Whether one of them takes pages of a calendar
+        // is the Export screen's own question, and it answers it with its own dialog rather than
+        // leaving a button that lies about what is behind it. The version half is the seam's: only
+        // a calendar declaring API 9 has a `render` to be asked for, so an older one never sees the
+        // extra and shows no door. Both halves are IO, and this already runs in the entry's
+        // coroutine.
+        intent.putExtra(
+            ExtensionContract.EXTRA_CALENDAR_EXPORT_ENABLED,
+            ref.apiVersion >= ExtensionContract.MIN_API_VERSION_FOR_CALENDAR_RENDER &&
+                ExtensionRegistry.exporters(ctx).isNotEmpty(),
+        )
     },
+    resultExport = ExtensionContract.RESULT_CALENDAR_EXPORT,
+    onExport = onExport,
     onClosed = onClosed,
 ) {
 
@@ -55,6 +73,8 @@ class CalendarEntry(
             failedBodyRes = R.string.calendar_failed_body,
             drainFailedTitleRes = R.string.calendar_drain_failed_title,
             drainFailedBodyRes = R.string.calendar_drain_failed_body,
+            exportFailedTitleRes = R.string.calendar_export_failed_title,
+            exportFailedBodyRes = R.string.calendar_export_failed_body,
         )
     }
 }

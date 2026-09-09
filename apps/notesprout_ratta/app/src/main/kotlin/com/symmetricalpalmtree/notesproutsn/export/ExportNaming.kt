@@ -1,5 +1,7 @@
 package com.symmetricalpalmtree.notesproutsn.export
 
+import com.symmetricalpalmtree.notesproutsn.extension.CalendarDates
+import com.symmetricalpalmtree.notesproutsn.extension.CalendarTarget
 import com.symmetricalpalmtree.notesproutsn.extension.ExporterContract
 
 /**
@@ -63,6 +65,29 @@ object ExportNaming {
             else -> stem
         }
     }
+
+    /**
+     * The stem of a **calendar** export (arc 31 / HV4): `Calendar - September 2026` for a month,
+     * `Calendar - Week of 2026-09-06` for a week (the week's Sunday, which is what the target's own
+     * date already is), `Calendar - 2026-09-08` for a day. A day's two files add ` AM` / ` PM` —
+     * [CalendarRenderPlan.stems]' job, because that suffix is about the *page*, not the period.
+     *
+     * There is no notebook here and nothing of the user's words: a calendar page is named by the
+     * period it is, and every character this can produce is already inside the sanitize's class
+     * (letters, digits, spaces and the ASCII hyphen), so a filename built from it is legal by
+     * construction rather than by trimming.
+     */
+    fun calendarStem(target: CalendarTarget): String {
+        val day = target.localDate
+        return CALENDAR_PREFIX + when (target.kind) {
+            CalendarTarget.KIND_MONTH -> CalendarDates.monthTitle(day)
+            CalendarTarget.KIND_WEEK -> "Week of " + CalendarDates.format(day)
+            else -> CalendarDates.format(day)
+        }
+    }
+
+    /** What every calendar export is called before the period is added. */
+    private const val CALENDAR_PREFIX = "Calendar - "
 
     /** The most of a heading a page export's filename carries — a heading is a line, a filename
      *  is a label. */

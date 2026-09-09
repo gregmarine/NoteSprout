@@ -1,14 +1,11 @@
 package com.symmetricalpalmtree.notesproutsn.extension
 
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.ParcelFileDescriptor
 import com.symmetricalpalmtree.notesproutsn.core.Slog
 import com.symmetricalpalmtree.notesproutsn.data.extstore.ExtensionStoreBinder
 import com.symmetricalpalmtree.notesproutsn.data.extstore.ExtensionStores
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import com.symmetricalpalmtree.notesproutsn.data.extstore.lease
 
 /**
  * No account is connected (never was, `disconnect` ran, or the provider's token was revoked out from
@@ -313,17 +310,5 @@ object CloudClient {
      * call budget has to cover it.
      */
     private suspend fun openStore(appContext: Context, ref: ProviderRef): ExtensionStoreBinder? =
-        try {
-            val db = withContext(Dispatchers.IO) { ExtensionStores.open(appContext, ref.packageName) }
-            val extUid = appContext.packageManager.getPackageUid(ref.packageName, 0)
-            ExtensionStoreBinder(db, extUid)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: PackageManager.NameNotFoundException) {
-            Slog.d(TAG) { "store open failed: package gone ${ref.packageName}" }
-            null
-        } catch (e: Exception) {
-            Slog.d(TAG) { "store open failed: ${e.javaClass.simpleName}: ${e.message}" }
-            null
-        }
+        ExtensionStores.lease(appContext, ref.packageName, TAG)
 }

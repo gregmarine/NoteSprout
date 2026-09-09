@@ -34,6 +34,11 @@ class EntryWording(
     val failedBodyRes: Int,
     val drainFailedTitleRes: Int,
     val drainFailedBodyRes: Int,
+    /** The screen closed asking the host to walk through a door, and would not say which page it
+     *  meant (arc 31 / HV4 — the calendar's Export). A point with no such door says what its drain
+     *  failure says: it is the same shape of nothing coming back. */
+    val exportFailedTitleRes: Int = drainFailedTitleRes,
+    val exportFailedBodyRes: Int = drainFailedBodyRes,
 )
 
 /**
@@ -105,8 +110,22 @@ open class ExtensionScreenEntry<I : Any, P>(
      *  pasting. */
     private val onDrained: suspend (DrainedInk) -> Unit,
     /** Anything else the screen's Intent should carry — booleans only, by the seam's rule (the
-     *  calendar's "a pad is installed", arc 23 / Y4). Runs after `begin` succeeded, before launch. */
-    private val decorateIntent: suspend (Context, android.content.Intent) -> Unit = { _, _ -> },
+     *  calendar's "a pad is installed", arc 23 / Y4). Runs after `begin` succeeded, before launch.
+     *  The [ProviderRef] is handed in because one of those booleans is about the extension itself
+     *  (arc 31 / HV4: whether this calendar declares the API version that can draw a page). */
+    private val decorateIntent: suspend (Context, ProviderRef, android.content.Intent) -> Unit = { _, _, _ -> },
+
+    /**
+     * The result code that means *the screen closed asking the host to export the page it was
+     * showing* (arc 31 / HV4 — `RESULT_CALENDAR_EXPORT`), or null for a point with no such door.
+     * Handled exactly as [resultSend] is: the page is read on the bind that is still held, the bind
+     * is finished, and only then does [onExport] run.
+     */
+    private val resultExport: Int? = null,
+
+    /** The page the extension asked to have exported, read off the held bind. Runs on Main with the
+     *  bind already finished — everything it needs is in the target it is handed. */
+    private val onExport: (P) -> Unit = {},
     /** The showing is over and the bind is finished; [opening] is already released, so the caller
      *  may open another door from here (the calendar's pad chain, arc 23 / Y4). The result code is
      *  the screen's own — a drained send, a cancel, or a door it asked the host to walk through. */
@@ -171,7 +190,7 @@ open class ExtensionScreenEntry<I : Any, P>(
                     fail(fresh)
                     return@launch
                 }
-                decorateIntent(activity, intent)
+                decorateIntent(activity, provider, intent)
                 if (send != null && !handOver(fresh, send)) return@launch
                 // The pipeline goes over the instant before the launch, and not one step earlier:
                 // until here the open could still have failed and left this screen writing.
@@ -255,6 +274,21 @@ open class ExtensionScreenEntry<I : Any, P>(
                         // bind, and `finish()` revokes the store binder along with it.
                         open.finish()
                     }
+                } else if (open != null && resultExport != null && result.resultCode == resultExport) {
+                    // The same shape as the drain (arc 31 / HV4): the answer lives on the held
+                    // bind, so it is asked for before `finish()` takes the bind and the store away.
+                    val target = try {
+                        runCatching { open.outgoingTarget() }
+                            .onFailure { Slog.d(tag) { "the export target could not be read: ${it.message}" } }
+                            .getOrNull()
+                    } finally {
+                        open.finish()
+                    }
+                    // Nothing came back — a dead bind, a timeout, or a calendar that closed on the
+                    // code without parking anything. A door that opens on nothing is a tap that did
+                    // nothing, and on e-ink that reads as broken; say so instead.
+                    if (target != null) onExport(target)
+                    else problem(wording.exportFailedTitleRes, wording.exportFailedBodyRes)
                 } else {
                     open?.finish()
                 }

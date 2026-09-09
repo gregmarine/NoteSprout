@@ -55,6 +55,10 @@ class ScratchPadClient(context: Context, ref: ProviderRef) :
 
         override fun end(iface: IScratchPad) = iface.end()
 
+        /** The pad has no such question: its placement is the host's own answer, not a page the
+         *  extension parked (arc 31 / HV4). `IScratchPad` has no such method to call. */
+        override fun outgoingTarget(iface: IScratchPad): Int? = null
+
         override fun describe(placement: Int): String = "placement=$placement"
     }
 }

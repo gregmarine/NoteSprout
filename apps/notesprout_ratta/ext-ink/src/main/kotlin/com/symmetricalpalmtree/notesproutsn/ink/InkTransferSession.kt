@@ -96,9 +96,10 @@ abstract class InkTransferSession<P : Any, R : Any>(
         inboundPlacement = null
     }
 
-    /** `end`: nothing of this showing survives it. */
+    /** `end`: nothing of this showing survives it. Open for a subclass with parked state of its
+     *  own (the calendar's outbound target, arc 31 / HV4) — it must call through. */
     @Synchronized
-    fun clear() {
+    open fun clear() {
         store = null
         clearInbound()
         outbound = emptyList()

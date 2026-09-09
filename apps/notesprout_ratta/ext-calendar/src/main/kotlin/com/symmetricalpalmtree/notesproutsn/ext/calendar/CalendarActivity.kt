@@ -11,6 +11,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.symmetricalpalmtree.gpaper.core.Tool
 import com.symmetricalpalmtree.gpaper.core.engine.GPaper
+import com.symmetricalpalmtree.notesproutsn.core.ActionSheetDialog
 import com.symmetricalpalmtree.notesproutsn.core.Immersive
 import com.symmetricalpalmtree.notesproutsn.core.Slog
 import com.symmetricalpalmtree.notesproutsn.core.TopGuard
@@ -177,6 +178,39 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
     override fun parkOutgoing(chunks: List<List<WireStroke>>, pageWidth: Float, pageHeight: Float) =
         CalendarSession.park(chunks, pageWidth, pageHeight)
 
+    /** A whole-page send parks its page too (`outgoingTarget`, arc 31 / HV4 — HV5's papered send
+     *  reads it); a selection send parks null, which is the answer "the page you are showing". */
+    override fun parkOutgoing(chunks: List<List<WireStroke>>, pageWidth: Float, pageHeight: Float, wholePage: Boolean) {
+        CalendarSession.park(chunks, pageWidth, pageHeight)
+        CalendarSession.parkTarget(if (wholePage) document?.target else null)
+    }
+
+    // ── Export (arc 31 / HV4) ────────────────────────────────────────────────
+
+    /**
+     * The Export door: park the page on screen as `outgoingTarget`'s answer and leave with
+     * `RESULT_CALENDAR_EXPORT` — flushed first, like every exit, so what the host renders on its
+     * own bind is the ink that is on the glass. The host reads the target on the bind it still
+     * holds, opens its Export screen in calendar mode and brings the calendar back afterwards.
+     * Nothing crosses on the result: no pixels, no date.
+     */
+    private fun exportPage() {
+        if (!opened || closing) return
+        val target = document?.target ?: return
+        CalendarSession.parkTarget(target)
+        Slog.d(TAG) { "export: leaving with ${target.kind}/${target.date}/${target.half}" }
+        exit(ExtensionContract.RESULT_CALENDAR_EXPORT)
+    }
+
+    /** Both doors open (the notebook door with an exporter installed): one button, two rows. */
+    private fun sendOrExport() {
+        if (!opened || closing || isFinishing || isDestroyed) return
+        ActionSheetDialog(this)
+            .addAction(R.drawable.ic_pencil_down, getString(R.string.cd_calendar_send_page)) { sendPage() }
+            .addAction(R.drawable.ic_download, getString(R.string.calendar_export_action)) { exportPage() }
+            .show()
+    }
+
     /** The calendar has no page-level action, so its stack is `:ext-ink`'s four kinds unwrapped. */
     override fun record(action: InkAction) = undo.record(action)
 
@@ -212,6 +246,7 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
         sendEnabled = intent.getBooleanExtra(ExtensionContract.EXTRA_CALENDAR_SEND_ENABLED, false)
         openReceived = intent.getBooleanExtra(ExtensionContract.EXTRA_CALENDAR_OPEN_RECEIVED, false)
         val scratchPadAvailable = intent.getBooleanExtra(ExtensionContract.EXTRA_CALENDAR_SCRATCH_PAD_AVAILABLE, false)
+        val exportEnabled = intent.getBooleanExtra(ExtensionContract.EXTRA_CALENDAR_EXPORT_ENABLED, false)
         binding = ActivityCalendarBinding.inflate(layoutInflater)
         setContentView(binding.root)
         Immersive.apply(window, binding.root)
@@ -253,6 +288,8 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
             title = binding.title,
             onBack = { exit() },
             onSend = { sendPage() },
+            onExport = { exportPage() },
+            onSendOrExport = { sendOrExport() },
             onEvents = { openEvents() },
             onPrev = { runPageOp { step(forward = false) } },
             onNext = { runPageOp { step(forward = true) } },
@@ -268,6 +305,7 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
             onToolTapped = { hideEraserBar() },
             sendEnabled = sendEnabled,
             scratchPadAvailable = scratchPadAvailable,
+            exportEnabled = exportEnabled,
         )
         // After the toolbar: a pick lands on `toolbar.arm` (a host-set tool is never echoed back
         // as `onToolChanged`, so the buttons are synced by hand).

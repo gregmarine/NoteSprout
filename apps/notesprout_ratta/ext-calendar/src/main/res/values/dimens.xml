@@ -6,4 +6,8 @@
          keeps the tallest layout on one screen with room for the note. Icon steppers keep the
          toolbar dimen. -->
     <dimen name="editor_field_height">52dp</dimen>
+    <!-- The hairline each bar closes with (top bar below, bottom bar above). A dimen rather than a
+         literal so an off-screen render (CalendarRender, arc 31 / HV4) can rebuild the bars' exact
+         pixel height — the grid must sit where the ink was written against it. -->
+    <dimen name="calendar_bar_rule">1dp</dimen>
 </resources>

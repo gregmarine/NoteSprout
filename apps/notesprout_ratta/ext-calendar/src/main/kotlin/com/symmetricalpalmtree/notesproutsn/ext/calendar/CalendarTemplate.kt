@@ -33,7 +33,10 @@ import java.time.LocalDate
  * Names come from [CalendarDates]' hand lists, never a formatter. Hairlines are filled rects
  * `hairline` px thick on the integer edges the geometry names.
  *
- * Re-baked on every navigation and on `onResume`, because "today" moves.
+ * Re-baked on every navigation and on `onResume`, because "today" moves. **`today` is nullable**
+ * since arc 31 / HV4: null rings no cell — how a render asked for the grid without the ring (a page
+ * sent to a notebook as paper, whose `IMG#` token must not change with the date) gets it. The
+ * screen always passes the real day.
  */
 object CalendarTemplate {
 
@@ -43,7 +46,7 @@ object CalendarTemplate {
     fun month(
         g: CalendarGeometry.Month,
         monthStart: LocalDate,
-        today: LocalDate,
+        today: LocalDate?,
         density: Float,
         palette: Palette,
         notesLabel: String,
@@ -100,7 +103,7 @@ object CalendarTemplate {
     fun week(
         g: CalendarGeometry.Week,
         sunday: LocalDate,
-        today: LocalDate,
+        today: LocalDate?,
         density: Float,
         palette: Palette,
         notesLabel: String,
@@ -213,7 +216,7 @@ object CalendarTemplate {
     private fun dayCell(
         canvas: Canvas, p: Paint, bounds: Rect,
         left: Float, top: Float, cellW: Float,
-        date: LocalDate, showDayOfWeek: Boolean, inMonth: Boolean, today: LocalDate,
+        date: LocalDate, showDayOfWeek: Boolean, inMonth: Boolean, today: LocalDate?,
         density: Float, palette: Palette, hp: Float, marks: List<DayMark>,
     ) {
         val pad = 5f * density

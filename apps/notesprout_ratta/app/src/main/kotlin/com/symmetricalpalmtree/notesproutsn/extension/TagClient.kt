@@ -2,13 +2,11 @@ package com.symmetricalpalmtree.notesproutsn.extension
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import com.symmetricalpalmtree.notesproutsn.core.Slog
 import com.symmetricalpalmtree.notesproutsn.data.extstore.ExtensionStoreBinder
 import com.symmetricalpalmtree.notesproutsn.data.extstore.ExtensionStores
+import com.symmetricalpalmtree.notesproutsn.data.extstore.lease
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /** A tag cap refused the operation (`TAG_INDEX_FULL`) — nothing was written. */
 class TagIndexFullException(cause: Throwable) : ExtensionCallException(ExtensionContract.TAG_INDEX_FULL, cause)
@@ -97,21 +95,10 @@ class TagClient(context: Context, val ref: ProviderRef) {
         }
     }
 
-    /** Open the extension's store on IO and wrap it in a uid-bound binder, or null (logged). */
+    /** Open the extension's store on IO and wrap it in a uid-bound binder, or null (logged) —
+     *  [ExtensionStores.lease], the one copy of it since arc 31 / HV4. */
     private suspend fun openStore(): ExtensionStoreBinder? =
-        try {
-            val db = withContext(Dispatchers.IO) { ExtensionStores.open(appContext, ref.packageName) }
-            val extUid = appContext.packageManager.getPackageUid(ref.packageName, 0)
-            ExtensionStoreBinder(db, extUid)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: PackageManager.NameNotFoundException) {
-            Slog.d(TAG) { "store open failed: package gone ${ref.packageName}" }
-            null
-        } catch (e: Exception) {
-            Slog.d(TAG) { "store open failed: ${e.javaClass.simpleName}: ${e.message}" }
-            null
-        }
+        ExtensionStores.lease(appContext, ref.packageName, TAG)
 
     companion object {
         const val TAG = "TagClient"

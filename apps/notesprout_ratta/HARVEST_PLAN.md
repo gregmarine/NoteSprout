@@ -7,7 +7,7 @@ cross-session memory for the arc: read it whole at every phase start, together w
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `PAGE_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 HV3 ✅ 2026-09-09.** HV1 ✅ · HV2 ✅ · HV3 ✅ · HV4 ⬜ · HV5 ⬜ · HV6 ⬜.
+**Status: 🔄 HV4 ✅ 2026-09-09.** HV1 ✅ · HV2 ✅ · HV3 ✅ · HV4 ✅ · HV5 ⬜ · HV6 ⬜.
 Baseline before the arc: 1487 `:app` / 2847 JVM tests, g-paper 0.1.28, `API_VERSION` 8, thirteen
 modules, version `0.1.0-ratta`.
 
@@ -341,11 +341,16 @@ refuses (planner: applies the path; the upload's own failure explains).
   for PNG with `:ext-image` disabled → hidden, re-enabled → back · page-sheet door lists presets
   (Soil preset hidden) · backup → restore → presets present.
 
-### ⬜ HV4 — Calendar render + file export (Fable seam + `CalendarRender` both sides · Opus the Export screen's calendar mode · Sonnet strings/XML · Fable review · walk by hand)
+### ✅ HV4 — Calendar render + file export (Fable seam + `CalendarRender` both sides · Opus the Export screen's calendar mode · Sonnet strings/XML · Fable review · walk by hand)
 
-**Questions to resolve at phase start:** app version; whether marks are drawn on a file export
-(planner: yes) and the ring (planner: no); the unminted page size the host passes (planner: the
-notebook page size the library mints new notebooks at); the render timeout after measuring.
+**Phase-start answers (2026-09-09):** version stays `0.1.0-ratta`; a file export draws **marks
+AND the ring** (the user's call over the planner's ring-off); the unminted page size is **portrait
+display pixels** (what the library mints new notebooks at); the timeout was measured (ledger). A
+fourth question the bar measurement forced: **a twelfth top-bar button overflows the Nomad on the
+notebook door** (11 × 62 dp + margins = 726 of 749 dp with Send and the pad showing), so the Export
+door is **the Send button made an out-door** — Send alone · Export alone (`ic_download`, the library
+door) · a Send page / Export… sheet when both are open — the user's call over a bottom-bar button
+(pager-only rule), a pad-slot swap, or a hidden long-press.
 
 - D4. Read first: whether any shared module can paint strokes to a `Canvas` (the g-paper
   `renderToBitmap` is view-bound); `CalendarStore`'s read path for a page's strokes outside a
@@ -497,6 +502,68 @@ same-named file so no replace question) · page-sheet door: "soil" hidden at Thi
 confirm, both gone, the caption and radios with them, *Save preset…* stays · crash log empty. Walk
 notes: presets are library-wide (by design — a preset is an answer about *how*, not *which*
 notebook); the page sheet is a long press on the canvas (arc-8 door, unchanged).
+
+### HV4 — Calendar render + file export (2026-09-09, Fable seam + `:ext-calendar` render + review · Opus the host · Sonnet adb walk)
+
+**Outcome.** **Seam (API 9, no floor moved):** `ICalendar` grew two appended methods after `end()` —
+`render(store, targets[], widthPx, heightPx, flags, destination fd)` (bind-per-call, the store lent
+for the call; one `PageBundle` v1, one page per target in order; `out` is an AIDL keyword, hence
+`destination`) and `outgoingTarget()` (the parked whole-page send's or export request's page; null
+after a selection send). `ExtensionContract`: `EXTRA_CALENDAR_EXPORT_ENABLED` (the Intent's fourth
+boolean), `RESULT_CALENDAR_EXPORT = 3`, `MIN_API_VERSION_FOR_CALENDAR_RENDER = 9` (a method floor —
+`MIN_API_VERSIONS` untouched, the contract test pins that a 7 still binds), `RENDER_GRID/INK/RING/
+MARKS` + `RENDER_ALL`, `RENDER_MAX_TARGETS = 8`, `CALENDAR_RENDER_TIMEOUT_MS`. **`:ext-calendar`
+(manifest 7 → 9):** pure `RenderRequest` (the refusals + `pageSize`: stored else the host's, a stored
+size over `MAX_DIMENSION_PX` refused), `CalendarRender` (per target: `CalendarStore.open()` on the
+lent binder → `readPage`/`readHeader` → white RGB_565 → `CalendarTemplate` by flag with `today`
+made **nullable** (null rings nothing — HV5's paper) and `EventStore.marksFor(GridMarks.rangeOf)` by
+flag → g-paper's public `StrokeRasterizer.draw` for the ink (the same door `ExportRender.bakeEndnote`
+uses — no stroke painter of our own) → WEBP q100 → `PageBundle.Writer`; every non-argument failure
+→ `IllegalStateException("render failed")`, the store → `"store unavailable"`); `CalendarService.
+render` / `outgoingTarget`; `CalendarSession.outboundTarget` + `parkTarget` (cleared by `end`;
+`InkTransferSession.clear` made `open`); `InkScreenActivity.parkOutgoing` grew a `wholePage`
+overload the calendar overrides (the pad keeps its three-argument call); the **out-door** button
+(`CalendarToolbar` picks the face: Send · Export `ic_download` · the `ActionSheetDialog` Send page /
+Export… — `exportPage()` parks `document.target` and `exit(RESULT_CALENDAR_EXPORT)`); three strings.
+**Deviation from D4's "insets 0":** the first walk showed the ink one bar-height low against a
+full-page grid — the ink was written against the grid the *screen* drew, under the top bar — so the
+render uses **the screen's bar insets** (`CalendarBars`: `toolbar_bar_thickness` + the new
+`calendar_bar_rule` dimen the layout's two hairlines now reference); the exported page carries blank
+bands where the bars were. **Host (Opus):** `HeldInkPoint.outgoingTarget` / `HeldInkClient.
+outgoingTarget()`; `ExtensionScreenEntry` `resultExport` + `onExport` (the target read on the held
+bind before `finish()`, the drain's shape; nothing back → "Export didn't start"), `decorateIntent`
+handed the `ProviderRef`; `CalendarEntry` sets the extra when the calendar declares ≥ 9 **and any
+exporter is installed** (the arc-30 door's rule — the screen handles "nothing takes pages");
+`CalendarClient.render` bind-per-call with **`ExtensionStores.lease`** (new — replaced three of the
+four `openStore` copies: `TagClient`, `CloudClient`, `CloudConnectClient`; `HeldInkClient.open`'s
+inlined copy left, its log wording differs); host `export/CalendarRender` (the fourth producer:
+`calendar.pages` in the export cache dir, re-read whole through `PageBundle.Reader` — page count,
+every page, no links — before a byte is trusted); pure `CalendarRenderPlan` (Day → AM then PM,
+flags, stems, label) + `ExportNaming.calendarStem` (`Calendar - September 2026` · `Calendar - Week
+of 2026-09-06` · `Calendar - 2026-09-08`, ` AM`/` PM` per page under per-page delivery);
+`ExportScope.Calendar(target)` (`lists` = `SOURCE_PAGES` only; `ExportDelivery.perPage` widened to a
+Calendar scope with more than one page — a Day as PNG is a folder, a Month as PNG one file);
+`ExportActivity` calendar mode (`EXTRA_CALENDAR_TARGET` "kind/date/half", host-internal; no notebook,
+**no `.soil` opened**, no Scope/Source rows, header "Calendar · September 2026", `renderedCalendarPages`
+as `runExport`'s first branch, `stemFor`, "The calendar was exported."; the calendar gone under it
+→ a dialog and close); both doors (`LibraryActivity`, `NotebookActivity`) `onExport` → Export +
+`reopenCalendarAfterExport` consumed in `onResume` (process death loses it — the calendar simply
+stays closed); seven strings. **Measured on the Nomad:** Month with 46 strokes + ring + marks
+**1012 ms** (client 1065 ms, 41 KB bundle); a Day pair with no ink **1600 ms** (1724 ms, 60 KB) —
+`CALENDAR_RENDER_TIMEOUT_MS` set to **30 s** (8 targets < 10 s, ×3 for a cold store), down from the
+export timeout's 120 s. `docs/extensions.md`'s `API_VERSION` row: the calendar declares 9. Tests:
+`:extension-api` +1 (231), `:ext-calendar` +4 (295: `RenderRequestTest`, `CalendarSessionTargetTest`),
+`:app` +22 (**1560**: `CalendarRenderPlanTest` 13, naming +4, scope +4, delivery +3) → **2941**.
+Version stays `0.1.0-ratta`. **Nomad walk (Sonnet over adb, 2026-09-09) PASSED 9/9:** library door →
+"Export page" download button, no separate Send · calendar closes, Export in calendar mode (PNG + PDF
+only, no Scope/Source, template toggle) · Month PDF via SAF (129 556 B) → "Exported / The calendar
+was exported." → the calendar reopens at its bookmark · the PDF's page: grid, ring on the 9th, glyphs
+on 1/3/8/9, the ink · Day → PNG → the folder pick → "Exporting image 1 of 2…" → "2 images were
+exported" → `Calendar - 2026-09-09 AM.png` / ` PM.png`, the AM page with "Dentist" at 11:00 · template
+off → one PDF, white ground (no ink on that day) · Back without exporting → reopen · notebook door →
+"Send or export page" → the two-row sheet → Export… → Back → the calendar over the notebook · crash
+log empty. **Second pass after the inset fix (Sonnet, 2026-09-09) PASSED:** the Month PDF's page opens with a 133 px white band, the Sun–Sat header at row 133, and "Cherie's Dad" inside the 13th's cell; render 972 ms; crash log empty. Not walked: the
+cloud leg for a calendar (the destination row is unchanged and HV1 walked the N-file upload).
 
 ### HV2 — Save as template (2026-09-08, Fable brief + review · Opus the flow · Sonnet adb walk)
 

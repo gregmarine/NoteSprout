@@ -20,4 +20,25 @@ import com.symmetricalpalmtree.notesproutsn.ink.InkTransferSession
  * page's size is the notebook's. (The pad's answer is the other one, and that difference is the
  * parameter rather than a second copy of this class.)
  */
-object CalendarSession : InkTransferSession<CalendarTarget, CalendarStore.Received>(recordInboundPageSize = false)
+object CalendarSession : InkTransferSession<CalendarTarget, CalendarStore.Received>(recordInboundPageSize = false) {
+
+    /**
+     * The page a parked **whole-page** send or an Export request came from (arc 31 / HV4) — what
+     * `ICalendar.outgoingTarget` answers on the bind the host still holds. Null after a selection
+     * send (the host lands that on the page it is showing) and null when nothing is parked. Set by
+     * the screen on the Main thread as it leaves, read on the Binder thread: volatile, like the
+     * outbound chunks beside it.
+     */
+    @Volatile
+    var outboundTarget: CalendarTarget? = null
+
+    fun parkTarget(target: CalendarTarget?) {
+        outboundTarget = target
+    }
+
+    @Synchronized
+    override fun clear() {
+        super.clear()
+        outboundTarget = null
+    }
+}

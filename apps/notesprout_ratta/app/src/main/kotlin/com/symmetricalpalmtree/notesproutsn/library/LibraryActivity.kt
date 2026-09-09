@@ -42,6 +42,7 @@ import com.symmetricalpalmtree.notesproutsn.databinding.ActivityLibraryBinding
 import com.symmetricalpalmtree.notesproutsn.export.ExportActivity
 import com.symmetricalpalmtree.notesproutsn.extension.ExtensionRegistry
 import com.symmetricalpalmtree.notesproutsn.extension.CalendarEntry
+import com.symmetricalpalmtree.notesproutsn.extension.CalendarTarget
 import com.symmetricalpalmtree.notesproutsn.extension.ExtensionContract
 import com.symmetricalpalmtree.notesproutsn.extension.ScratchPadEntry
 import com.symmetricalpalmtree.notesproutsn.extension.TagManagerEntry
@@ -97,6 +98,20 @@ class LibraryActivity : AppCompatActivity() {
         if (!reopenCalendarAfterPad) return
         reopenCalendarAfterPad = false
         if (resultCode == RESULT_CANCELED) calendar.open()
+    }
+
+    /** The calendar's Export door (arc 31 / HV4): the calendar closed asking for the page it was
+     *  showing to be exported, so the Export screen opens at that target and the calendar comes back
+     *  at its bookmark once it is over — whatever the outcome, the page-sheet door's rule.
+     *
+     *  The latch survives only as long as this process does. Killed behind the Export screen, the
+     *  calendar simply stays closed on the way back, which is the honest fallback: the library is
+     *  where the person started, and its button is one tap away. */
+    private var reopenCalendarAfterExport = false
+
+    private fun onCalendarExport(target: CalendarTarget) {
+        reopenCalendarAfterExport = true
+        startActivity(ExportActivity.intent(this, target))
     }
     private lateinit var tags: TagManagerEntry
 
@@ -180,7 +195,12 @@ class LibraryActivity : AppCompatActivity() {
         binding.btnScratchPad.setOnClickListener { scratchPad.open() }
         TooltipCompat.setTooltipText(binding.btnScratchPad, binding.btnScratchPad.contentDescription)
         // The Calendar (arc 23 / Y1) — the pad's shape, the pad's reason for being built here.
-        calendar = CalendarEntry(activity = this, button = binding.btnCalendar, onClosed = { onCalendarClosed(it) })
+        calendar = CalendarEntry(
+            activity = this,
+            button = binding.btnCalendar,
+            onExport = { onCalendarExport(it) },
+            onClosed = { onCalendarClosed(it) },
+        )
         binding.btnCalendar.setOnClickListener { calendar.open() }
         TooltipCompat.setTooltipText(binding.btnCalendar, binding.btnCalendar.contentDescription)
         // Tags (arc 21 / W1). No button of its own — the door is a row in the card sheet — but it
@@ -246,6 +266,13 @@ class LibraryActivity : AppCompatActivity() {
         // because an IndexGuard bounce returns from onCreate but still gets this callback.
         if (::scratchPad.isInitialized) scratchPad.refresh()
         if (::calendar.isInitialized) calendar.refresh()
+        // The calendar comes home after its export (arc 31 / HV4). Never on the resume that starts
+        // it: the entry's result runs in a posted coroutine, so the latch is not set yet when this
+        // resume runs — it is set on the way *into* the Export screen and read on the way back.
+        if (reopenCalendarAfterExport && ::calendar.isInitialized) {
+            reopenCalendarAfterExport = false
+            calendar.open()
+        }
         if (::importFlow.isInitialized) importFlow.refresh()
         // No button to show or hide, but the search dialog's hint asks whether tags are searchable
         // (arc 21 / W4), and that answer goes stale the same way every other one does.

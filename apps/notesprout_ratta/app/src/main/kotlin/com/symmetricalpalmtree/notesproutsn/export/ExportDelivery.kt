@@ -26,6 +26,11 @@ import com.symmetricalpalmtree.notesproutsn.extension.ExporterInfo
  *    nothing about the flow changes. At [ExportScope.Whole] it is the folder case, deliberately
  *    including a one-page notebook: *Whole notebook = a folder* is a rule the person can hold, and
  *    a scope that sometimes made a folder and sometimes a file would not be.
+ *
+ *    [ExportScope.Calendar] is the one place that rule is counted rather than assumed (arc 31 /
+ *    HV4): a Day is two pages and goes to a folder, a Month or a Week is one page and goes through
+ *    the ordinary picker. The person is not choosing a scope there — the calendar's own page
+ *    decides — so "a Day is two files" is a fact about the day, not a rule they have to hold.
  */
 object ExportDelivery {
 
@@ -37,7 +42,12 @@ object ExportDelivery {
         if (apiVersion >= ExporterContract.MIN_API_VERSION_FOR_DELIVERY) info.delivery
         else ExporterContract.DELIVERY_ONE_FILE
 
-    /** Whether this export writes one file per page: a per-page exporter at [ExportScope.Whole]. */
+    /** Whether this export writes one file per page: a per-page exporter at [ExportScope.Whole],
+     *  or at a [ExportScope.Calendar] target that draws more than one page. */
     fun perPage(delivery: Int, scope: ExportScope): Boolean =
-        delivery == ExporterContract.DELIVERY_PER_PAGE && scope is ExportScope.Whole
+        delivery == ExporterContract.DELIVERY_PER_PAGE && when (scope) {
+            ExportScope.Whole -> true
+            is ExportScope.Page -> false
+            is ExportScope.Calendar -> CalendarRenderPlan.pages(scope.target) > 1
+        }
 }

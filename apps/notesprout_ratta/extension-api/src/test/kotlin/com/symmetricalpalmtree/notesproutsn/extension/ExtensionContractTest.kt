@@ -29,6 +29,9 @@ class ExtensionContractTest {
         assertEquals(9, ExporterContract.MIN_API_VERSION_FOR_DELIVERY)
         assertEquals(6, ExtensionContract.MIN_API_VERSION_FOR_STORE)
         assertEquals(7, ExtensionContract.MIN_API_VERSION_FOR_CALENDAR)
+        // HV4: the render is a METHOD floor under 9 — the map above is untouched.
+        assertEquals(9, ExtensionContract.MIN_API_VERSION_FOR_CALENDAR_RENDER)
+        assertEquals(ExtensionContract.API_VERSION, ExtensionContract.MIN_API_VERSION_FOR_CALENDAR_RENDER)
         assertEquals(2_000, ExtensionContract.MAX_INK_STROKES)
         assertEquals(60_000, ExtensionContract.MAX_INK_POINTS)
         assertEquals(20, ExtensionContract.MAX_PRECONTEXT_CHARS)
@@ -213,5 +216,24 @@ class ExtensionContractTest {
         assertEquals(1, RecognizerStatus.NEEDS_DOWNLOAD)
         assertEquals(2, RecognizerStatus.DOWNLOADING)
         assertEquals(3, RecognizerStatus.UNAVAILABLE)
+    }
+
+    @Test
+    fun calendarRenderConstantsArePinned() {
+        // Arc 31 / HV4. The four flags are distinct bits, RENDER_ALL is exactly their union, the
+        // result code is the next after the pad door, and the extra is the Intent's FOURTH boolean —
+        // every value here is read by the calendar extension, so a change is a contract event.
+        assertEquals(1, ExtensionContract.RENDER_GRID)
+        assertEquals(2, ExtensionContract.RENDER_INK)
+        assertEquals(4, ExtensionContract.RENDER_RING)
+        assertEquals(8, ExtensionContract.RENDER_MARKS)
+        assertEquals(15, ExtensionContract.RENDER_ALL)
+        assertEquals(3, ExtensionContract.RESULT_CALENDAR_EXPORT)
+        assertEquals("calendarExportEnabled", ExtensionContract.EXTRA_CALENDAR_EXPORT_ENABLED)
+        assertEquals(8, ExtensionContract.RENDER_MAX_TARGETS)
+        assertEquals(30_000L, ExtensionContract.CALENDAR_RENDER_TIMEOUT_MS)   // measured on the Nomad (HV4 ledger)
+        // The floor is a method floor: the calendar ACTION still accepts a 7.
+        assertEquals(true, ExtensionContract.accepts(ExtensionContract.ACTION_CALENDAR, 7))
+        assertEquals(true, ExtensionContract.accepts(ExtensionContract.ACTION_CALENDAR, 9))
     }
 }

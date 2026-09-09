@@ -42,6 +42,10 @@
          exist only when the calendar was opened from a notebook. -->
     <string name="cd_calendar_send_page">Send page to notebook</string>
     <string name="cd_calendar_send_selection">Send selection to notebook</string>
+    <!-- The out-door button's other two faces (arc 31 / HV4): Export alone (library door), or both. -->
+    <string name="cd_calendar_export_page">Export page</string>
+    <string name="cd_calendar_send_or_export">Send or export page</string>
+    <string name="calendar_export_action">Export…</string>
 
     <!-- Problem dialogs — a tap that did nothing is never a toast on e-ink. -->
     <string name="calendar_store_failed_title">Calendar unavailable</string>

@@ -33,6 +33,7 @@ import com.symmetricalpalmtree.notesproutsn.data.soil.SoilDatabase
 import com.symmetricalpalmtree.notesproutsn.cloud.CloudBrowserDialog
 import com.symmetricalpalmtree.notesproutsn.cloud.CloudBrowserRules
 import com.symmetricalpalmtree.notesproutsn.databinding.ActivityExportBinding
+import com.symmetricalpalmtree.notesproutsn.extension.CalendarTarget
 import com.symmetricalpalmtree.notesproutsn.extension.CloudClient
 import com.symmetricalpalmtree.notesproutsn.extension.CloudConnectEntry
 import com.symmetricalpalmtree.notesproutsn.extension.CloudEntry
@@ -189,8 +190,28 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
      *  explicit call). */
     private var relaunched = false
 
+    /**
+     * **The calendar door** (arc 31 / HV4): the calendar page this screen was opened *for*, or null
+     * for either notebook door. Non-null is *calendar mode* — [notebookId] is empty, no `.soil` is
+     * ever opened, and every question this screen asks about a notebook is simply not asked.
+     *
+     * It comes off the Intent (a kind, a date and a half — host-internal, and no more a secret than
+     * a date is), so there is nothing to save into instance state: a screen rebuilt behind the
+     * picker reads it again from the Intent that is still there.
+     */
+    private var calendarTarget: CalendarTarget? = null
+
+    /** Calendar mode: everything about this screen that reads a notebook is skipped. */
+    private val calendarMode: Boolean get() = calendarTarget != null
+
+    /** The one trusted calendar, found at every discovery like every other provider — a package can
+     *  be disabled or replaced under a standing screen, and in calendar mode a screen with no
+     *  calendar behind it has nothing to draw. Never saved. */
+    private var calendarRef: ProviderRef? = null
+
     /** What the export covers (arc 30 / PE2). Owned by the host like the pick, saved and restored
-     *  with it, and only ever [ExportScope.Page] while [pageId] is set. */
+     *  with it, and only ever [ExportScope.Page] while [pageId] is set, or [ExportScope.Calendar]
+     *  in calendar mode (where it is the door's whole question and never changes). */
     private var scope: ExportScope = ExportScope.Whole
 
     /** What the one open answered about the door's page (arc 30 / PE2): its 1-based position, its
@@ -226,6 +247,9 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
         get() = when (scope) {
             is ExportScope.Page -> pageFacts?.hasDocument ?: false
             ExportScope.Whole -> documentAnswer ?: false
+            // A calendar page is ink. There is no document behind it and no Source row to ask about
+            // one (arc 31 / HV4) — and no notebook was opened to find out.
+            is ExportScope.Calendar -> false
         }
 
     /** [hasDocument]'s answer, kept for the life of the screen (M11 review). The re-discovery on
@@ -370,10 +394,13 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
         if (!IndexGuard.ready(this)) return
         notebookId = intent.getStringExtra(EXTRA_NOTEBOOK_ID).orEmpty()
         notebookName = intent.getStringExtra(EXTRA_NOTEBOOK_NAME).orEmpty()
-        if (notebookId.isEmpty()) { finish(); return }
+        // A malformed extra reads as no target at all (CalendarTarget's constructor is the
+        // validation, both directions) — and with no notebook either, there is nothing to export.
+        calendarTarget = parseCalendarTarget(intent.getStringExtra(EXTRA_CALENDAR_TARGET))
+        if (notebookId.isEmpty() && calendarTarget == null) { finish(); return }
         pageId = intent.getStringExtra(EXTRA_PAGE_ID)?.takeIf { it.isNotEmpty() }
         returnToNotebook = intent.getBooleanExtra(EXTRA_RETURN_TO_NOTEBOOK, false)
-        scope = ExportScope.seeded(pageId)
+        scope = calendarTarget?.let { ExportScope.Calendar(it) } ?: ExportScope.seeded(pageId)
 
         binding = ActivityExportBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -383,7 +410,11 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
         panel = ExportPanel(this)
         presets = ExportPresetRow(this, panel, binding.presets, repo, this)
 
-        binding.notebookName.text = notebookName
+        // The title stays "Export"; the line under it says what is being exported — the notebook's
+        // name, or, in calendar mode, the calendar and the page it came from (arc 31 / HV4).
+        binding.notebookName.text = calendarTarget
+            ?.let { getString(R.string.export_calendar_line, CalendarRenderPlan.of(it, false).label) }
+            ?: notebookName
         // Leaving mid-export would cancel the flow past its verification and cleanup while the
         // extension's un-cancellable Binder stream keeps writing — an unverified file standing
         // silently (arc-15 review). Both doors out are latched on busy; the dialog explains why
@@ -408,8 +439,9 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
         savedInstanceState?.let { state ->
             chosenPackage = state.getString(KEY_PACKAGE)
             documentSource = state.getBoolean(KEY_SOURCE)
-            // Whole is restorable only where the row that offers it is; Page is the seed.
-            if (state.getBoolean(KEY_SCOPE_WHOLE)) scope = ExportScope.Whole
+            // Whole is restorable only where the row that offers it is; Page is the seed, and
+            // calendar mode has no row at all — its scope is the door's, never the person's.
+            if (!calendarMode && state.getBoolean(KEY_SCOPE_WHOLE)) scope = ExportScope.Whole
             if (state.getBoolean(KEY_DESTINATION)) destinationChoice = ExportDestination.Choice.CLOUD
             state.getBundle(KEY_VALUES)?.let { b -> b.keySet().forEach { k -> b.getString(k)?.let { values[k] = it } } }
             // The preset pick survives a rebuild behind the picker exactly as the format pick does.
@@ -499,6 +531,13 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
                 problemAndClose(R.string.export_none_title, R.string.export_none_body)
                 return@launch
             }
+            // Calendar mode with no calendar behind it (arc 31 / HV4): the package was disabled or
+            // removed while this screen stood, and the pages it would draw cannot be asked for.
+            // GONE is for a button; a screen that cannot do the one thing it is for says so.
+            if (calendarMode && calendarRef == null) {
+                problemAndClose(R.string.export_calendar_failed_title, R.string.export_calendar_gone_body)
+                return@launch
+            }
             // The connect offer's follow-through: the person signed in from this screen, so the
             // answer they were reaching for is taken for them. Only when the fresh status agrees —
             // a sign-in that came back OK but does not read as connected is not an answer.
@@ -566,9 +605,15 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
      *  It is also where the notebook's own key is settled ([resolveSourceKey]) — **before** the
      *  document question, because that question is the screen's first read of the file. */
     private suspend fun loadCandidates(): List<Candidate> {
-        if (!resolveSourceKey()) return emptyList()
+        // Calendar mode reads no notebook at all (arc 31 / HV4): no key to resolve, no `.soil` to
+        // open, no document or sticky question to ask — the pages come from the extension. What it
+        // asks instead is whether the calendar is still installed.
+        if (!calendarMode && !resolveSourceKey()) return emptyList()
         loadCloud()
-        if (documentAnswer == null || stickyAnswer == null || (pageId != null && !pageAnswered)) {
+        if (calendarMode) calendarRef = ExtensionRegistry.calendar(this)
+        if (!calendarMode &&
+            (documentAnswer == null || stickyAnswer == null || (pageId != null && !pageAnswered))
+        ) {
             // One open answers every question (the M11 finding: a SQLCipher open per boolean) —
             // the two notebook-wide ones and, from the page-sheet door, the page's own (PE2).
             val door = pageId
@@ -1036,7 +1081,20 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
             val facts = pageFacts
             ExportNaming.pageStem(notebookName, notebookId, facts?.number ?: 0, facts?.title)
         }
+        // The period, with no notebook in it and no ` AM` / ` PM` — that suffix only means
+        // something when a Day's two files sit beside each other (arc 31 / HV4).
+        is ExportScope.Calendar -> ExportNaming.calendarStem(s.target)
     }
+
+    /**
+     * The stem of file [index] of a per-page export (arc 31 / HV1, grown HV4). For the notebook it
+     * is the page's own name; for a calendar it is the plan's stem, used **verbatim** — a calendar
+     * page has no heading to fall back on and no notebook to be prefixed with, and the ` AM` /
+     * ` PM` that tells a Day's two files apart is already in it.
+     */
+    private fun stemFor(index: Int, pageTitles: List<String?>): String =
+        if (scope is ExportScope.Calendar) pageTitles.getOrNull(index) ?: stem()
+        else ExportNaming.pageStem(notebookName, notebookId, index + 1, pageTitles.getOrNull(index))
 
     private fun onExportTap() {
         if (busy) { Slog.d(TAG) { "export tap ignored: already running" }; return }
@@ -1415,6 +1473,11 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
                 // a document deleted under a standing screen leaves the Source row's true behind,
                 // and rendering nothing is not what the tap asked for.
                 val prepared = when {
+                    // First, because it answers before every question below it: in calendar mode
+                    // there is no notebook to have a source kind about (arc 31 / HV4), and the one
+                    // exporter kind that is listed here is the page-bundle one anyway.
+                    scope is ExportScope.Calendar ->
+                        renderedCalendarPages(ExportOptions.includeTemplate(c.info, values))
                     c.info.sourceKind == ExporterContract.SOURCE_DOCUMENT -> assembledDocument(c)
                     c.info.sourceKind != ExporterContract.SOURCE_PAGES -> keyedArtifact(c)
                     documentSource && hasDocument -> renderedDocumentPages()
@@ -1662,6 +1725,38 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
     }
 
     /**
+     * **Calendar mode's producer** (arc 31 / HV4): the pages are drawn by the calendar extension
+     * and arrive as the same bundle every other page render writes, so from the flow's side this is
+     * one more [StreamSource.Ready] and nothing downstream knows the difference.
+     *
+     * [includeGrid] is the exporter's page-template toggle — the same control, the same label, and
+     * here it means the calendar's ruling. Ink, today's ring and the day marks are always drawn
+     * (the user's phase-start call), so there is nothing else to ask.
+     *
+     * The size handed over is this device's page in **portrait pixels** — the size the library
+     * mints a new notebook at — and it is used only for a target the calendar has never minted a
+     * page for; a page that exists keeps its own.
+     */
+    private suspend fun renderedCalendarPages(includeGrid: Boolean): StreamSource {
+        val target = calendarTarget
+            ?: return StreamSource.Failed(getString(R.string.export_calendar_failed_body))
+        val ref = calendarRef
+            ?: return StreamSource.Failed(getString(R.string.export_calendar_gone_body))
+        stage(R.string.export_rendering_calendar)
+        val metrics = resources.displayMetrics
+        val plan = CalendarRenderPlan.of(target, includeGrid)
+        val outcome = CalendarRender.render(
+            applicationContext, ref, plan,
+            minOf(metrics.widthPixels, metrics.heightPixels),
+            maxOf(metrics.widthPixels, metrics.heightPixels),
+        )
+        return when (outcome) {
+            is CalendarRender.Outcome.Ready -> StreamSource.Ready(outcome.file, outcome.pageTitles)
+            is CalendarRender.Outcome.Failed -> StreamSource.Failed(outcome.message)
+        }
+    }
+
+    /**
      * [ExporterContract.SOURCE_PAGES] with the Source row answered *Document*: the same bundle of
      * images, of the document laid out on white paper instead of the notebook's pages
      * ([DocumentPdfRender]). The exporter is not told, and there is nothing it could do with the
@@ -1878,7 +1973,7 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
         var written = 0
         for (index in parts.indices) {
             val part = parts[index]
-            val stem = ExportNaming.pageStem(notebookName, notebookId, index + 1, pageTitles.getOrNull(index))
+            val stem = stemFor(index, pageTitles)
             val name = ExportNaming.fileName(stem, extension)
             stage(getString(R.string.export_exporting_image, index + 1, total))
             val spec = try {
@@ -2111,8 +2206,11 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
 
     /** The done sentence names what went out: the notebook, or the one page (arc 30 / PE2). */
     @StringRes
-    private fun doneBodyRes(): Int =
-        if (scope is ExportScope.Page) R.string.export_done_page_body else R.string.export_done_body
+    private fun doneBodyRes(): Int = when (scope) {
+        is ExportScope.Page -> R.string.export_done_page_body
+        is ExportScope.Calendar -> R.string.export_done_calendar_body
+        ExportScope.Whole -> R.string.export_done_body
+    }
 
     /** A dialog that explains why there is nothing to do here, and closes the screen behind it. */
     private fun problemAndClose(@StringRes titleRes: Int, @StringRes bodyRes: Int) {
@@ -2214,6 +2312,29 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
          *  finishes (decision 5). Absent from the library door. */
         const val EXTRA_RETURN_TO_NOTEBOOK = "returnToNotebook"
 
+        /**
+         * **The calendar door** (arc 31 / HV4): the page the calendar was showing, as
+         * `kind/date/half`. Three numbers and an ISO day — host-internal, not transfer content and
+         * not a secret (a date is not one), and the only thing this door carries. Present instead
+         * of [EXTRA_NOTEBOOK_ID], never beside it.
+         */
+        const val EXTRA_CALENDAR_TARGET = "calendarTarget"
+
+        /** The extra's wire form, and the only place it is written. */
+        private fun encodeCalendarTarget(target: CalendarTarget): String =
+            "${target.kind}/${target.date}/${target.half}"
+
+        /** The extra read back, or null — a bad one is *no target*, which the screen treats as no
+         *  door at all rather than guessing at a page. [CalendarTarget]'s constructor is the
+         *  validation, exactly as it is on the seam. */
+        internal fun parseCalendarTarget(extra: String?): CalendarTarget? {
+            val parts = extra?.split("/") ?: return null
+            if (parts.size != 3) return null
+            val kind = parts[0].toIntOrNull() ?: return null
+            val half = parts[2].toIntOrNull() ?: return null
+            return runCatching { CalendarTarget(kind, parts[1], half) }.getOrNull()
+        }
+
         fun intent(
             context: Context,
             notebookId: String,
@@ -2226,5 +2347,11 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
                 .putExtra(EXTRA_NOTEBOOK_NAME, notebookName)
                 .putExtra(EXTRA_PAGE_ID, pageId)
                 .putExtra(EXTRA_RETURN_TO_NOTEBOOK, returnToNotebook)
+
+        /** **The calendar door's Intent** (arc 31 / HV4) — no notebook id, no name, no page: a
+         *  calendar export is about a period, and the caller reopens the calendar itself. */
+        fun intent(context: Context, calendarTarget: CalendarTarget): Intent =
+            Intent(context, ExportActivity::class.java)
+                .putExtra(EXTRA_CALENDAR_TARGET, encodeCalendarTarget(calendarTarget))
     }
 }

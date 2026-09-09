@@ -244,6 +244,15 @@
     <string name="export_scope_page">This page</string>
     <string name="export_scope_notebook">Whole notebook</string>
     <string name="export_done_page_body">This page was exported.</string>
+    <!-- Calendar mode (arc 31 / HV4): the Export screen opened from the calendar's own door. There
+         is no notebook behind it — the pages are drawn by the calendar extension — so these are the
+         host's sentences about a period rather than about a file of notes. -->
+    <string name="export_calendar_line">Calendar · %1$s</string>
+    <string name="export_rendering_calendar">Drawing the calendar…</string>
+    <string name="export_calendar_failed_title">Nothing was exported</string>
+    <string name="export_calendar_failed_body">The calendar could not draw the page.</string>
+    <string name="export_calendar_gone_body">The calendar is no longer available on this device, so there is nothing to draw.</string>
+    <string name="export_done_calendar_body">The calendar was exported.</string>
     <string name="export_source_caption">Source</string>
     <string name="export_source_pages">Notebook pages</string>
     <string name="export_source_document">Document</string>
@@ -843,6 +852,10 @@
     <string name="calendar_too_large_body">This selection holds more ink than the calendar can take. Send a smaller part of it.</string>
     <string name="calendar_drain_failed_title">Nothing came back</string>
     <string name="calendar_drain_failed_body">The ink from the calendar could not be brought back. Nothing was changed — it is still on the calendar.</string>
+    <!-- The calendar's Export door (arc 31 / HV4): the screen closed asking for an export and then
+         would not say which page it meant. Nothing was drawn and nothing was written. -->
+    <string name="calendar_export_failed_title">Export didn\'t start</string>
+    <string name="calendar_export_failed_body">The calendar didn\'t say which page to export. Nothing was exported.</string>
     <string name="calendar_truncated_title">Not everything came back</string>
     <string name="calendar_paste_failed_body">The ink from the calendar could not be written to this page. Nothing was changed — it is still on the calendar.</string>
     <string name="calendar_truncated_body">The calendar page had more ink than one transfer can carry. The first %1$d strokes were pasted; the rest are still on the calendar.</string>

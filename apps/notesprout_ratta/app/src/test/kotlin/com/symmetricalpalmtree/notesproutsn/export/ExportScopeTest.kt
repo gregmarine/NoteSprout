@@ -2,6 +2,7 @@ package com.symmetricalpalmtree.notesproutsn.export
 
 import com.symmetricalpalmtree.notesproutsn.data.soil.SoilObjectEntity
 import com.symmetricalpalmtree.notesproutsn.data.soil.SoilSchema
+import com.symmetricalpalmtree.notesproutsn.extension.CalendarTarget
 import com.symmetricalpalmtree.notesproutsn.extension.ExporterContract
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -72,5 +73,38 @@ class ExportScopeTest {
         assertFalse(ExportScope.offerable(listOf(ExporterContract.SOURCE_SOIL)))
         assertTrue(ExportScope.offerable(listOf(ExporterContract.SOURCE_SOIL, ExporterContract.SOURCE_PAGES)))
         assertTrue(ExportScope.offerable(listOf(ExporterContract.SOURCE_DOCUMENT)))
+    }
+
+    // ── The calendar scope (arc 31 / HV4) ────────────────────────────────────
+
+    private val calendar =
+        ExportScope.Calendar(CalendarTarget(CalendarTarget.KIND_MONTH, "2026-09-01", 0))
+
+    @Test
+    fun aCalendarScopeHasNoPageFilterBecauseNothingReadsOne() {
+        // Null here does NOT mean "all pages of a notebook" — no notebook is opened at all.
+        assertNull(calendar.pageIds)
+    }
+
+    @Test
+    fun onlyAPageBundleExporterIsListedAtACalendar() {
+        assertTrue(ExportScope.lists(ExporterContract.SOURCE_PAGES, calendar))
+        assertFalse(ExportScope.lists(ExporterContract.SOURCE_SOIL, calendar))
+        assertFalse(ExportScope.lists(ExporterContract.SOURCE_DOCUMENT, calendar))
+    }
+
+    @Test
+    fun theCalendarScopeCarriesItsTarget() {
+        val day = CalendarTarget(CalendarTarget.KIND_DAY, "2026-09-08", CalendarTarget.HALF_PM)
+        assertEquals(day, ExportScope.Calendar(day).target)
+        // Equality is the target's, which is what lets the screen compare scopes at all.
+        assertEquals(ExportScope.Calendar(day), ExportScope.Calendar(CalendarTarget(2, "2026-09-08", 1)))
+    }
+
+    @Test
+    fun pageScopeOfferabilityIsUntouchedByTheCalendarRule() {
+        // `offerable` asks about the page-sheet door only; the calendar door has no Scope row.
+        assertTrue(ExportScope.offerable(listOf(ExporterContract.SOURCE_PAGES)))
+        assertFalse(ExportScope.offerable(listOf(ExporterContract.SOURCE_SOIL)))
     }
 }

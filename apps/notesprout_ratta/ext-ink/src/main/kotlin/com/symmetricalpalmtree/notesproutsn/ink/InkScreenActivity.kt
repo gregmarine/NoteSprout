@@ -157,6 +157,13 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
     /** Park what Send picked, in the consumer's own session object. */
     protected abstract fun parkOutgoing(chunks: List<List<WireStroke>>, pageWidth: Float, pageHeight: Float)
 
+    /** [parkOutgoing] told whether the send was the **whole page** (the top bar's Send) or a
+     *  selection — a screen whose host asks "which page did that come from" (the calendar's
+     *  `outgoingTarget`, arc 31 / HV4) overrides this one; the pad, which has no such question,
+     *  gets the three-argument call it always had. */
+    protected open fun parkOutgoing(chunks: List<List<WireStroke>>, pageWidth: Float, pageHeight: Float, wholePage: Boolean) =
+        parkOutgoing(chunks, pageWidth, pageHeight)
+
     /** Record a stroke-level edit, wrapped in the consumer's action type. */
     protected abstract fun record(action: InkAction)
 
@@ -449,7 +456,7 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
                 return@runPageOp
             }
             val chunks = InkChunks.chunk(wire)
-            parkOutgoing(chunks, page.pageWidth, page.pageHeight)
+            parkOutgoing(chunks, page.pageWidth, page.pageHeight, wholePage = ids == null)
             Slog.d(logTag) { "send: ${wire.size} strokes in ${chunks.size} chunks" }
             // Nothing more may run against the document: the host drains and then revokes the store.
             closing = true

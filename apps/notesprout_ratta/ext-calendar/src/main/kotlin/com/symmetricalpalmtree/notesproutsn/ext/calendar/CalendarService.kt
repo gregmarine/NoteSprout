@@ -3,6 +3,7 @@ package com.symmetricalpalmtree.notesproutsn.ext.calendar
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
+import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import com.symmetricalpalmtree.notesproutsn.core.Slog
 import com.symmetricalpalmtree.notesproutsn.extension.CalendarTarget
@@ -83,6 +84,36 @@ class CalendarService : Service() {
             enforce()
             CalendarSession.clear()
             Slog.d(TAG) { "end" }
+        }
+
+        // ── Appended at arc 31 / HV4 (API 9) ──────
+
+        /**
+         * Bind-per-call: [store] is lent for this call alone and is NOT the held showing's — the
+         * session is untouched, so a render during a showing (HV5's papered send, on the held bind)
+         * leaves the parked ink and the bookmark exactly where they are. The `require`s are
+         * [RenderRequest]'s; everything else that can go wrong is mapped to an
+         * `IllegalStateException` inside [CalendarRender], because only that crosses Binder.
+         */
+        override fun render(
+            store: IExtensionStore?,
+            targets: Array<CalendarTarget>?,
+            widthPx: Int,
+            heightPx: Int,
+            flags: Int,
+            destination: ParcelFileDescriptor?,
+        ) {
+            enforce()
+            requireNotNull(store) { "store is null" }
+            requireNotNull(destination) { "destination is null" }
+            val request = RenderRequest(targets?.toList().orEmpty(), widthPx, heightPx, flags)
+            CalendarRender.render(this@CalendarService, store, request, destination)
+        }
+
+        /** The parked page-send's or export request's page; null after a selection send. */
+        override fun outgoingTarget(): CalendarTarget? {
+            enforce()
+            return CalendarSession.outboundTarget
         }
 
         private fun enforce() = HostCallerCheck.enforce(this@CalendarService, BuildConfig.HOST_PACKAGE)

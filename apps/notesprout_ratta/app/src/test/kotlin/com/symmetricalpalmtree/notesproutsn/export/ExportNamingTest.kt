@@ -1,6 +1,7 @@
 package com.symmetricalpalmtree.notesproutsn.export
 
 import com.symmetricalpalmtree.notesproutsn.extension.ExporterContract
+import com.symmetricalpalmtree.notesproutsn.extension.CalendarTarget
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -138,5 +139,43 @@ class ExportNamingTest {
         assertEquals(stem, ExportNaming.specNameOf(stem))
         assertEquals(ExportNaming.suggestedFileName("Field notes", id, "pdf"), ExportNaming.fileName(ExportNaming.base("Field notes", id), "pdf"))
         assertTrue(ExportNaming.specNameOf("y".repeat(500)).length <= ExporterContract.MAX_NAME_CHARS)
+    }
+
+    // ── The calendar's own stem (arc 31 / HV4) ───────────────────────────────
+
+    @Test
+    fun aMonthIsNamedForTheMonth() {
+        assertEquals(
+            "Calendar - September 2026",
+            ExportNaming.calendarStem(CalendarTarget(CalendarTarget.KIND_MONTH, "2026-09-01", 0)),
+        )
+    }
+
+    @Test
+    fun aWeekIsNamedForItsSunday() {
+        assertEquals(
+            "Calendar - Week of 2026-09-06",
+            ExportNaming.calendarStem(CalendarTarget(CalendarTarget.KIND_WEEK, "2026-09-06", 0)),
+        )
+    }
+
+    @Test
+    fun aDayIsNamedForTheDayAndSaysNothingAboutItsHalf() {
+        val stem = "Calendar - 2026-09-08"
+        assertEquals(stem, ExportNaming.calendarStem(CalendarTarget(CalendarTarget.KIND_DAY, "2026-09-08", 0)))
+        assertEquals(stem, ExportNaming.calendarStem(CalendarTarget(CalendarTarget.KIND_DAY, "2026-09-08", 1)))
+    }
+
+    @Test
+    fun everyCalendarStemSurvivesTheSanitizeUntouched() {
+        // Letters, digits, spaces and the ASCII hyphen — legal by construction, not by trimming.
+        for (target in listOf(
+            CalendarTarget(CalendarTarget.KIND_MONTH, "2026-01-01", 0),
+            CalendarTarget(CalendarTarget.KIND_WEEK, "2025-12-28", 0),
+            CalendarTarget(CalendarTarget.KIND_DAY, "2026-12-31", 1),
+        )) {
+            val stem = ExportNaming.calendarStem(target)
+            assertEquals(stem, ExportNaming.base(stem, "fallback-id"))
+        }
     }
 }

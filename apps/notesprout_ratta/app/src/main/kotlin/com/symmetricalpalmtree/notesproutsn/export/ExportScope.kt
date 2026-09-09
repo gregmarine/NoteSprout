@@ -1,6 +1,7 @@
 package com.symmetricalpalmtree.notesproutsn.export
 
 import com.symmetricalpalmtree.notesproutsn.data.soil.SoilObjectEntity
+import com.symmetricalpalmtree.notesproutsn.extension.CalendarTarget
 import com.symmetricalpalmtree.notesproutsn.extension.ExporterContract
 
 /**
@@ -35,11 +36,24 @@ sealed class ExportScope {
     /** One page, by id — the page-sheet door's default. */
     data class Page(val pageId: String) : ExportScope()
 
-    /** The filter the renders take: null means *all*. */
+    /**
+     * **One calendar page** (arc 31 / HV4) — the third scope, and the only one whose pages are not
+     * in a `.soil` at all. Nothing about the filter above applies to it: the pages are drawn by the
+     * calendar extension into a bundle ([CalendarRender]), so no notebook is opened, no page row is
+     * read, and [pageIds] is null and unused rather than null and meaning *all*.
+     *
+     * A Day target here still exports **both** halves — that is [CalendarRenderPlan]'s rule, not
+     * this one; a scope names the thing, and the plan says how many pages it is.
+     */
+    data class Calendar(val target: CalendarTarget) : ExportScope()
+
+    /** The filter the renders take: null means *all* — and, at [Calendar], means *nothing reads
+     *  this*: no render of a `.soil` runs in calendar mode at all. */
     val pageIds: Set<String>?
         get() = when (this) {
             Whole -> null
             is Page -> setOf(pageId)
+            is Calendar -> null
         }
 
     companion object {
@@ -53,9 +67,19 @@ sealed class ExportScope {
         fun pagesInScope(rows: List<SoilObjectEntity>, pageIds: Set<String>?): List<SoilObjectEntity> =
             if (pageIds == null) rows else rows.filter { it.id in pageIds }
 
-        /** Whether an exporter of [sourceKind] is listed at [scope] — Soil only at [Whole]. */
-        fun lists(sourceKind: Int, scope: ExportScope): Boolean =
-            scope is Whole || sourceKind != ExporterContract.SOURCE_SOIL
+        /**
+         * Whether an exporter of [sourceKind] is listed at [scope] — Soil only at [Whole], and at
+         * [Calendar] **only** an exporter that takes a bundle of pages (arc 31 / HV4).
+         *
+         * The calendar rule is structural rather than a taste: a `.soil` exporter streams a
+         * notebook file, and there is no notebook here; a document exporter assembles what was
+         * *written*, and a calendar page is ink, not text. Both are hidden, never disabled.
+         */
+        fun lists(sourceKind: Int, scope: ExportScope): Boolean = when (scope) {
+            Whole -> true
+            is Page -> sourceKind != ExporterContract.SOURCE_SOIL
+            is Calendar -> sourceKind == ExporterContract.SOURCE_PAGES
+        }
 
         /** Whether page scope can be offered over exporters of [sourceKinds] at all. */
         fun offerable(sourceKinds: Collection<Int>): Boolean =

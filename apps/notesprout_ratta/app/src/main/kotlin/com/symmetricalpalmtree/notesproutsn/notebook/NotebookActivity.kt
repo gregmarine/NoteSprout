@@ -662,6 +662,7 @@ class NotebookActivity : AppCompatActivity() {
             beforeLaunch = { endTransformIfRunning(); paper.releaseForHandoff() },
             onSent = { onCalendarSent() },
             onDrained = { drained -> pasteFromCalendar(drained) },
+            onExport = { onCalendarExport(it) },
             onClosed = { onCalendarClosed(it) },
         )
         binding.btnCalendar.setOnClickListener { if (opened && !closing) calendar.open() }
@@ -2870,6 +2871,27 @@ class NotebookActivity : AppCompatActivity() {
         if (resultCode == RESULT_CANCELED && opened && !closing) calendar.open()
     }
 
+    /**
+     * The calendar's Export door (arc 31 / HV4): the calendar closed asking for the page it was
+     * showing to be exported, so the Export screen opens at that target and the calendar comes back
+     * at its bookmark when it is over, whatever the outcome.
+     *
+     * **This notebook is not closed for it**, unlike the page sheet's own Export row (arc 30 /
+     * PE2): a calendar export opens no `.soil` at all, so `ExportOpen`'s held-file guard is not in
+     * the way and there is nothing to seal. The notebook stands behind both screens exactly as it
+     * stands behind the calendar itself.
+     *
+     * The latch dies with the process. Killed behind the Export screen, the calendar simply stays
+     * closed and the notebook comes back as it was — the honest fallback, one tap from its button.
+     */
+    private var reopenCalendarAfterExport = false
+
+    private fun onCalendarExport(target: CalendarTarget) {
+        if (!opened || closing) return
+        reopenCalendarAfterExport = true
+        startActivity(ExportActivity.intent(this, target))
+    }
+
     /** The ink is on the calendar. The selection it came from goes (it has been acted on) and the
      *  toast confirms something that has already happened — the standing toast rule, kept honest by
      *  firing here rather than at the tap, where the send could still have failed. */
@@ -3717,6 +3739,13 @@ class NotebookActivity : AppCompatActivity() {
         // is also the resume that follows a return from the pad.
         if (::scratchPad.isInitialized) scratchPad.refresh()
         if (::calendar.isInitialized) calendar.refresh()
+        // The calendar comes home after its export (arc 31 / HV4) — the pad-door guard, for the
+        // same reason. Never on the resume that starts it: the entry's result runs in a posted
+        // coroutine, so the latch is set on the way *into* the Export screen, not before this.
+        if (reopenCalendarAfterExport && ::calendar.isInitialized) {
+            reopenCalendarAfterExport = false
+            if (opened && !closing) calendar.open()
+        }
         if (::documentEntry.isInitialized) documentEntry.refresh()
         if (::tagEntry.isInitialized) tagEntry.refresh()
         refreshExportAvailable()
