@@ -267,6 +267,28 @@
     <string name="export_cloud_unanswered_body">%1$s didn\'t answer. The file may or may not have arrived — check %1$s before exporting again.</string>
     <string name="export_cloud_verify_body">The whole file was uploaded, but %1$s reports a different size. Open it, or export it again, before relying on it.</string>
 
+    <!-- Arc 31 / HV1: per-page delivery — a raster exporter writes one file per page into a
+         folder. The counts are the whole point of every sentence here: a run that stopped
+         halfway must say how far it got, and a run that finished says how many files there are.
+         The cloud folder is confirmed ONCE, before any work, because the names are not known
+         until the bake has run. -->
+    <string name="export_exporting_image">Exporting image %1$d of %2$d…</string>
+    <string name="export_cloud_folder_title">Upload to %1$s?</string>
+    <string name="export_cloud_folder_body">Each page will be uploaded as its own image. Files with the same names will be replaced.</string>
+    <string name="export_upload_confirm">Upload</string>
+    <plurals name="export_done_images">
+        <item quantity="one">1 image was exported.</item>
+        <item quantity="other">%1$d images were exported.</item>
+    </plurals>
+    <plurals name="export_cloud_done_images">
+        <item quantity="one">1 image was exported to %2$s.</item>
+        <item quantity="other">%1$d images were exported to %2$s.</item>
+    </plurals>
+    <plurals name="export_done_images_partial">
+        <item quantity="one">1 of %2$d images was exported.</item>
+        <item quantity="other">%1$d of %2$d images were exported.</item>
+    </plurals>
+
     <!-- Import (arc 16 / I1). Export's tone, in the other direction: a toast only confirms an
          import that happened, and every failure is a sentence naming what went wrong — never a
          path, never a secret — and saying that the library was left as it was. -->

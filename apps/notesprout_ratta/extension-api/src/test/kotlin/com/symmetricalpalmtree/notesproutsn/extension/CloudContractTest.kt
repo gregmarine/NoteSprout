@@ -26,8 +26,9 @@ class CloudContractTest {
         assertEquals(1_000, CloudContract.MAX_LIST_ENTRIES)
         assertEquals("not connected", CloudContract.NOT_CONNECTED)
         assertEquals("network", CloudContract.NETWORK)
-        // The point was born at the current API version — the floor IS the version.
-        assertEquals(ExtensionContract.API_VERSION, CloudContract.MIN_API_VERSION_FOR_CLOUD)
+        // The point was born at API version 8 — the floor is that number and stays there when the
+        // version moves on (arc 31 / HV1 took it to 9 and moved no floor).
+        assertEquals(8, CloudContract.MIN_API_VERSION_FOR_CLOUD)
     }
 
     @Test

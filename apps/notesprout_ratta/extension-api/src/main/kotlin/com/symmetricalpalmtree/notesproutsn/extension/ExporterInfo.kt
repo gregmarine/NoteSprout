@@ -10,13 +10,18 @@ import android.os.Parcelable
  * rule), and a descriptor that fails them drops that exporter with a log line, never a crash.
  *
  * Wire form: `String formatLabel · String fileExtension · String mimeType ·
- * typed OptionDescriptor[] · int sourceKind · int bundleVersion` — the last two are compatible
- * tails. `sourceKind` is arc 18's: an old-shape descriptor ends after the option list and reads
- * as [ExporterContract.SOURCE_SOIL]. `bundleVersion` is arc 28's (D7): the highest
+ * typed OptionDescriptor[] · int sourceKind · int bundleVersion · int delivery` — the last three
+ * are compatible tails. `sourceKind` is arc 18's: an old-shape descriptor ends after the option
+ * list and reads as [ExporterContract.SOURCE_SOIL]. `bundleVersion` is arc 28's (D7): the highest
  * [PageBundle] version a [ExporterContract.SOURCE_PAGES] exporter reads, absent = 1, so a host
- * facing an exporter that never heard of endnotes writes the version-1 bundle it always did. An
- * old reader stops before whichever tail it does not know; readers of this version stop after
- * `bundleVersion`. Neither tail moved `API_VERSION`.
+ * facing an exporter that never heard of endnotes writes the version-1 bundle it always did.
+ * `delivery` is arc 31's (HV1): one file per export or one file per page, absent =
+ * [ExporterContract.DELIVERY_ONE_FILE]. An old reader stops before whichever tail it does not
+ * know; readers of this version stop after `delivery`. The first two tails moved nothing; the
+ * third moved `API_VERSION` to 9 — not because the parcel needs it (an absent tail reads
+ * correctly either way) but because a per-page exporter facing a host that cannot split would
+ * be handed a whole notebook and asked for one file, so such an exporter declares
+ * [ExporterContract.MIN_API_VERSION_FOR_DELIVERY] and an older host skips it at discovery.
  */
 class ExporterInfo(
     val formatLabel: String,
@@ -25,10 +30,18 @@ class ExporterInfo(
     val options: List<OptionDescriptor>,
     val sourceKind: Int = ExporterContract.SOURCE_SOIL,
     val bundleVersion: Int = PageBundle.VERSION_1,
+    val delivery: Int = ExporterContract.DELIVERY_ONE_FILE,
 ) : Parcelable {
 
     init {
         require(bundleVersion >= PageBundle.VERSION_1) { "bundle version $bundleVersion < 1" }
+        require(
+            delivery == ExporterContract.DELIVERY_ONE_FILE || delivery == ExporterContract.DELIVERY_PER_PAGE,
+        ) { "unknown delivery $delivery" }
+        // Per-page delivery splits a page bundle; nothing else has pages to split by.
+        require(delivery == ExporterContract.DELIVERY_ONE_FILE || sourceKind == ExporterContract.SOURCE_PAGES) {
+            "per-page delivery needs the pages source kind"
+        }
         require(
             sourceKind == ExporterContract.SOURCE_SOIL ||
                 sourceKind == ExporterContract.SOURCE_PAGES ||
@@ -58,6 +71,7 @@ class ExporterInfo(
         dest.writeTypedList(options)
         dest.writeInt(sourceKind)
         dest.writeInt(bundleVersion)
+        dest.writeInt(delivery)
     }
 
     override fun describeContents(): Int = 0
@@ -74,7 +88,9 @@ class ExporterInfo(
                 if (parcel.dataAvail() > 0) parcel.readInt() else ExporterContract.SOURCE_SOIL
             val bundleVersion =
                 if (parcel.dataAvail() > 0) parcel.readInt() else PageBundle.VERSION_1
-            return ExporterInfo(formatLabel, fileExtension, mimeType, options, sourceKind, bundleVersion)
+            val delivery =
+                if (parcel.dataAvail() > 0) parcel.readInt() else ExporterContract.DELIVERY_ONE_FILE
+            return ExporterInfo(formatLabel, fileExtension, mimeType, options, sourceKind, bundleVersion, delivery)
         }
 
         @JvmField

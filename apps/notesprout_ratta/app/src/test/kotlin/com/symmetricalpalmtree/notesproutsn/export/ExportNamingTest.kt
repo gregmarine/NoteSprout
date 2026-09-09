@@ -118,6 +118,20 @@ class ExportNamingTest {
     }
 
     @Test
+    fun everyPageOfAPerPageExportIsNamedFromItsOwnPage() {
+        // Arc 31 / HV1: one file per page, each named by the Contents rule or by its number.
+        val titles = listOf("Plan", null, "Plan")
+        val names = titles.mapIndexed { index, title ->
+            ExportNaming.fileName(ExportNaming.pageStem("NB", id, index + 1, title), "png")
+        }
+        assertEquals(listOf("NB - Plan.png", "NB - page 2.png", "NB - Plan.png"), names)
+        // Two pages under one heading make two files of one name, and that is the PROVIDER's
+        // question: SAF de-dupes with "(1)", an upload replaces by name, and the host renames
+        // nothing behind the user's back.
+        assertEquals(names[0], names[2])
+    }
+
+    @Test
     fun stemBasedNamesAgreeWithTheOriginals() {
         val stem = ExportNaming.pageStem("Field notes", id, 2, null)
         assertEquals("Field notes - page 2.pdf", ExportNaming.fileName(stem, "pdf"))

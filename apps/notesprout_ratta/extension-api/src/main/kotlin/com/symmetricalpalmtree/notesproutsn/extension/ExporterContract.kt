@@ -102,6 +102,38 @@ object ExporterContract {
      */
     const val SOURCE_DOCUMENT: Int = 2
 
+    // ── Delivery (arc 31 / HV1 — `ExporterInfo`'s third compatible tail) ──────
+    // How many files one export produces. Absent on an old-shape descriptor, which means ONE_FILE —
+    // every exporter that existed before the tail is a one-call-one-file exporter, and the seam's
+    // `export(source, destination, spec)` contract is unchanged: a per-page exporter is still
+    // called once per file. What changes is on the HOST side only — at a scope of more than one
+    // page it bakes the bundle once, splits it into one-page bundles, and calls the exporter once
+    // per page with a fresh destination fd in a folder the user picked.
+
+    /** One export → one file (arc 15's original, and the default). */
+    const val DELIVERY_ONE_FILE: Int = 0
+
+    /**
+     * One export → one file **per page**: a raster format (PNG) that has no notion of a multi-page
+     * document. Legal only with [SOURCE_PAGES] (a `.soil` or a text document has no pages to
+     * split by — `ExportOptions.isRenderable` refuses the pair), and the exporter must treat a
+     * bundle of more than one page as a failure, never silently write the first: the host
+     * guarantees one page per call, and a host that did not would be an old host — which is why a
+     * declaring exporter's manifest carries [MIN_API_VERSION_FOR_DELIVERY] (the D3 skew guard: an
+     * API-8 host reads the tail as absent, streams a whole notebook at it, and would report the
+     * first page as the whole export).
+     */
+    const val DELIVERY_PER_PAGE: Int = 1
+
+    /**
+     * The host version that reads the [ExporterInfo.delivery] tail. A [DELIVERY_PER_PAGE]
+     * exporter declares this in its `<service>` meta-data so an older host skips it at discovery
+     * rather than treating it as a one-file exporter. The host reads the tail only from a service
+     * declaring at least this — a lower declaration is [DELIVERY_ONE_FILE] whatever the parcel
+     * carries, so the declaration and the tail can never disagree about what the host will do.
+     */
+    const val MIN_API_VERSION_FOR_DELIVERY: Int = 9
+
     /**
      * Longest export secret ([ExportSpec.exportSecret], chars) — the ONE deliberate secret that
      * ever crosses an extension seam: user-typed, export-scoped, opens no Notesprout data (a PDF

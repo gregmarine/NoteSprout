@@ -52,6 +52,31 @@ class ExporterInfoTest {
     }
 
     @Test
+    fun deliveryDefaultsToOneFileAndNeedsPages() {
+        // Arc 31 / HV1's tail: absent = one file (every exporter that predates it); per-page is a
+        // split of a page bundle, so a soil or document exporter cannot declare it, and an unknown
+        // value is refused like an unknown source kind.
+        assertEquals(ExporterContract.DELIVERY_ONE_FILE, info().delivery)
+        val perPage = ExporterInfo(
+            "PNG image", "png", "image/png", emptyList(),
+            sourceKind = ExporterContract.SOURCE_PAGES, delivery = ExporterContract.DELIVERY_PER_PAGE,
+        )
+        assertEquals(ExporterContract.DELIVERY_PER_PAGE, perPage.delivery)
+        assertThrows(IllegalArgumentException::class.java) {
+            ExporterInfo("x", "png", "image/png", emptyList(), delivery = ExporterContract.DELIVERY_PER_PAGE)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ExporterInfo(
+                "x", "txt", "text/plain", emptyList(),
+                sourceKind = ExporterContract.SOURCE_DOCUMENT, delivery = ExporterContract.DELIVERY_PER_PAGE,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ExporterInfo("x", "png", "image/png", emptyList(), sourceKind = ExporterContract.SOURCE_PAGES, delivery = 2)
+        }
+    }
+
+    @Test
     fun sourceKindDefaultsToSoil() {
         // The old constructor shape still compiles and still means the prepared `.soil` — the same
         // statement the wire tail makes for an old-shape parcel (absent tail = SOURCE_SOIL).

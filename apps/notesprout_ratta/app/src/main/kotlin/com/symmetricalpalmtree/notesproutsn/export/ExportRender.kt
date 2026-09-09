@@ -23,6 +23,7 @@ import com.symmetricalpalmtree.notesproutsn.data.template.BuiltInTemplates
 import com.symmetricalpalmtree.notesproutsn.extension.PageBundle
 import com.symmetricalpalmtree.notesproutsn.notebook.NotebookSession
 import com.symmetricalpalmtree.notesproutsn.notebook.PageContent
+import com.symmetricalpalmtree.notesproutsn.notebook.PageLabels
 import com.symmetricalpalmtree.notesproutsn.notebook.PagePreview
 import com.symmetricalpalmtree.notesproutsn.notebook.PageReads
 import com.symmetricalpalmtree.notesproutsn.notebook.StickyRows
@@ -120,8 +121,20 @@ object ExportRender {
     sealed class Outcome {
         /** [file] lives in the cache dir; [bytes] is the bundle's length, for the log and nothing
          *  else — a page bundle's size is deliberately **not** what the destination ends up
-         *  holding (see [ExportVerification]). */
-        class Ready(val file: File, val bytes: Long) : Outcome()
+         *  holding (see [ExportVerification]).
+         *
+         *  [pageTitles] is one entry per baked **notebook** page, in bundle order: the page's
+         *  topmost heading by the Contents rule ([PageLabels.titleOf]), or null when it has none
+         *  (arc 31 / HV1). It exists for the per-page delivery, which names every file after its
+         *  own page — read here because the bake already holds each page's content, and reading it
+         *  a second time would be a second full open. The endnote pages get **no entry**: a note is
+         *  not a page anyone named, and a per-page exporter never sees one (it declares bundle
+         *  version 1, so no endnote is planned at all). */
+        class Ready(
+            val file: File,
+            val bytes: Long,
+            val pageTitles: List<String?> = emptyList(),
+        ) : Outcome()
         class Failed(val problem: Problem) : Outcome()
     }
 
@@ -266,6 +279,9 @@ object ExportRender {
             runCatching { out.close() }
             throw e
         }
+        // One entry per notebook page, in bundle order — the per-page delivery's filenames (arc
+        // 31 / HV1). Filled from the content this bake already reads; never from a second open.
+        val pageTitles = ArrayList<String?>(pages.size)
         try {
             bundleWriter.use { writer ->
                 pages.forEachIndexed { index, page ->
@@ -280,6 +296,7 @@ object ExportRender {
                         template = decodeTemplate(dao, page.templateId)
                     }
                     val content = PageReads.content(dao, page.id)
+                    pageTitles += PageLabels.titleOf(content)
                     val image = bakePage(
                         page.widthPx, page.heightPx, template, content, metrics.density, paints,
                     )
@@ -301,7 +318,7 @@ object ExportRender {
         }
         val bytes = bundle.length()
         Slog.d(TAG) { "rendered ${pages.size} page(s) + ${endnotes.notes.size} endnote(s) into $bytes bytes" }
-        return Outcome.Ready(bundle, bytes)
+        return Outcome.Ready(bundle, bytes, pageTitles)
     }
 
     /**

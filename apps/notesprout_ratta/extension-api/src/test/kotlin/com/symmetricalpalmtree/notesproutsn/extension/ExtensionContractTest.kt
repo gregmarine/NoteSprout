@@ -21,9 +21,12 @@ class ExtensionContractTest {
         // non-tail break); 6 since arc 22 / X1 (IExtensionStore REPLACED — the second non-tail
         // break, and the first with a floor); 7 since arc 23 / Y1 (the CALENDAR point — a compatible
         // addition, with the floor made per action); 8 since arc 25 / V1 (the CLOUD_STORAGE point —
-        // a compatible addition on the calendar's pattern, floored at 8). Bumping this again is a
+        // a compatible addition on the calendar's pattern, floored at 8); 9 since arc 31 / HV1
+        // (ExporterInfo's `delivery` tail + the ICalendar render methods — a compatible tail whose
+        // bump is the skew guard for per-page exporters, no floor moved). Bumping this again is a
         // contract event.
-        assertEquals(8, ExtensionContract.API_VERSION)
+        assertEquals(9, ExtensionContract.API_VERSION)
+        assertEquals(9, ExporterContract.MIN_API_VERSION_FOR_DELIVERY)
         assertEquals(6, ExtensionContract.MIN_API_VERSION_FOR_STORE)
         assertEquals(7, ExtensionContract.MIN_API_VERSION_FOR_CALENDAR)
         assertEquals(2_000, ExtensionContract.MAX_INK_STROKES)

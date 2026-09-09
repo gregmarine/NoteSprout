@@ -77,8 +77,19 @@ object ExtensionContract {
      * shape again: a compatible *addition*, nothing existing changes, every existing extension keeps
      * its declaration, no door vanishes; the new point is listed only at
      * [CloudContract.MIN_API_VERSION_FOR_CLOUD] because it was never reachable below it.
+     *
+     * **9 since arc 31 / HV1** — `ExporterInfo`'s third compatible tail, `delivery`
+     * ([ExporterContract.DELIVERY_PER_PAGE]), and — landing under the same number at HV4 — two
+     * appended `ICalendar` methods (`render`, `outgoingTarget`). The arc-18 shape again: a tail an
+     * old host reads as absent, so the bump is not for the parcel but for the **skew guard** — a
+     * per-page exporter on an API-8 host would be handed a whole notebook and asked for one file,
+     * so it declares [ExporterContract.MIN_API_VERSION_FOR_DELIVERY] and an older host skips it at
+     * discovery. **Not a ninth point**, and no floor moves: `MIN_API_VERSIONS` is untouched, every
+     * existing extension keeps its declaration, no door vanishes. The calendar's render is a
+     * method floor, not an action floor — the host offers it only to a calendar declaring 9 and
+     * still binds a 7 for everything else.
      */
-    const val API_VERSION: Int = 8
+    const val API_VERSION: Int = 9
 
     /**
      * The floor for a service on a **store-taking** point (arc 22 / X1): the host accepts such a

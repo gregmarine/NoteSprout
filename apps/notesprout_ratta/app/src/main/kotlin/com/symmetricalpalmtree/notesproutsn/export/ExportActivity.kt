@@ -61,11 +61,13 @@ import java.io.File
 /**
  * **Export** (arc 15 / E1) — the host's whole side of getting a notebook out of the app.
  *
- * **Over the ~800-line rule, with reason — two growths, one justification (arc 19 / M9 · arc 25 /
- * V3):** the first was the third source kind (the Source row, the `hasDocument` gate and the
- * document/preview branches of the prepare step); the second is the **cloud destination** (the
- * Destination row, the browser and replace-by-name confirmation in place of the SAF picker, and the
- * upload leg after verification). Both stay here because the screen's one `runExport` flow is the
+ * **Over the ~800-line rule, with reason — three growths, one justification (arc 19 / M9 · arc 25 /
+ * V3 · arc 31 / HV1):** the first was the third source kind (the Source row, the `hasDocument` gate
+ * and the document/preview branches of the prepare step); the second is the **cloud destination**
+ * (the Destination row, the browser and replace-by-name confirmation in place of the SAF picker, and
+ * the upload leg after verification); the third is **per-page delivery** (the folder pick on both
+ * legs and the loop that follows it — step 4c below). All three stay here because the screen's one
+ * `runExport` flow is the
  * invariant: the guard order, the keying lifecycle, the conditional-deletion rule and the per-kind
  * verification all run in one sequence that must not be split across files to be auditable — every
  * reviewer of a keying or deletion change reads the whole flow, and a split would hide half of it.
@@ -127,6 +129,18 @@ import java.io.File
  *     with [ExportVerification.cloudVerdict], which is corroboration and never authority: a
  *     disagreement is *check the file*, **never** a delete. Nothing in this phase deletes anything
  *     in the cloud, and every failure before the upload says so in as many words.
+ *  4c. **Per-page delivery (arc 31 / HV1).** A raster exporter (PNG) has no notion of a multi-page
+ *     document, so it declares [ExporterContract.DELIVERY_PER_PAGE] and, at a scope of more than one
+ *     page ([ExportDelivery.perPage]), the destination is a **folder** rather than a file: a SAF tree
+ *     locally, the picked cloud folder on the other leg. The seam does not move an inch — the
+ *     exporter is still called once per file, with one page in front of it: the render bakes the
+ *     whole bundle exactly as it always has and [BundleSplit] re-frames it into one-page bundles,
+ *     so each call, each [ExportVerification] verdict and each destination is the single-file one
+ *     this flow already ran. What is new is only the loop around them: a name per page
+ *     ([ExportNaming.pageStem] over the titles the bake read), an [ExportSpec] per page (the values
+ *     are shared, the name is not), and the honest arithmetic when one of them fails — the files
+ *     already written are **kept**, the failing one is removed where the host made it, and the
+ *     dialog says *N of M*. Never a silent partial success.
  *  5. **Confirm and finish**, back to the library: a dialog, not a toast, because this screen is
  *     closing under it and a toast would confirm something the user no longer has a screen to read.
  *     Every failure instead explains itself in a dialog naming what went wrong —
@@ -173,8 +187,10 @@ class ExportActivity : AppCompatActivity() {
     private var pageFacts: PageFacts? = null
     private var pageAnswered = false
 
-    /** One installed exporter and what it said it offers. */
-    private class Candidate(val ref: ProviderRef, val info: ExporterInfo)
+    /** One installed exporter, what it said it offers, and how many files it delivers per export
+     *  ([ExportDelivery.delivery] — the descriptor's tail, read only from a service that declares
+     *  it can be split, so the answer is settled once at discovery and never re-derived). */
+    private class Candidate(val ref: ProviderRef, val info: ExporterInfo, val delivery: Int)
 
     /** Every exporter the last discovery described and this build can draw — before scope. The
      *  Scope row flips [candidates] out of this list without asking the extensions again. */
@@ -295,6 +311,27 @@ class ExportActivity : AppCompatActivity() {
         val uri = result.data?.data
         if (result.resultCode == Activity.RESULT_OK && uri != null) {
             runExport(Destination.Saf(uri))
+        } else {
+            cancelledAtThePicker()
+        }
+    }
+
+    /**
+     * The **folder** door for a per-page export (arc 31 / HV1) — SAF's tree pick rather than a
+     * document creation: the host names every file after its own page, and there is no field here
+     * to type a name into. Registered beside [saveLauncher] for the same reason it is: a launcher
+     * may not be registered after STARTED.
+     *
+     * **No `takePersistableUriPermission`** — the grant is for this flow. An export has no business
+     * remembering a folder the person opened once, and a permission held past the flow is a
+     * permission nobody asked to give.
+     */
+    private val treeLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val uri = result.data?.data
+        if (result.resultCode == Activity.RESULT_OK && uri != null) {
+            runExport(Destination.SafTree(uri))
         } else {
             cancelledAtThePicker()
         }
@@ -542,7 +579,7 @@ class ExportActivity : AppCompatActivity() {
                 Slog.d(TAG) { "dropping ${ref.packageName}: an option kind this build cannot draw" }
                 continue
             }
-            kept += Candidate(ref, info)
+            kept += Candidate(ref, info, ExportDelivery.delivery(ref.apiVersion, info))
         }
         described = kept
         // Page scope is offered only when something serves it (ExportScope.offerable); a page door
@@ -985,6 +1022,20 @@ class ExportActivity : AppCompatActivity() {
             openCloudBrowser(c)
             return
         }
+        // The per-page fork (arc 31 / HV1). A folder, not a file: the host names one file per page
+        // and there is nothing to type over, so the door is SAF's tree pick rather than a document
+        // creation. Everything above is shared — it is about what is in the files, not how many.
+        if (ExportDelivery.perPage(c.delivery, scope)) {
+            busy = true
+            try {
+                treeLauncher.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE))
+            } catch (e: Exception) {
+                busy = false
+                Log.w(TAG, "no folder picker: $e")
+                Dialogs.problem(this, R.string.export_no_picker_title, R.string.export_no_picker_body)
+            }
+            return
+        }
         // Both the type and the name come from ExportDocumentRules, not from the descriptor: a
         // document exporter's format choice is host-executed, and a `.txt` export must not be
         // offered to the picker as `text/markdown` under a `.md` name (arc 19 / M9). Every other
@@ -1014,6 +1065,16 @@ class ExportActivity : AppCompatActivity() {
 
         /** A file called [name] under [path] in the provider's tree, uploaded replace-by-name. */
         class Cloud(val path: List<String>, val name: String, val mime: String) : Destination()
+
+        /** **A folder on this device** (arc 31 / HV1) — the SAF tree a per-page export writes its
+         *  documents into, one per page, named by the host. Not persisted: the grant lives for
+         *  this flow. */
+        class SafTree(val tree: Uri) : Destination()
+
+        /** **A folder in the provider's tree** (arc 31 / HV1) — the per-page leg's cloud
+         *  destination. One confirmation was given for the whole folder before any work started,
+         *  because the names are not known until the bake has run. */
+        class CloudFolder(val path: List<String>) : Destination()
     }
 
     /** The browser while it is up, so `onDestroy` can take it down with the screen. */
@@ -1045,7 +1106,11 @@ class ExportActivity : AppCompatActivity() {
             onPicked = { pick ->
                 browser = null
                 when (pick) {
-                    is CloudBrowserDialog.Pick.Folder -> confirmThenUpload(c, pick.path, pick.listing)
+                    // A per-page export cannot name its files before the bake, so it asks about
+                    // the folder once, up front (arc 31 / HV1) instead of about one name.
+                    is CloudBrowserDialog.Pick.Folder ->
+                        if (ExportDelivery.perPage(c.delivery, scope)) confirmFolderThenExport(pick.path)
+                        else confirmThenUpload(c, pick.path, pick.listing)
                     // PICK_FOLDER cannot answer with a file; if it ever did, it is not a place to
                     // save and the honest thing is to end the flow rather than to guess.
                     is CloudBrowserDialog.Pick.File -> cancelledAtThePicker()
@@ -1108,6 +1173,33 @@ class ExportActivity : AppCompatActivity() {
     }
 
     /**
+     * **The per-page leg's one question** (arc 31 / HV1). An upload is replace-by-name, and a
+     * per-page export does not know a single one of its names until the bake has run — so the
+     * *Replace <name>?* dialog cannot be asked file by file without asking it after the work has
+     * already been done. It is asked once instead, about the folder, and it says plainly that
+     * same-named files will be replaced. Cancel and a back-dismiss are both the picker's cancel.
+     */
+    private fun confirmFolderThenExport(path: List<String>) {
+        if (isFinishing || isDestroyed) { cancelledAtThePicker(); return }
+        // The folder's own name; the provider's name stands in for its root, which has none.
+        val where = path.lastOrNull() ?: cloudName()
+        var uploading = false
+        Dialogs.style(
+            AlertDialog.Builder(this)
+                .setTitle(getString(R.string.export_cloud_folder_title, where))
+                .setMessage(R.string.export_cloud_folder_body)
+                .setPositiveButton(R.string.export_upload_confirm) { _, _ ->
+                    uploading = true
+                    runExport(Destination.CloudFolder(path))
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .create()
+        ).also {
+            it.setOnDismissListener { if (!uploading) cancelledAtThePicker() }
+        }.show()
+    }
+
+    /**
      * The whole flow behind the picker: prepare, hand over, verify, confirm — and, for a cloud
      * destination, upload and verify that too. Every failure deletes the document the picker
      * created — a partial file must never stand there silently — and says what happened. Nothing
@@ -1133,12 +1225,15 @@ class ExportActivity : AppCompatActivity() {
                 if (saf != null) withContext(Dispatchers.IO) { destinationSizes(saf.uri) } else emptyList()
             val emptyAtStart = sizesAtStart.isNotEmpty() && sizesAtStart.all { it == 0L }
             var destinationTouched = false
-            suspend fun failed(@StringRes titleRes: Int, message: String) =
-                if (saf != null) {
+            suspend fun failed(@StringRes titleRes: Int, message: String) = when {
+                saf != null ->
                     fail(saf.uri, titleRes, message, mayDelete = destinationTouched || emptyAtStart)
-                } else {
-                    failCloud(titleRes, message)
-                }
+                // Arc 31 / HV1: a SAF tree is a place, not a document. Nothing has been created in
+                // it at this point, so there is no file to say anything about — and nothing was
+                // uploaded either, which is what the cloud sentence would have claimed.
+                destination is Destination.SafTree -> failNothing(titleRes, message)
+                else -> failCloud(titleRes, message)
+            }
             try {
                 // DocumentsUI is another process on a memory-tight e-ink device, so this screen can
                 // be rebuilt behind it: the result arrives before the recreated screen's discovery
@@ -1170,9 +1265,15 @@ class ExportActivity : AppCompatActivity() {
                 // spec the contract rejects has no business costing a cache copy or a page bake
                 // first. The secret rides its own carrier — never the value map, which is the whole
                 // point of the carrier existing.
-                val spec = try {
+                // The option values are the same for every file this export writes; the name in
+                // the spec is not (arc 31 / HV1 — a per-page export names each file after its own
+                // page), which is why the values are settled here and the spec itself is built per
+                // file down the per-page branch.
+                val specValues = ExportOptions.specValues(c.info, values)
+                val perPage = destination is Destination.SafTree || destination is Destination.CloudFolder
+                val spec = if (perPage) null else try {
                     ExportSpec(
-                        values = ExportOptions.specValues(c.info, values),
+                        values = specValues,
                         notebookName = ExportNaming.specNameOf(stem()),
                         exportSecret = if (wantsSecret) typedExportSecret else null,
                     )
@@ -1205,6 +1306,22 @@ class ExportActivity : AppCompatActivity() {
                     }
                     is StreamSource.Ready -> prepared.file
                 }
+                // **The split** (arc 31 / HV1). The bake above ran exactly as it always has; from
+                // here a per-page exporter is handed one page at a time into the folder that was
+                // picked, and this flow's single-file sequence below is untouched.
+                if (perPage) {
+                    exportPerPage(
+                        c, destination, streamFile,
+                        (prepared as? StreamSource.Ready)?.pageTitles.orEmpty(),
+                        specValues,
+                        if (wantsSecret) typedExportSecret else null,
+                    )
+                    return@launch
+                }
+                // Structurally impossible past the branch above — the spec is null only for a
+                // folder destination, and a folder destination has already returned. It stands as
+                // the smart cast for everything below, which is the single-file flow unchanged.
+                checkNotNull(spec)
                 val streamBytes = withContext(Dispatchers.IO) { streamFile.length() }
                 // A protected export encrypts on the extension's side of the call, so the one line
                 // the user has to look at through it says which of the two is happening.
@@ -1327,7 +1444,10 @@ class ExportActivity : AppCompatActivity() {
      *  two source kinds answer with the same two shapes, which is what lets the flow stop caring
      *  which one it asked at the line after this. */
     private sealed class StreamSource {
-        class Ready(val file: File) : StreamSource()
+        /** [pageTitles] is the per-page delivery's naming answer (arc 31 / HV1) — one entry per
+         *  page of the bundle, in its order, empty for every source kind that has no pages of the
+         *  notebook to name (the `.soil`, the assembled text, the document laid out on paper). */
+        class Ready(val file: File, val pageTitles: List<String?> = emptyList()) : StreamSource()
         class Failed(val message: String) : StreamSource()
     }
 
@@ -1394,7 +1514,7 @@ class ExportActivity : AppCompatActivity() {
             scope.pageIds,
         )
         return when (outcome) {
-            is ExportRender.Outcome.Ready -> StreamSource.Ready(outcome.file)
+            is ExportRender.Outcome.Ready -> StreamSource.Ready(outcome.file, outcome.pageTitles)
             is ExportRender.Outcome.Failed -> StreamSource.Failed(getString(ExportMessages.of(outcome.problem)))
         }
     }
@@ -1480,77 +1600,292 @@ class ExportActivity : AppCompatActivity() {
             failCloud(R.string.export_failed_title, getString(R.string.export_cloud_gone_body))
             return
         }
-        val name = cloudName()
-        stage(getString(R.string.export_uploading, name))
-        val bytes = withContext(Dispatchers.IO) { file.length() }
-        val pfd = withContext(Dispatchers.IO) {
-            runCatching { ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY) }.getOrNull()
-        }
-        if (pfd == null) {
-            failCloud(R.string.export_failed_title, getString(R.string.export_prepare_failed_body))
-            return
-        }
-        // The client owns the descriptor from here and closes it on every path, refusals included.
-        val entry = try {
-            CloudClient.upload(
-                this@ExportActivity, ref, cloud.path.toTypedArray(), cloud.name, cloud.mime, pfd, bytes,
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: CloudNotConnectedException) {
-            hideProgress()
-            if (isFinishing || isDestroyed) return
-            // Offered from the dialog, because Connect is the only thing that helps here.
-            Dialogs.style(
-                AlertDialog.Builder(this@ExportActivity)
-                    .setTitle(R.string.export_failed_title)
-                    .setMessage(getString(R.string.export_cloud_not_connected_body, name))
-                    .setPositiveButton(R.string.cloud_connect) { _, _ -> offerConnectAfterFailure() }
-                    .setNegativeButton(R.string.ok, null)
-                    .create()
-            ).show()
-            return
-        } catch (e: CloudNetworkException) {
-            failCloud(R.string.export_failed_title, getString(R.string.export_cloud_network_body, name))
-            return
-        } catch (e: Exception) {
-            // No answer, or a timeout: the file may or may not have arrived, and the host has no
-            // way to find out without asking again. It says so, and deletes nothing.
-            Slog.d(TAG) { "upload failed: ${e.javaClass.simpleName}" }
-            hideProgress()
-            if (isFinishing || isDestroyed) return
-            Dialogs.problem(
-                this@ExportActivity,
-                R.string.export_failed_title,
-                getString(R.string.export_cloud_unanswered_body, name),
-            )
-            return
-        }
-
-        when (ExportVerification.cloudVerdict(entry.sizeBytes, bytes)) {
-            ExportVerification.Verdict.OK -> Unit
-            else -> {
-                Log.w(TAG, "the provider reports ${entry.sizeBytes} for $bytes uploaded bytes")
-                hideProgress()
-                if (isFinishing || isDestroyed) return
-                Dialogs.problem(
-                    this@ExportActivity,
-                    R.string.export_verify_title,
-                    getString(R.string.export_cloud_verify_body, name),
-                )
-                return
-            }
-        }
-
-        Slog.d(TAG) { "uploaded $bytes bytes" }
+        if (!uploadOne(ref, cloud.path, cloud.name, cloud.mime, file, prefix = "")) return
         exportPrefs.lastExporter = c.ref.packageName
         hideProgress()
         if (isFinishing || isDestroyed) return
         Dialogs.confirm(
             this@ExportActivity,
             R.string.export_done_title,
-            getString(R.string.export_cloud_done_body, name),
+            getString(R.string.export_cloud_done_body, cloudName()),
         ) { finish() }
+    }
+
+    /**
+     * One file up, and the honest sentence when it does not land — the upload leg's body, shared
+     * since arc 31 / HV1 by the single-file export and the per-page loop. Answers whether the
+     * bytes are up **and** the provider's account of them agrees.
+     *
+     * [prefix] is what the per-page loop puts in front of every sentence ("3 of 8 images were
+     * exported."), and empty for a single file — which is also what decides the *Nothing was
+     * uploaded.* note: it is true of one file and false of a loop that has already put some there,
+     * so a run that has uploaded something says the count instead.
+     */
+    private suspend fun uploadOne(
+        ref: ProviderRef,
+        path: List<String>,
+        name: String,
+        mime: String,
+        file: File,
+        prefix: String,
+    ): Boolean {
+        val provider = cloudName()
+        // The note belongs to the single-file leg's own wording; a loop says the count instead.
+        fun report(@StringRes titleRes: Int, message: String, note: Boolean) {
+            if (note && prefix.isEmpty()) {
+                failCloud(titleRes, message)
+                return
+            }
+            hideProgress()
+            if (isFinishing || isDestroyed) return
+            Dialogs.problem(this@ExportActivity, titleRes, prefix + message)
+        }
+        stage(getString(R.string.export_uploading, provider))
+        val bytes = withContext(Dispatchers.IO) { file.length() }
+        val pfd = withContext(Dispatchers.IO) {
+            runCatching { ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY) }.getOrNull()
+        }
+        if (pfd == null) {
+            report(R.string.export_failed_title, getString(R.string.export_prepare_failed_body), note = true)
+            return false
+        }
+        // The client owns the descriptor from here and closes it on every path, refusals included.
+        val entry = try {
+            CloudClient.upload(
+                this@ExportActivity, ref, path.toTypedArray(), name, mime, pfd, bytes,
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: CloudNotConnectedException) {
+            hideProgress()
+            if (isFinishing || isDestroyed) return false
+            // Offered from the dialog, because Connect is the only thing that helps here.
+            Dialogs.style(
+                AlertDialog.Builder(this@ExportActivity)
+                    .setTitle(R.string.export_failed_title)
+                    .setMessage(prefix + getString(R.string.export_cloud_not_connected_body, provider))
+                    .setPositiveButton(R.string.cloud_connect) { _, _ -> offerConnectAfterFailure() }
+                    .setNegativeButton(R.string.ok, null)
+                    .create()
+            ).show()
+            return false
+        } catch (e: CloudNetworkException) {
+            report(R.string.export_failed_title, getString(R.string.export_cloud_network_body, provider), note = true)
+            return false
+        } catch (e: Exception) {
+            // No answer, or a timeout: the file may or may not have arrived, and the host has no
+            // way to find out without asking again. It says so, and deletes nothing.
+            Slog.d(TAG) { "upload failed: ${e.javaClass.simpleName}" }
+            report(R.string.export_failed_title, getString(R.string.export_cloud_unanswered_body, provider), note = false)
+            return false
+        }
+
+        when (ExportVerification.cloudVerdict(entry.sizeBytes, bytes)) {
+            ExportVerification.Verdict.OK -> Unit
+            else -> {
+                Log.w(TAG, "the provider reports ${entry.sizeBytes} for $bytes uploaded bytes")
+                report(R.string.export_verify_title, getString(R.string.export_cloud_verify_body, provider), note = false)
+                return false
+            }
+        }
+
+        Slog.d(TAG) { "uploaded $bytes bytes" }
+        return true
+    }
+
+    /**
+     * **The per-page loop** (arc 31 / HV1) — one file per page, into the folder that was picked.
+     *
+     * Everything about *one* file is the single-file flow's, unchanged and on purpose: one
+     * `export()` call with one page in front of it, one [ExportVerification] verdict against that
+     * file's own bytes, one upload on the cloud leg. What this adds is the arithmetic around them,
+     * and every rule in it is about honesty:
+     *
+     *  - **The bake ran once.** [BundleSplit] re-frames it into one-page bundles in the same cache
+     *    directory the flow's `finally` wipes; no notebook is opened a second time.
+     *  - **Each file is named for its own page** ([ExportNaming.pageStem] over the titles the bake
+     *    read), and the spec's name is that same stem — the file on disk and the name inside it
+     *    agree, page by page, exactly as they do at page scope. Two pages under one heading make
+     *    two files of one name, which is the *provider's* question: SAF de-dupes with `(1)`, an
+     *    upload replaces by name, and the host renames nothing behind the user's back.
+     *  - **A failure stops, and keeps what is already written.** The failing file is removed where
+     *    the host created it (a SAF document it made itself, never anything in the cloud), and the
+     *    sentence leads with *N of M images were exported.* — never a silent partial success.
+     */
+    private suspend fun exportPerPage(
+        c: Candidate,
+        destination: Destination,
+        bundle: File,
+        pageTitles: List<String?>,
+        specValues: Map<String, String>,
+        secret: String?,
+    ) {
+        val dir = File(cacheDir, ExportArtifact.DIR)
+        val parts = withContext(Dispatchers.IO) {
+            runCatching { BundleSplit.split(bundle, dir) }
+                .onFailure { Log.w(TAG, "the bundle would not split: ${it.javaClass.simpleName}") }
+                .getOrNull()
+        }
+        if (parts.isNullOrEmpty()) {
+            // Nothing has been created anywhere: the split is host-side work in this app's cache.
+            val message = getString(R.string.export_render_failed_body)
+            if (destination is Destination.CloudFolder) failCloud(R.string.export_failed_title, message)
+            else failNothing(R.string.export_failed_title, message)
+            return
+        }
+        val total = parts.size
+        val extension = ExportDocumentRules.fileExtension(c.info, values)
+        val mime = ExportDocumentRules.mimeType(c.info, values)
+        // The tree's own document id, resolved once — every document this loop creates is a child
+        // of it. A tree that will not answer is the destination refusing before anything was made.
+        val treeRoot = (destination as? Destination.SafTree)?.let { picked ->
+            runCatching {
+                DocumentsContract.buildDocumentUriUsingTree(
+                    picked.tree, DocumentsContract.getTreeDocumentId(picked.tree),
+                )
+            }.onFailure { Log.w(TAG, "the picked folder would not resolve: ${it.javaClass.simpleName}") }
+                .getOrNull()
+        }
+        if (destination is Destination.SafTree && treeRoot == null) {
+            failNothing(R.string.export_failed_title, getString(R.string.export_destination_body))
+            return
+        }
+        var written = 0
+        for (index in parts.indices) {
+            val part = parts[index]
+            val stem = ExportNaming.pageStem(notebookName, notebookId, index + 1, pageTitles.getOrNull(index))
+            val name = ExportNaming.fileName(stem, extension)
+            stage(getString(R.string.export_exporting_image, index + 1, total))
+            val spec = try {
+                ExportSpec(
+                    values = specValues,
+                    notebookName = ExportNaming.specNameOf(stem),
+                    exportSecret = secret,
+                )
+            } catch (e: IllegalArgumentException) {
+                Log.w(TAG, "spec rejected", e)
+                stopPerPage(destination, null, written, total, getString(R.string.export_failed_body))
+                return
+            }
+            val partBytes = withContext(Dispatchers.IO) { part.length() }
+            val source = withContext(Dispatchers.IO) {
+                runCatching { ParcelFileDescriptor.open(part, ParcelFileDescriptor.MODE_READ_ONLY) }.getOrNull()
+            }
+            if (source == null) {
+                stopPerPage(destination, null, written, total, getString(R.string.export_prepare_failed_body))
+                return
+            }
+            // One document per page, created as the loop reaches it: a failure at page four leaves
+            // the three before it exactly as they were written, and creates no fifth.
+            val document = if (treeRoot != null) {
+                withContext(Dispatchers.IO) {
+                    runCatching { DocumentsContract.createDocument(contentResolver, treeRoot, mime, name) }
+                        .onFailure { Log.w(TAG, "could not create the destination document: ${it.javaClass.simpleName}") }
+                        .getOrNull()
+                }
+            } else null
+            val cacheFile = if (destination is Destination.CloudFolder) File(dir, "out-$index.$extension") else null
+            val sink = withContext(Dispatchers.IO) {
+                if (cacheFile != null) openCacheDestination(cacheFile)
+                else document?.let { openDestination(it) }
+            }
+            if (sink == null) {
+                withContext(Dispatchers.IO) { runCatching { source.close() } }
+                stopPerPage(destination, document, written, total, getString(R.string.export_destination_body))
+                return
+            }
+            // Both descriptors are the client's from here — it closes them in `finally`.
+            val result = try {
+                ExporterClient(this@ExportActivity, c.ref).export(source, sink, spec)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Slog.d(TAG) { "export call failed: ${e.message}" }
+                stopPerPage(destination, document, written, total, getString(R.string.export_failed_body))
+                return
+            }
+            val onDisk = withContext(Dispatchers.IO) {
+                if (cacheFile != null) listOf(cacheFile.length()) else destinationSizes(document!!)
+            }
+            when (ExportVerification.verdict(c.info.sourceKind, result.bytesWritten, partBytes, onDisk)) {
+                ExportVerification.Verdict.SHORT -> {
+                    Log.w(TAG, "short export: ${result.bytesWritten} written, destination $onDisk")
+                    stopPerPage(destination, document, written, total, getString(R.string.export_short_body))
+                    return
+                }
+                ExportVerification.Verdict.UNCONFIRMED -> {
+                    // The stream itself completed; only the destination's account disagrees. Check
+                    // the file, never a delete — and never a claim that the run finished.
+                    Log.w(TAG, "destination reports $onDisk for ${result.bytesWritten} bytes")
+                    hideProgress()
+                    if (isFinishing || isDestroyed) return
+                    Dialogs.problem(
+                        this@ExportActivity,
+                        R.string.export_verify_title,
+                        partialPrefix(written, total) + getString(R.string.export_verify_body),
+                    )
+                    return
+                }
+                ExportVerification.Verdict.OK -> Unit
+            }
+            if (destination is Destination.CloudFolder) {
+                val ref = cloudRef
+                if (ref == null) {
+                    stopPerPage(destination, null, written, total, getString(R.string.export_cloud_gone_body))
+                    return
+                }
+                // The upload leg's own sentences, with the count in front of them.
+                if (!uploadOne(ref, destination.path, name, mime, cacheFile!!, partialPrefix(written, total))) return
+            }
+            written++
+        }
+
+        // "Last used" is written by an export that finished — every file of it (the D1 rule read
+        // per page): a run that stopped at page four has not exported this format.
+        exportPrefs.lastExporter = c.ref.packageName
+        hideProgress()
+        if (isFinishing || isDestroyed) return
+        val body = if (destination is Destination.CloudFolder) {
+            resources.getQuantityString(R.plurals.export_cloud_done_images, written, written, cloudName())
+        } else {
+            resources.getQuantityString(R.plurals.export_done_images, written, written)
+        }
+        Dialogs.confirm(this@ExportActivity, R.string.export_done_title, body) { finish() }
+    }
+
+    /**
+     * The per-page loop's one way to stop (arc 31 / HV1): say how far it got, then the failure's
+     * own sentence. [document] is the file this page created and did not finish — removed under
+     * [fail]'s rules, because the host made it in this loop and nothing of the user's was ever at
+     * that name. Nothing already written is touched, and nothing in the cloud is ever deleted.
+     */
+    private suspend fun stopPerPage(
+        destination: Destination,
+        document: Uri?,
+        written: Int,
+        total: Int,
+        message: String,
+    ) {
+        val body = partialPrefix(written, total) + message
+        when {
+            document != null -> fail(document, R.string.export_failed_title, body, mayDelete = true)
+            // The note is true only while nothing has gone up yet; after that the count says it.
+            destination is Destination.CloudFolder && written == 0 ->
+                failCloud(R.string.export_failed_title, body)
+            else -> failNothing(R.string.export_failed_title, body)
+        }
+    }
+
+    /** *N of M images were exported.* — what every per-page failure leads with. */
+    private fun partialPrefix(written: Int, total: Int): String =
+        resources.getQuantityString(R.plurals.export_done_images_partial, written, written, total) + " "
+
+    /** A failure with nothing created anywhere (arc 31 / HV1 — a folder is a place, not a file):
+     *  the sentence alone, with no note about a file that was never made. */
+    private fun failNothing(@StringRes titleRes: Int, message: String) {
+        hideProgress()
+        if (isFinishing || isDestroyed) return
+        Dialogs.problem(this, titleRes, message)
     }
 
     /** The Connect offer reached from a failed upload. The status is re-read first: the account may

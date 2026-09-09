@@ -7,7 +7,7 @@ cross-session memory for the arc: read it whole at every phase start, together w
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `PAGE_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 wizard locked 2026-09-08.** HV1 ⬜ · HV2 ⬜ · HV3 ⬜ · HV4 ⬜ · HV5 ⬜ · HV6 ⬜.
+**Status: 🔄 HV1 ✅ 2026-09-08.** HV1 ✅ · HV2 ⬜ · HV3 ⬜ · HV4 ⬜ · HV5 ⬜ · HV6 ⬜.
 Baseline before the arc: 1487 `:app` / 2847 JVM tests, g-paper 0.1.28, `API_VERSION` 8, thirteen
 modules, version `0.1.0-ratta`.
 
@@ -299,11 +299,11 @@ Module count goes to **fourteen** (`:ext-image`).
 
 ## Phases
 
-### ⬜ HV1 — Images (Opus code on a Fable brief for `:ext-image` + host loop · Sonnet scaffold (module, manifest, icon, strings) · Fable seam + review · Sonnet adb walk up to the picker, SAF by hand)
+### ✅ HV1 — Images (Opus code on a Fable brief for `:ext-image` + host loop · Sonnet scaffold (module, manifest, icon, strings) · Fable seam + review · Sonnet adb walk up to the picker, SAF by hand)
 
-**Questions to resolve at phase start:** app version (stays `0.1.0-ratta`?); PNG compression /
-config (planner: PNG 100 over RGB_565); whether per-page delivery at whole scope should be offered
-on the **library** door too (planner: yes — a whole-notebook image export is the folder case).
+**Phase-start answers (2026-09-08):** version stays `0.1.0-ratta`; PNG at compression 100 over an
+RGB_565 decode (the `:ext-pdf` shape); per-page delivery at whole scope is offered on **both**
+doors — the library door's whole-notebook export is exactly the folder case.
 
 - D1. Read first: `ExtensionRegistry`'s per-service version answer (how the host learns a
   service declares 9); `ExportActivity.runExport`'s `finally` (the cache dir is one directory for
@@ -429,3 +429,35 @@ ask.
 ## Ledger
 
 *(one Outcome entry per phase as it closes)*
+
+### HV1 — Images (2026-09-08, Fable seam + review · Opus `:ext-image` and the host loop in parallel · Sonnet adb walk)
+
+**Outcome.** `ExtensionContract.API_VERSION` **8 → 9** with `ExporterInfo.delivery` as the third
+compatible tail (`ExporterContract.DELIVERY_ONE_FILE` / `DELIVERY_PER_PAGE`, absent = one file; the
+constructor refuses per-page on any source but `SOURCE_PAGES`, which is the `isRenderable` rule the
+plan named — an unmarshal refusal, not a second check); `MIN_API_VERSION_FOR_DELIVERY = 9`, no
+floor moved (`CloudContractTest` had pinned the cloud floor to *the current* `API_VERSION` — re-pinned
+to 8). **`:ext-image`** — fourteenth module, `NSE · Image Export`, manifest 9, puzzle icon
+byte-identical, `:extension-api` only: `ImageDescriptor` (PNG image · png · image/png · one
+template toggle · pages · bundle v1 · per-page), `ImageExportSpec` (unknown ids and any secret
+refused), `ImageAssembly` (`requireOnePage` — a multi-page bundle is an `IllegalStateException`,
+never its first page; RGB_565 decode, dimension check, PNG 100 through a counting stream + the
+`S_ISREG` fsync rule). **Host** — `ExportDelivery` (the tail is read only from a service declaring
+≥ 9; per-page = `DELIVERY_PER_PAGE` at `ExportScope.Whole`, so a one-page notebook at Whole still
+goes to a folder — Whole = folder, deliberately simple), `BundleSplit` (any bundle → v1 one-page
+parts in the export cache dir, links dropped, one page in memory), `ExportRender.Outcome.Ready.
+pageTitles` (`PageLabels.titleOf` read beside `PageReads.content` in the bake — the names come from
+the bake, not a widened `readOnce`; document pages have no titles → `page N`),
+`ExportActivity`: `Candidate.delivery`, a second `treeLauncher` (`ACTION_OPEN_DOCUMENT_TREE`, no
+persistable grant), `Destination.SafTree` / `CloudFolder`, `exportPerPage` (split → per page:
+stem/name/spec → `createDocument` or a cache file → `export` → verdict → upload → next; SHORT
+deletes that one document and stops; UNCONFIRMED stops with check-the-file; every stop leads with
+*N of M images were exported.*; `lastExporter` only after every file). **Deviation from D1:** the
+cloud folder confirmation is asked **once, always, before any work** and names no count
+("Each page will be uploaded as its own image. Files with the same names will be replaced." /
+Upload) — the names are not known before the bake, and a confirmation after the bake would
+interrupt the progress dialog. Strings: `export_exporting_image`, `export_cloud_folder_title/body`,
+`export_upload_confirm`, plurals `export_done_images` / `export_cloud_done_images` /
+`export_done_images_partial`. `docs/extensions.md` `API_VERSION` row → 9. Tests: `:extension-api`
++1 (230), `:app` +14 (**1501**), `:ext-image` 15 → **2877** total. Both doors offer PNG (phase-start
+answer 3). Version stays `0.1.0-ratta`. **Nomad walk (Sonnet over adb, 2026-09-08) PASSED:** library door → 5 PNGs named by heading / page N · repeat → ` (1)` from the provider · page sheet → single-file picker, `Objects - page 5.png`, ` (2)` on the third collision · template off exports (inconclusive on a paper-less notebook) · PDF unchanged · cloud folder → the once-always confirmation → 5 uploads; no crash. The SAF picker turned out adb-drivable with tricks (memory `reference_supernote_documentsui_picker_adb`).
