@@ -17,7 +17,7 @@ import kotlin.math.hypot
  * | Gesture | Action |
  * |---|---|
  * | 1-finger bare tap | follow a link under it (arc 6) |
- * | 1-finger double-tap | consumer-defined (arc 23: the calendar opens the day under it) |
+ * | 1-finger double-tap | consumer-defined (arc 33: hide / show all chrome on every paper screen — the calendar routes by zone, a Month / Week cell still opens its day) |
  * | 1-finger horizontal swipe | flip previous / next (past the last page: insert one) |
  * | 1-finger vertical swipe down | open the Contents (arc 4) |
  * | 1-finger vertical swipe up | walk the link trail back (arc 6) |

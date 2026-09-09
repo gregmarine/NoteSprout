@@ -7,7 +7,7 @@ cross-session memory for the arc: read it whole at every phase start, together w
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `RESUME_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 PLANNED 2026-09-09 — F1 ⬜ · F2 ⬜ · F3 ⬜ · F4 ⬜ · F5 ⬜.**
+**Status: 🔄 IN PROGRESS — F1 ✅ (2026-09-09) · F2 ⬜ · F3 ⬜ · F4 ⬜ · F5 ⬜.**
 Baseline before the arc: 1606 `:app` / 2987 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump (one compatible Intent extra), no schema
 change, no g-paper change, no new module.
@@ -260,7 +260,7 @@ calendar Intent prose — a fifth boolean on the calendar, the first result datu
 
 ## Phases
 
-### ⬜ F1 — The seam + the notebook (Fable: the EPD flip order, the `rectOf` trap, the collision rule · Sonnet adb walk)
+### ✅ F1 — The seam + the notebook (Fable: the EPD flip order, the `rectOf` trap, the collision rule · Sonnet adb walk)
 
 **Goal:** D1 built and the notebook toggling; the pad, calendar and sticky editor untouched.
 
@@ -426,3 +426,46 @@ explanation and an `AskUserQuestion` never share one turn — explain, wait, the
 ## Ledger
 
 *(one Outcome entry per phase as it closes)*
+
+### F1 ✅ 2026-09-09 — The seam + the notebook
+
+**Phase-start answers:** (a) the ledger says *arc 33 added no new exception; the toggle rides
+6*; (b) the snap margin stays "one toolbar" shown or hidden; (c) version stays `0.1.0-ratta`.
+
+**Landed.** `:sn-screen`: `PaperToolbar.rectOf` refuses a non-`VISIBLE` view (trap 1 — one rule,
+so `PaperChrome.pushExclusions` / `overChrome`, `FloatingSelectionBar.rects` and the sticky
+editor's `overChrome` inherit it); pure `ChromeBand.of(rootHeight, top: Bar?, bottom: Bar?)` +
+`View.asBar(edge)` (a hidden bar yields the root edge, a shown-but-unlaid bar withholds the band,
+root 0 / empty / inverted → null; `ChromeBandTest` 12); `ChromeToggle(paper, root, bars,
+beforeHide, afterLayout)` with the flip order written once (`releaseRender` unless `initial` →
+`beforeHide` → `GONE`/`VISIBLE` → `doOnNextLayout { afterLayout() }` + `requestLayout`, one
+`Slog.d "chrome hidden=…"`, no `whenPenIdle`); `PageGestures` KDoc row. Host: `data/prefs/
+ChromePrefs` (`sn_chrome` / `hidden`, `SnapPrefs`' shape); pure `DoubleTapToggleRule` (two-deep
+hit history, `tapped(hit)` / `shouldToggle()` consumes and refuses on fewer than two; 8 tests);
+`LinkFollowFlow.followAt(): Boolean` (the hit decided before the async follow, the body moved to a
+private `follow(link)`); `NotebookActivity` — `rectOf = PaperToolbar.rectOf`, `chromeBand()` =
+`ChromeBand.of(root.height, topBar.asBar(bottom), bottomStrip.asBar(top))`, `chromeToggle` over
+`topBar` + `bottomStrip` with `beforeHide` = hide lasso / tags / insert / eraser popups and
+`afterLayout = ::pushExclusions`, `apply(prefs.hidden, initial = true)` in `onCreate` right after
+the root layout listener, the `onResume` re-sync before `resumeDrawing()` (guarded `!=`, `initial`
+so no release), `onFingerTap` records `openAt || followAt` and `onFingerDoubleTap` → the rule →
+`toggleChrome()` (guarded `opened && !closing`, persists after the flip), the snap-margin line kept
+with a comment naming why it is deliberately not visibility-aware. `docs/notebook.md`: the gestures
+row and the frame-silence paragraph ("arc 33 added no new exception"; F5 polishes § Layout).
+
+**Numbers:** `:app` 1606 → **1614**, `:sn-screen` 69 → **81**, **3007** across the modules
+(+20 arc-wide); debug + release build; NUL scan clean.
+
+**Sonnet adb walk (Nomad, `.dev`) 9/9:** double-tap mid-page → `topBar` / `bottomStrip` gone from
+the dump, paper to both edges, one `chrome hidden=true`; again → back, one `false`; hidden +
+force-stop host and extensions + cold start → launch restore reopened the notebook **hidden**;
+hidden: swipe flips, long-press page sheet; double-tap on a sticky icon → the editor, zero
+`ChromeToggle` lines, chrome unchanged on return; crash buffer empty. Two-finger swipe-down is not
+adb-drivable (standing trap).
+
+**Design notes for F2–F4:** `ChromeToggle.apply` is a no-op when the state already matches
+unless `initial` — the `onResume` re-sync must compare first (it does) or pass `initial`;
+`apply(…, initial = true)` calls `requestLayout()` so `afterLayout` fires even when no bar
+changed. `asBar(edge)` takes the edge the *caller* reads because a `GONE` view keeps its last
+edges — the top bar's `bottom`, the bottom bar's `top`.
+

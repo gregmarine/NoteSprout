@@ -126,9 +126,14 @@ class PaperToolbar(
     private fun releaseRenderIfIdle() = PenIdle.releaseRenderIfIdle(paper)
 
     companion object {
-        /** A laid-out view's rect in window coordinates, or null before layout has run. */
+        /**
+         * A shown, laid-out view's rect in window coordinates; null before layout has run **or
+         * while the view is not [View.VISIBLE]**. The visibility check is load-bearing (arc 33):
+         * a `GONE` view keeps its last measured width and height, so a size-only test would keep a
+         * hidden bar excluding ink and swallowing gestures exactly where it used to be.
+         */
         fun rectOf(v: View): Rect? {
-            if (v.width == 0 || v.height == 0) return null
+            if (v.visibility != View.VISIBLE || v.width == 0 || v.height == 0) return null
             val loc = IntArray(2)
             v.getLocationInWindow(loc)
             return Rect(loc[0], loc[1], loc[0] + v.width, loc[1] + v.height)

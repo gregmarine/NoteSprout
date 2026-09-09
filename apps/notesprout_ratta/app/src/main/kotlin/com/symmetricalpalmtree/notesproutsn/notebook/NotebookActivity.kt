@@ -56,6 +56,7 @@ import com.symmetricalpalmtree.notesproutsn.data.prefs.SurfaceEntry
 import com.symmetricalpalmtree.notesproutsn.data.prefs.SurfaceStack
 import com.symmetricalpalmtree.notesproutsn.data.prefs.LinkTrail
 import com.symmetricalpalmtree.notesproutsn.data.prefs.RecentsPrefs
+import com.symmetricalpalmtree.notesproutsn.data.prefs.ChromePrefs
 import com.symmetricalpalmtree.notesproutsn.data.prefs.SnapPrefs
 import com.symmetricalpalmtree.notesproutsn.databinding.ActivityNotebookBinding
 import com.symmetricalpalmtree.notesproutsn.core.markdown.HeadingPrefix
@@ -79,6 +80,10 @@ import com.symmetricalpalmtree.notesproutsn.library.NameDialog
 import com.symmetricalpalmtree.notesproutsn.library.ReplayPlan
 import com.symmetricalpalmtree.notesproutsn.library.NameRules
 import com.symmetricalpalmtree.notesproutsn.notebook.NotebookUndo.Action
+import com.symmetricalpalmtree.notesproutsn.notebook.ChromeBand
+import com.symmetricalpalmtree.notesproutsn.notebook.ChromeToggle
+import com.symmetricalpalmtree.notesproutsn.notebook.PaperToolbar
+import com.symmetricalpalmtree.notesproutsn.notebook.asBar
 import com.symmetricalpalmtree.notesproutsn.templates.TemplatePick
 import com.symmetricalpalmtree.notesproutsn.templates.TemplatePicks
 import com.symmetricalpalmtree.notesproutsn.templates.TemplateRecents
@@ -128,6 +133,10 @@ class NotebookActivity : AppCompatActivity() {
     private lateinit var followFlow: LinkFollowFlow
     /** Snap-to-guide's durable preference (arc 9). `paper.snapToGuides` is the live copy. */
     private lateinit var snapPrefs: SnapPrefs
+    /** Arc 33: the one global "chrome hidden" flag and the flip that honours it on this screen. */
+    private lateinit var chromePrefs: ChromePrefs
+    private lateinit var chromeToggle: ChromeToggle
+    private val doubleTapRule = DoubleTapToggleRule()
     /** The Scratch Pad's entry button (arc 11) — the host half of the EPD handoff lives in it. */
     private lateinit var scratchPad: ScratchPadEntry
     /** The Calendar's entry button (arc 23 / Y3) — the pad's shape, the same handoff inside it. */
@@ -849,6 +858,20 @@ class NotebookActivity : AppCompatActivity() {
 
         // Chrome moved/appeared/disappeared: re-push the exclusion rects once the pass settles.
         binding.root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> binding.root.post { pushExclusions() } }
+
+        // Arc 33: both bars hide and show together on a finger double-tap. The button-anchored
+        // popups go down first — their button is about to go — while the floating bars a lasso
+        // raises (selection toolbar, transform bar) keep working over bare paper. Applied from the
+        // persisted flag before the first layout, so a screen opened hidden never shows its bars.
+        chromePrefs = ChromePrefs(this)
+        chromeToggle = ChromeToggle(
+            paper = paper,
+            root = binding.root,
+            bars = listOf(binding.topBar, binding.bottomStrip),
+            beforeHide = { hideLassoPopup(); hideTagsPopup(); hideInsertBar(); hideEraserBar() },
+            afterLayout = ::pushExclusions,
+        )
+        chromeToggle.apply(chromePrefs.hidden, initial = true)
 
         followFlow = LinkFollowFlow(
             activity = this,
@@ -1794,9 +1817,27 @@ class NotebookActivity : AppCompatActivity() {
             val px = x - loc[0]; val py = y - loc[1]
             // Stickies before links (D2): the icons sit above the links in the draw order, so a
             // note dropped over a link is what the finger is on.
-            if (stickyFlow.openAt(px, py)) return
-            followFlow.followAt(px, py)
+            val hit = stickyFlow.openAt(px, py) || followFlow.followAt(px, py)
+            // Arc 33: remembered for the double-tap that may follow — both taps of a pair reach
+            // here before the double fires, so the rule below always sees what they landed on.
+            doubleTapRule.tapped(hit)
         }
+        override fun onFingerDoubleTap(x: Float, y: Float) {
+            if (!doubleTapRule.shouldToggle()) return
+            toggleChrome()
+        }
+    }
+
+    /**
+     * The chrome toggle (arc 33): every bar goes / comes back on a finger double-tap that hit no
+     * sticky and no link, and the flag is persisted for every other paper screen. Only a screen
+     * that is open and not closing flips — the gesture cannot even arm before the page lands, but
+     * the escrow can deliver a pair across a close.
+     */
+    private fun toggleChrome() {
+        if (!opened || closing) return
+        chromeToggle.toggle()
+        chromePrefs.hidden = chromeToggle.hidden
     }
 
     /** Both Backs — the toolbar button and the system back — funnel here: in a via-link notebook
@@ -3810,6 +3851,11 @@ class NotebookActivity : AppCompatActivity() {
         // 1 dp border, so the dimen alone would leave a snapped object two pixels behind the black
         // rule. Take the bar's real laid-out height instead, here because this runs on every chrome
         // layout change and so can never drift from the thing it is measuring.
+        //
+        // Deliberately NOT visibility-aware (arc 33 / F1): this reads like the GONE-keeps-its-size
+        // trap, but here the stale height is exactly the wanted value — the margin stays "one
+        // toolbar" while the chrome is hidden, so an object snapped then still clears the bar when
+        // it comes back. The margin is page-space, not chrome state.
         binding.topBar.height.takeIf { it > 0 }?.let { paper.snapMarginPx = it.toFloat() }
         if (!opened || !canvasShown) {
             // The toolbar arms the pen from the first frame, but the page isn't on the paper yet —
@@ -3845,14 +3891,14 @@ class NotebookActivity : AppCompatActivity() {
 
     /**
      * The free band between the two chrome bars, in the root's coordinates — where a floating bar
-     * may be placed. Null until both have been laid out.
+     * may be placed. Null until a shown bar has been laid out; a hidden bar (arc 33) yields its
+     * edge of the screen instead, so the floating bars keep showing over bare paper.
      */
-    private fun chromeBand(): IntRange? {
-        val top = binding.topBar
-        val bottom = binding.bottomStrip
-        if (top.height == 0 || bottom.height == 0) return null
-        return top.bottom..bottom.top
-    }
+    private fun chromeBand(): IntRange? = ChromeBand.of(
+        binding.root.height,
+        binding.topBar.asBar(edge = binding.topBar.bottom),
+        binding.bottomStrip.asBar(edge = binding.bottomStrip.top),
+    )
 
     /**
      * Frame-silence rule: never present an app frame while the pen is active (Ratta overlay ink
@@ -3970,12 +4016,8 @@ class NotebookActivity : AppCompatActivity() {
             (::transformBar.isInitialized && transformBar.contains(x, y))
     }
 
-    private fun rectOf(v: View): Rect? {
-        if (v.width == 0 || v.height == 0) return null
-        val loc = IntArray(2)
-        v.getLocationInWindow(loc)
-        return Rect(loc[0], loc[1], loc[0] + v.width, loc[1] + v.height)
-    }
+    /** The shared rule — visibility-aware since arc 33, so a hidden bar has no rect. */
+    private fun rectOf(v: View): Rect? = PaperToolbar.rectOf(v)
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -3985,6 +4027,12 @@ class NotebookActivity : AppCompatActivity() {
         // 32 / RS1). Runs AFTER the result callbacks, so an entry's pop always precedes this drop.
         // Guarded because an IndexGuard bounce returns from onCreate but still gets this callback.
         if (::stack.isInitialized) stack.markTop(stackToken)
+        // Arc 33: another paper screen (the pad, the calendar, the sticky editor) may have flipped
+        // the one global flag while this one was away — re-sync before the paper comes back.
+        // Nothing is on the glass yet, so no render release; a no-op when nothing changed.
+        if (::chromeToggle.isInitialized && chromeToggle.hidden != chromePrefs.hidden) {
+            chromeToggle.apply(chromePrefs.hidden, initial = true)
+        }
         if (::paper.isInitialized) paper.resumeDrawing()
         // Re-discovered on every resume: a package can be disabled or replaced under us, and this
         // is also the resume that follows a return from the pad.

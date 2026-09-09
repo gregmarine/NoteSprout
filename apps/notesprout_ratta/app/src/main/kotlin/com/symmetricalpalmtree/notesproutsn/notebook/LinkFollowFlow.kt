@@ -76,12 +76,21 @@ class LinkFollowFlow(
     /**
      * A finger tap at ([x], [y]) in paper-view coordinates. A tap that hits no link is not a link
      * gesture at all — it returns without taking the door, because bare taps on paper are constant.
+     *
+     * @return whether the tap **hit** a live link — decided here, before the asynchronous follow,
+     *   so the caller can feed the notebook's double-tap collision rule (arc 33 /
+     *   [DoubleTapToggleRule]). A refused door (not alive, or busy) is not a hit.
      */
-    fun followAt(x: Float, y: Float) {
-        if (!alive() || busy) return
+    fun followAt(x: Float, y: Float): Boolean {
+        if (!alive() || busy) return false
         // Topmost first: later rows draw over earlier ones, so the last match is what the user sees.
-        val link = liveLinks().lastOrNull { it.bounds.contains(x, y) } ?: return
+        val link = liveLinks().lastOrNull { it.bounds.contains(x, y) } ?: return false
         busy = true
+        follow(link)
+        return true
+    }
+
+    private fun follow(link: PageLink) {
         activity.lifecycleScope.launch {
             when (val plan = LinkNav.planFollow(link.payload, session().notebookId)) {
                 // Self-referential notebook target: nothing honest to do, and nothing to say.

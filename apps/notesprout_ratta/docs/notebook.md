@@ -1176,6 +1176,7 @@ paper is full-bleed and the chrome is two thin bars.
 | 1-finger vertical swipe ↓ | open the Contents (C1 — silent while the notebook has no heading) |
 | 1-finger vertical swipe ↑ | walk back the link trail (K4 — silent while the trail is empty; [`docs/links.md`](links.md)) |
 | 1-finger tap on a link | follow it (K4 — finger only, never stylus; the escrowed inverse-recogniser tap below) |
+| 1-finger double-tap on bare paper | **hide / show all chrome** (arc 33 / F1 — the top bar and the bottom strip go `GONE` together and come back on the next pair; a pair where either tap hit a sticky or a link is that tap's act, never a toggle — `DoubleTapToggleRule`; the flag is global and persisted, `ChromePrefs`) |
 | 2-finger horizontal swipe ← / → | insert a page after / before this one |
 | 2-finger vertical swipe ↓ | open the **Recents** (T1 — its upward twin is unassigned) |
 | 2-finger stationary double-tap | undo |
@@ -1766,6 +1767,15 @@ demonstrably idle), and the Export door's "Opening…" overlay is exception 3's 
 *out* of the screen. The erase's own repaint is **one** `refreshToPage` frame after the
 transaction, the same single frame a page delete or a template pick already presents at a deliberate
 chrome act.
+
+**Arc 33 added no new exception**: the chrome toggle's flip — both bars `GONE` / `VISIBLE` at a
+finger double-tap (`ChromeToggle`, shared by the four paper screens) — rides exception 6's
+justification exactly: the act already passed `PageGestures`' `gateOpen()` and its escrow, so the
+pen is demonstrably not on the paper; `releaseRender()` precedes the flip as every chrome handler's
+does; and it is deliberately *not* idle-gated, for exceptions 2, 3 and 6's reason — `isPenActive`
+counts hover, and a hovering pen would hold the bars back long after the taps that asked for them.
+The floating bars a lasso raises keep working over bare paper (exception 2 covers their show), and
+the button-anchored popups go down at hide as a deliberate act (exception 7's hides).
 
 Any new exception needs the same written justification.
 
