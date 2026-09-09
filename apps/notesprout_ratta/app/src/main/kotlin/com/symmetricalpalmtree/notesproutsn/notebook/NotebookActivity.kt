@@ -60,6 +60,7 @@ import com.symmetricalpalmtree.notesproutsn.extension.DocumentEditorEntry
 import com.symmetricalpalmtree.notesproutsn.extension.DrainedInk
 import com.symmetricalpalmtree.notesproutsn.extension.ExtensionCallException
 import com.symmetricalpalmtree.notesproutsn.extension.ExtensionContract
+import com.symmetricalpalmtree.notesproutsn.export.ExportActivity
 import com.symmetricalpalmtree.notesproutsn.extension.ExtensionRegistry
 import com.symmetricalpalmtree.notesproutsn.extension.InkSend
 import com.symmetricalpalmtree.notesproutsn.extension.RecognizerClient
@@ -3282,7 +3283,53 @@ class NotebookActivity : AppCompatActivity() {
         sheet.addAction(R.drawable.ic_template, getString(R.string.page_template_action)) { openTemplatePicker() }
         sheet.addAction(R.drawable.ic_erase_page, getString(R.string.erase_page_action)) { confirmErasePage() }
         sheet.addAction(R.drawable.ic_trash, getString(R.string.delete_page_action)) { confirmDeletePage() }
+        // Arc 30 / PE2: absent, never disabled, while no exporter is installed (the library's
+        // canExport rule) — answered at every resume rather than in an IO beat under the sheet.
+        if (exportAvailable) {
+            sheet.addAction(R.drawable.ic_download, getString(R.string.export_page_action)) { exportPage() }
+        }
         sheet.show()
+    }
+
+    /** Whether a trusted exporter is installed — the page sheet's Export row exists only then.
+     *  Re-asked on every resume ([refreshExportAvailable]), never in the sheet's own beat: the
+     *  sheet is built synchronously on the long-press, and a package rarely changes under an open
+     *  notebook. A stale true costs one dialog on the Export screen, never a crash. */
+    @Volatile private var exportAvailable = false
+
+    private fun refreshExportAvailable() {
+        lifecycleScope.launch {
+            exportAvailable = runCatching { ExtensionRegistry.exporters(this@NotebookActivity).isNotEmpty() }
+                .getOrDefault(false)
+        }
+    }
+
+    /**
+     * **Export page** (arc 30 / PE2, decisions 2 and 5): close, export, reopen. The Export screen
+     * reads a *cold* `.soil` (`ExportOpen` guard 2 refuses a held file), so the notebook closes
+     * exactly as it does for a Recents switch — drain, cover, bookmark, seal — and the launch runs
+     * after the seal by `close(andThen)`'s ordering. The Export screen relaunches this notebook when
+     * it finishes, whatever the outcome, and the reopen lands on the bookmark the close just wrote —
+     * this page. Undo history dies with the close, as on every close.
+     *
+     * Not through `runPageOp`: `close()` takes the page-op lock itself, so a page op in flight
+     * finishes first anyway, and `closing` refuses everything after. The page is `displayedPageId`
+     * — what is on the glass (the R6 rule), never `session.currentIndex` mid-flip.
+     */
+    private fun exportPage() {
+        if (!opened || closing) return
+        val pageId = displayedPageId
+        if (pageId.isEmpty()) return
+        val name = notebookName
+        OpeningOverlay.showThen(this) {
+            close {
+                startActivity(
+                    ExportActivity.intent(
+                        this@NotebookActivity, notebookId, name, pageId = pageId, returnToNotebook = true,
+                    )
+                )
+            }
+        }
     }
 
     /**
@@ -3649,6 +3696,7 @@ class NotebookActivity : AppCompatActivity() {
         if (::calendar.isInitialized) calendar.refresh()
         if (::documentEntry.isInitialized) documentEntry.refresh()
         if (::tagEntry.isInitialized) tagEntry.refresh()
+        refreshExportAvailable()
     }
 
     /**

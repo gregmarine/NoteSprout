@@ -39,7 +39,34 @@ object ExportNaming {
      * constructor — an exporter cannot smuggle a path or a second extension through it).
      */
     fun suggestedFileName(displayName: String, notebookId: String, fileExtension: String): String =
-        base(displayName, notebookId) + "." + fileExtension
+        fileName(base(displayName, notebookId), fileExtension)
+
+    /** [suggestedFileName] over a stem already made — [base] or [pageStem]. */
+    fun fileName(stem: String, fileExtension: String): String = stem + "." + fileExtension
+
+    /**
+     * The stem of a **one-page** export (arc 30 / PE2, the user's phase-start call): the notebook's
+     * [base], a hyphen, then the page's **topmost heading** — the Contents / link-picker rule
+     * ([com.symmetricalpalmtree.notesproutsn.notebook.PageLabels.titleOf]: topmost by `(y, x)`,
+     * prefix stripped, loose or link-wrapped) — sanitized by the same rule as the name and capped
+     * at [MAX_TITLE_CHARS]; or, when the page has no heading (or one that strips to nothing),
+     * `page N` with the page's 1-based position. A plain ASCII hyphen because the sanitize would
+     * strip a dash of any other kind. [pageNumber] below 1 (the page could not be placed) names
+     * the notebook alone: a filename must never say "page 0".
+     */
+    fun pageStem(displayName: String, notebookId: String, pageNumber: Int, pageTitle: String?): String {
+        val stem = base(displayName, notebookId)
+        val title = pageTitle?.let { ILLEGAL.replace(it, "").trim() }?.take(MAX_TITLE_CHARS)?.trim()
+        return when {
+            !title.isNullOrEmpty() && title != "." && title != ".." -> "$stem - $title"
+            pageNumber >= 1 -> "$stem - page $pageNumber"
+            else -> stem
+        }
+    }
+
+    /** The most of a heading a page export's filename carries — a heading is a line, a filename
+     *  is a label. */
+    const val MAX_TITLE_CHARS = 80
 
     /**
      * The `ExportSpec.notebookName` value — the same sanitized base, truncated to the spec's
@@ -49,5 +76,9 @@ object ExportNaming {
      * export over a long name.
      */
     fun specName(displayName: String, notebookId: String): String =
-        base(displayName, notebookId).take(ExporterContract.MAX_NAME_CHARS)
+        specNameOf(base(displayName, notebookId))
+
+    /** [specName] over a stem already made, so the file on disk and the name inside it agree at
+     *  page scope too. */
+    fun specNameOf(stem: String): String = stem.take(ExporterContract.MAX_NAME_CHARS)
 }

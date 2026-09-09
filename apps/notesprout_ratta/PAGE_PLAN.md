@@ -6,7 +6,7 @@ the cross-session memory for the arc: read it whole at every phase start, togeth
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this file
 is enough. `LOOP_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — wizard locked 2026-09-08.** PE1 ✅ (2026-09-08) · PE2 ⬜ · PE3 ⬜. When frozen the
+**Status: 🔄 IN PROGRESS — wizard locked 2026-09-08.** PE1 ✅ (2026-09-08) · PE2 ✅ (2026-09-08) · PE3 ⬜. When frozen the
 references will be `docs/notebook.md` (the page sheet, the erase, the undo row) and `docs/export.md`
 (the scope seam, the notebook door).
 
@@ -210,7 +210,7 @@ builds the scope seam they will ride on and nothing more.
   again; Cancel erases nothing; an empty page's Erase does nothing; page flip and back after an
   erase shows the erased page; `am crash` → reopen shows the erased state persisted.
 
-### ⬜ PE2 — Page export (Opus code on a Fable brief · Sonnet XML · Fable review · walk by hand)
+### ✅ PE2 — Page export (landed 2026-09-08) (Opus code on a Fable brief · Sonnet XML · Fable review · walk by hand)
 
 **Questions to resolve at phase start:** app version; the page-scope filename suffix (planner:
 "— page N"); latch placement (planner: first row of the options panel).
@@ -309,3 +309,58 @@ ask.
 - **Nomad walk passed (all five items)**, incl. `am crash` → reopen persists the erased state.
 - Code written by Fable directly (the seams were settled; no Opus brief needed). No code review
   (decision 6).
+
+### PE2 — Page export · Outcome (2026-09-08)
+
+- **Phase-start answers:** version stays `0.1.0-ratta`; **filename = `<notebook> - <heading>.<ext>`
+  when the page has a heading by the Contents / link-picker rule (`PageLabels.titleOf`: topmost by
+  `(y, x)`, prefix stripped, loose or link-wrapped), else `<notebook> - page N.<ext>`** (the user's
+  call, replacing the planner's "— page N" — and a plain ASCII hyphen, because the sanitize strips
+  every other dash); latch placement = **first row of the options panel, above Format** (it
+  decides which formats are listed).
+- **The reads, decided:** `ExportActivity`'s leave paths are scattered (Back, the done dialog's
+  dismiss, `problemAndClose`, the cancelled passphrase prompt) → **`finish()` overridden once**:
+  `returnToNotebook && !relaunched` → `startActivity(NotebookActivity.intent(id, name))` first; a
+  guard bounce finishes before the flag is read. `Endnotes`' sources are collected from the
+  **baked pages** (`endnoteSources(dao, pages)`) → the filter covers them, nothing else to do.
+  `ExportText.markdownOf` at page scope = **that page's document or nothing** — the notebook
+  document (the merged draft) is not read at page scope.
+- **The scope control is the panel's own captioned radio row** (`ExportPanel.choice`, the Source /
+  Destination idiom), not an `Editor.Latch` — one screen, one vocabulary, no XML button (the
+  `LatchButton` `layout_width` trap never arises). Container `@id/scope` above `formatCaption`,
+  `GONE` unless `EXTRA_PAGE_ID` is set **and** some installed exporter serves page scope
+  (`ExportScope.offerable`) — a page door over a Soil-only install falls back to Whole with no row.
+- `export/ExportScope` (pure, sealed `Whole` · `Page(pageId)`; `pageIds`, `seeded`,
+  `pagesInScope`, `lists` = Soil only at Whole, `offerable`). `ExportRender.render` /
+  `DocumentPdfRender.render` / `ExportText.assemble` (+ `markdownOf`) take `pageIds: Set<String>? =
+  null` and filter their `TYPE_PAGE` rows before their existing plan; `ExportSpec` and every
+  exporter untouched.
+- `ExportActivity`: `EXTRA_PAGE_ID` + `EXTRA_RETURN_TO_NOTEBOOK`; `scope` saved/restored
+  (`KEY_SCOPE_WHOLE`); `described` (every renderable exporter) vs `candidates` (`listedNow()` =
+  document gate against the **scope's** document answer + the Soil rule) so a scope flip re-cuts
+  the list without re-describing; `reselect()` = standing ?: remembered ?: first (a remembered Soil
+  at page scope falls to the first shown); `hasDocument` is now **derived** from scope (the page's
+  own document row at Page); the one `readOnce` also answers `PageFacts(number, title,
+  hasDocument)` for the door's page; `stem()` feeds both the filename and `ExportSpec.notebookName`
+  (`ExportNaming.pageStem` / `fileName` / `specNameOf`, heading capped at 80 chars —
+  `MAX_TITLE_CHARS`, planner call); done dialog says "This page was exported." at page scope;
+  `lastExporter` still written.
+- `NotebookActivity`: `exportAvailable` re-asked on every resume (cached, not an IO beat under the
+  sheet — the cheaper of the two); sheet row **Export page** (`ic_download`) last; `exportPage()` =
+  `displayedPageId` (the R6 rule) → `OpeningOverlay.showThen { close { startActivity(Export…) } }`
+  — **not** through `runPageOp` (`close()` takes the page-op lock itself and `closing` refuses
+  everything after).
+- Strings: `export_page_action`, `export_scope_caption/page/notebook`, `export_done_page_body`.
+- **Tests: 1487 `:app`** (was 1473: `ExportScopeTest` 8 + `ExportNamingTest` +6) / **2847** total.
+  NUL scan clean. Code written by Fable directly (the seams were settled). No code review
+  (decision 6).
+- **Nomad walk passed (Sonnet over adb — the first agent walk that stayed inside the app; the sheet,
+  the Export screen and the SAF picker need no pen):** Export page row last · Export opens at This
+  page with Soil absent · SAF filename `Objects - Heading.pdf` (the heading rule) · done dialog
+  "This page was exported." → notebook reopens on the same page · Whole notebook re-lists Soil and
+  the filename drops the suffix · Cancel at the picker stays; Back from Export reopens the
+  notebook · immediate Back reopens the notebook · library door unchanged (no Scope row, Soil
+  listed) · no crash lines. **Not exercised on-device:** the `page N` filename (JVM-pinned),
+  Document at page scope (no dev-library page carries its own document), a failed cloud export, the
+  no-exporter sheet.
+

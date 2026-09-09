@@ -89,6 +89,17 @@
             android:paddingTop="12dp"
             android:paddingBottom="16dp">
 
+            <!-- Scope (arc 30 / PE2): the host's first question, above the format because it
+                 decides which formats are listed. Built in code like the rows below it, and on
+                 screen only from the page sheet's Export row — GONE from the library door, never
+                 a settled control. -->
+            <LinearLayout
+                android:id="@+id/scope"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone" />
+
             <TextView
                 android:id="@+id/formatCaption"
                 android:layout_width="match_parent"

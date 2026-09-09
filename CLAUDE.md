@@ -171,7 +171,7 @@ skill (`.claude/skills/device-build-install/SKILL.md`) — invoked automatically
   from an eraser re-tap Point · Lasso sub-bar on all four paper surfaces; no ninth point, no API
   bump, no new row, no code review. **Arcs 1–29 are all complete and frozen.**
   **Arc 30 "Page" (page erase + page export, PARITY_BACKLOG item 5) is IN PROGRESS (wizard locked
-  2026-09-08, PE1–PE3)**: read the standalone `apps/notesprout_ratta/PAGE_PLAN.md` (not
+  2026-09-08; PE1 ✅ · PE2 ✅ 2026-09-08 · PE3 ⬜ docs/freeze)**: read the standalone `apps/notesprout_ratta/PAGE_PLAN.md` (not
   `RATTA_PLAN.md`) — host-only, no point, no API bump, no code review.
   **No NINTH extension point
   and no other arc without another user decision. Read `apps/notesprout_ratta/RATTA_PLAN.md`

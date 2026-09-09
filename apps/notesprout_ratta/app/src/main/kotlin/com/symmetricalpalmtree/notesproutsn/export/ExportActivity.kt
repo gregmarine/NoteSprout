@@ -47,6 +47,10 @@ import com.symmetricalpalmtree.notesproutsn.extension.ExportSpec
 import com.symmetricalpalmtree.notesproutsn.extension.ExtensionRegistry
 import com.symmetricalpalmtree.notesproutsn.extension.OptionDescriptor
 import com.symmetricalpalmtree.notesproutsn.extension.ProviderRef
+import com.symmetricalpalmtree.notesproutsn.notebook.NotebookActivity
+import com.symmetricalpalmtree.notesproutsn.notebook.PageLabels
+import com.symmetricalpalmtree.notesproutsn.notebook.HeadingRows
+import com.symmetricalpalmtree.notesproutsn.data.soil.SoilSchema
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -141,8 +145,40 @@ class ExportActivity : AppCompatActivity() {
     private lateinit var notebookId: String
     private lateinit var notebookName: String
 
+    /**
+     * **The page-sheet door** (arc 30 / PE2): the page this screen was opened *for*, or null from
+     * the library. Non-null seeds [scope] to that page and puts the Scope row on screen; null is
+     * the library door exactly as it has always been — whole notebook, no row.
+     */
+    private var pageId: String? = null
+
+    /** Whether this screen was entered by closing a notebook that expects to come back (the
+     *  page-sheet door, decision 5): every way out — Cancel, done, a problem dialog, a cancelled
+     *  passphrase — relaunches the notebook first ([finish]). Never set by the library door. */
+    private var returnToNotebook = false
+
+    /** The relaunch is owed once; `finish()` can be reached twice (a dialog's dismiss after an
+     *  explicit call). */
+    private var relaunched = false
+
+    /** What the export covers (arc 30 / PE2). Owned by the host like the pick, saved and restored
+     *  with it, and only ever [ExportScope.Page] while [pageId] is set. */
+    private var scope: ExportScope = ExportScope.Whole
+
+    /** What the one open answered about the door's page (arc 30 / PE2): its 1-based position, its
+     *  topmost heading (the Contents rule), whether it has its own document. Remembered with
+     *  [documentAnswer] for the same reason — nothing here can change under a standing screen. Null
+     *  until read, and null when the page is not among the notebook's live pages any more. */
+    private class PageFacts(val number: Int, val title: String?, val hasDocument: Boolean)
+    private var pageFacts: PageFacts? = null
+    private var pageAnswered = false
+
     /** One installed exporter and what it said it offers. */
     private class Candidate(val ref: ProviderRef, val info: ExporterInfo)
+
+    /** Every exporter the last discovery described and this build can draw — before scope. The
+     *  Scope row flips [candidates] out of this list without asking the extensions again. */
+    private var described: List<Candidate> = emptyList()
 
     private var candidates: List<Candidate> = emptyList()
 
@@ -152,16 +188,22 @@ class ExportActivity : AppCompatActivity() {
     /** Option id → chosen value, for the exporter in [chosenPackage]. Validated again at spec time. */
     private val values = LinkedHashMap<String, String>()
 
-    /** Whether this notebook has anything written in it (arc 19 / M9) — it decides both what is
-     *  listed and whether the Source row exists. Not saved into instance state: a restored screen
-     *  asks again, and a stale "yes" would offer a document that has since been deleted. */
-    private var hasDocument = false
+    /** Whether what is being exported has anything written in it (arc 19 / M9) — it decides both
+     *  what is listed and whether the Source row exists. Derived, never stored: the notebook-wide
+     *  answer at [ExportScope.Whole], the page's own at [ExportScope.Page] (arc 30 / PE2 — a page
+     *  export of the Document is that page's document or nothing). */
+    private val hasDocument: Boolean
+        get() = when (scope) {
+            is ExportScope.Page -> pageFacts?.hasDocument ?: false
+            ExportScope.Whole -> documentAnswer ?: false
+        }
 
     /** [hasDocument]'s answer, kept for the life of the screen (M11 review). The re-discovery on
      *  every resume is deliberate — a package can be disabled or replaced under a standing screen —
-     *  but *this* answer cannot change while the screen stands: Export is only ever entered from
-     *  the library with the notebook closed, and there is no way from here into the notebook or the
-     *  document editor. Re-asking was a full SQLCipher open (KDF and all) per resume for a boolean
+     *  but *this* answer cannot change while the screen stands: Export is only ever entered with
+     *  the notebook closed (from the library, or from the page sheet after the notebook has closed
+     *  itself — arc 30 / PE2), and there is no way from here into the notebook or the document
+     *  editor. Re-asking was a full SQLCipher open (KDF and all) per resume for a boolean
      *  that was already known. Null while unanswered, which includes a read that could not answer —
      *  "cannot answer" is not an answer worth remembering. */
     private var documentAnswer: Boolean? = null
@@ -278,6 +320,9 @@ class ExportActivity : AppCompatActivity() {
         notebookId = intent.getStringExtra(EXTRA_NOTEBOOK_ID).orEmpty()
         notebookName = intent.getStringExtra(EXTRA_NOTEBOOK_NAME).orEmpty()
         if (notebookId.isEmpty()) { finish(); return }
+        pageId = intent.getStringExtra(EXTRA_PAGE_ID)?.takeIf { it.isNotEmpty() }
+        returnToNotebook = intent.getBooleanExtra(EXTRA_RETURN_TO_NOTEBOOK, false)
+        scope = ExportScope.seeded(pageId)
 
         binding = ActivityExportBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -311,6 +356,8 @@ class ExportActivity : AppCompatActivity() {
         savedInstanceState?.let { state ->
             chosenPackage = state.getString(KEY_PACKAGE)
             documentSource = state.getBoolean(KEY_SOURCE)
+            // Whole is restorable only where the row that offers it is; Page is the seed.
+            if (state.getBoolean(KEY_SCOPE_WHOLE)) scope = ExportScope.Whole
             if (state.getBoolean(KEY_DESTINATION)) destinationChoice = ExportDestination.Choice.CLOUD
             state.getBundle(KEY_VALUES)?.let { b -> b.keySet().forEach { k -> b.getString(k)?.let { values[k] = it } } }
         }
@@ -342,8 +389,26 @@ class ExportActivity : AppCompatActivity() {
         super.onSaveInstanceState(outState)
         outState.putString(KEY_PACKAGE, chosenPackage)
         outState.putBoolean(KEY_SOURCE, documentSource)
+        outState.putBoolean(KEY_SCOPE_WHOLE, scope is ExportScope.Whole)
         outState.putBoolean(KEY_DESTINATION, destinationChoice == ExportDestination.Choice.CLOUD)
         outState.putBundle(KEY_VALUES, Bundle().also { b -> values.forEach { (k, v) -> b.putString(k, v) } })
+    }
+
+    /**
+     * **The reopen** (arc 30 / PE2, decision 5). From the page-sheet door the notebook was closed
+     * to let this screen read a cold file, and a notebook the person was in is a notebook they
+     * come back to — whether the export was written, cancelled or refused. Every way out of this
+     * screen already funnels through `finish()` (Back, the done dialog's dismiss, `problemAndClose`,
+     * the cancelled passphrase prompt), so the relaunch lives here once rather than at each. It
+     * opens at its bookmark, which the close wrote for the page the sheet was on. The library door
+     * never sets the flag and is untouched; a guard bounce finishes before the flag is read.
+     */
+    override fun finish() {
+        if (returnToNotebook && !relaunched && ::notebookId.isInitialized && notebookId.isNotEmpty()) {
+            relaunched = true
+            startActivity(NotebookActivity.intent(this, notebookId, notebookName))
+        }
+        super.finish()
     }
 
     // ── Discovery ────────────────────────────────────────────────────────────
@@ -381,15 +446,46 @@ class ExportActivity : AppCompatActivity() {
                 selectCloudOnDiscovery = false
                 if (cloudStatus?.connected == true) destinationChoice = ExportDestination.Choice.CLOUD
             }
-            val standing = kept.firstOrNull { it.ref.packageName == chosenPackage }
-            // A re-discovery keeps what the user already answered — the descriptor is usually the
-            // same one — and falling back to another exporter starts from its own defaults.
-            // A fresh screen defaults to the exporter the last successful export used (the user's
-            // 2026-08-30 call — discovery order is PackageManager's and means nothing); one whose
-            // exporter has since gone falls back to the first listed.
-            val remembered = kept.firstOrNull { it.ref.packageName == exportPrefs.lastExporter }
-            select(standing ?: remembered ?: kept.first(), keepValues = standing != null)
+            reselect()
         }
+    }
+
+    /**
+     * Pick the exporter the panel shows from [candidates]: the standing choice if it is still
+     * listed, else the one the last successful export used (the user's 2026-08-30 call — discovery
+     * order is PackageManager's and means nothing), else the first. A re-discovery keeps what the
+     * user already answered — the descriptor is usually the same one — and falling back to another
+     * exporter starts from its own defaults. Also the Scope row's road (arc 30 / PE2): a remembered
+     * Soil at page scope is not listed and falls to the first shown, as the rule already says.
+     */
+    private fun reselect() {
+        val standing = candidates.firstOrNull { it.ref.packageName == chosenPackage }
+        val remembered = candidates.firstOrNull { it.ref.packageName == exportPrefs.lastExporter }
+        select(standing ?: remembered ?: candidates.first(), keepValues = standing != null)
+    }
+
+    /** [described] narrowed to what [scope] lists (arc 30 / PE2): the document-format gate against
+     *  the scope's own document answer, and the Soil rule ([ExportScope.lists]). */
+    private fun listedNow(): List<Candidate> = described.filter { c ->
+        ExportDocumentRules.listed(c.info.sourceKind, hasDocument) && ExportScope.lists(c.info.sourceKind, scope)
+    }
+
+    /**
+     * The Scope row's tap. The candidate list is re-cut from [described] — no extension is asked
+     * again — and the pick re-settled; a pick that survives keeps its values, one that does not
+     * starts from the new exporter's defaults (the chooser's own rule).
+     */
+    private fun setScope(next: ExportScope) {
+        if (next == scope) return
+        scope = next
+        candidates = listedNow()
+        if (candidates.isEmpty()) {
+            // Cannot happen while the row is on screen (it is offered only when page scope lists
+            // something, and Whole lists everything) — but a screen must never stand empty.
+            problemAndClose(R.string.export_none_title, R.string.export_none_body)
+            return
+        }
+        reselect()
     }
 
     /** Discovery + `describe()` with nothing of the screen in it, so the export flow can run it too
@@ -398,7 +494,8 @@ class ExportActivity : AppCompatActivity() {
      *  It is also the shared door for the **document question** (arc 19 / M9), asked here rather
      *  than in `discover()` for exactly that reason: the flow's own re-discovery must come back
      *  knowing the same thing the panel did. [SoilDatabase.readOnce] is safe from this screen —
-     *  Export is only ever entered from the library, with the notebook closed — and its null means
+     *  Export is only ever entered with the notebook closed (both doors, arc 30 / PE2) — and its
+     *  null means
      *  "cannot answer", which is not an answer to build a chooser row on. Asked **once** and then
      *  remembered ([documentAnswer]): the exporters can change under a standing screen, the
      *  document cannot.
@@ -408,17 +505,34 @@ class ExportActivity : AppCompatActivity() {
     private suspend fun loadCandidates(): List<Candidate> {
         if (!resolveSourceKey()) return emptyList()
         loadCloud()
-        if (documentAnswer == null || stickyAnswer == null) {
-            // One open answers both questions (the M11 finding: a SQLCipher open per boolean).
-            val answers = SoilDatabase.readOnce(this, notebookId, sourceKey!!) {
-                it.hasLiveDocument() to it.stickyIdsWithContent().isNotEmpty()
+        if (documentAnswer == null || stickyAnswer == null || (pageId != null && !pageAnswered)) {
+            // One open answers every question (the M11 finding: a SQLCipher open per boolean) —
+            // the two notebook-wide ones and, from the page-sheet door, the page's own (PE2).
+            val door = pageId
+            val answers = SoilDatabase.readOnce(this, notebookId, sourceKey!!) { dao ->
+                val facts: PageFacts? = door?.let { id ->
+                    val pages = dao.childrenOfType(notebookId, SoilSchema.TYPE_PAGE)
+                    val index = pages.indexOfFirst { it.id == id }
+                    if (index < 0) return@let null
+                    // The heading-as-page-name rule, loose or link-wrapped (PageLabels): the same
+                    // answer the Contents and the link picker give to "what is this page called".
+                    val headings = ArrayList(dao.childrenOfType(id, SoilSchema.TYPE_HEADING))
+                    for (link in dao.linksOf(id)) headings += dao.childrenOfType(link.id, SoilSchema.TYPE_HEADING)
+                    val title = PageLabels.titleOf(headings.mapNotNull { HeadingRows.toHeading(it) })
+                    // The page's own document row (a child of the page); blank means absent — the
+                    // repository's read rule, kept by hand as ExportText keeps it.
+                    val pageDoc = dao.childrenOfType(id, SoilSchema.TYPE_DOCUMENT).any { !it.text.isNullOrBlank() }
+                    PageFacts(index + 1, title, pageDoc)
+                }
+                Triple(dao.hasLiveDocument(), dao.stickyIdsWithContent().isNotEmpty(), facts)
             }
             if (answers != null) {
                 documentAnswer = answers.first
                 stickyAnswer = answers.second
+                pageFacts = answers.third
+                pageAnswered = true
             }
         }
-        hasDocument = documentAnswer ?: false
         hasStickyContent = stickyAnswer ?: false
         val refs = ExtensionRegistry.exporters(this)
         val kept = ArrayList<Candidate>(refs.size)
@@ -428,14 +542,21 @@ class ExportActivity : AppCompatActivity() {
                 Slog.d(TAG) { "dropping ${ref.packageName}: an option kind this build cannot draw" }
                 continue
             }
-            if (!ExportDocumentRules.listed(info.sourceKind, hasDocument)) {
-                Slog.d(TAG) { "dropping ${ref.packageName}: a document format, and this notebook has none" }
-                continue
-            }
             kept += Candidate(ref, info)
         }
-        return kept
+        described = kept
+        // Page scope is offered only when something serves it (ExportScope.offerable); a page door
+        // over a Soil-only install falls back to the whole notebook with no row to say otherwise —
+        // GONE, never a latch into an empty chooser.
+        if (scope is ExportScope.Page && !ExportScope.offerable(kept.map { it.info.sourceKind })) {
+            scope = ExportScope.Whole
+        }
+        return listedNow()
     }
+
+    /** Whether the Scope row is on screen: the page-sheet door, and something to serve page scope. */
+    private fun scopeRowVisible(): Boolean =
+        pageId != null && ExportScope.offerable(described.map { it.info.sourceKind })
 
     /**
      * Fill [sourceKey] — the one prompt this screen may put up (arc 26 / U4).
@@ -539,6 +660,26 @@ class ExportActivity : AppCompatActivity() {
     /** The chooser and the options, rebuilt whole after every pick — one frame, one deliberate act. */
     private fun render() {
         val c = current() ?: return
+        // The host's first question (arc 30 / PE2), above the format because it decides which
+        // formats are listed: this page, or the whole notebook. Present only from the page-sheet
+        // door — the library door has no row, not a settled one (GONE, never disabled).
+        binding.scope.removeAllViews()
+        val scopeVisible = scopeRowVisible()
+        binding.scope.visibility = if (scopeVisible) View.VISIBLE else View.GONE
+        if (scopeVisible) {
+            binding.scope.addView(panel.caption(getString(R.string.export_scope_caption)))
+            val page = scope is ExportScope.Page
+            binding.scope.addView(
+                panel.choice(getString(R.string.export_scope_page), page) {
+                    if (!page) setScope(ExportScope.seeded(pageId))
+                }
+            )
+            binding.scope.addView(
+                panel.choice(getString(R.string.export_scope_notebook), !page) {
+                    if (page) setScope(ExportScope.Whole)
+                }
+            )
+        }
         binding.chooser.removeAllViews()
         if (candidates.size == 1) {
             // No radio for a choice that does not exist.
@@ -785,6 +926,17 @@ class ExportActivity : AppCompatActivity() {
      * refusal is a dialog, not a toast: each explains why the tap did nothing. The IME is left
      * exactly as it is — on Ratta, hiding it takes the hardware keys with it.
      */
+    /** What this export is called — the notebook's name, or at page scope the page's (arc 30 /
+     *  PE2, [ExportNaming.pageStem]: its heading, else `page N`). One stem for the file on disk
+     *  and the name inside it. */
+    private fun stem(): String = when (val s = scope) {
+        ExportScope.Whole -> ExportNaming.base(notebookName, notebookId)
+        is ExportScope.Page -> {
+            val facts = pageFacts
+            ExportNaming.pageStem(notebookName, notebookId, facts?.number ?: 0, facts?.title)
+        }
+    }
+
     private fun onExportTap() {
         if (busy) { Slog.d(TAG) { "export tap ignored: already running" }; return }
         val c = current() ?: return
@@ -842,9 +994,7 @@ class ExportActivity : AppCompatActivity() {
             .setType(ExportDocumentRules.mimeType(c.info, values))
             .putExtra(
                 Intent.EXTRA_TITLE,
-                ExportNaming.suggestedFileName(
-                    notebookName, notebookId, ExportDocumentRules.fileExtension(c.info, values),
-                ),
+                ExportNaming.fileName(stem(), ExportDocumentRules.fileExtension(c.info, values)),
             )
         busy = true
         try {
@@ -932,9 +1082,7 @@ class ExportActivity : AppCompatActivity() {
      * person's own cloud is where they would see it.
      */
     private fun confirmThenUpload(c: Candidate, path: List<String>, listing: List<CloudEntry>) {
-        val name = ExportNaming.suggestedFileName(
-            notebookName, notebookId, ExportDocumentRules.fileExtension(c.info, values),
-        )
+        val name = ExportNaming.fileName(stem(), ExportDocumentRules.fileExtension(c.info, values))
         val destination = Destination.Cloud(path, name, ExportDocumentRules.mimeType(c.info, values))
         if (CloudBrowserRules.fileNamed(listing, name) == null) {
             runExport(destination)
@@ -1025,7 +1173,7 @@ class ExportActivity : AppCompatActivity() {
                 val spec = try {
                     ExportSpec(
                         values = ExportOptions.specValues(c.info, values),
-                        notebookName = ExportNaming.specName(notebookName, notebookId),
+                        notebookName = ExportNaming.specNameOf(stem()),
                         exportSecret = if (wantsSecret) typedExportSecret else null,
                     )
                 } catch (e: IllegalArgumentException) {
@@ -1048,6 +1196,7 @@ class ExportActivity : AppCompatActivity() {
                         includeTemplate = ExportOptions.includeTemplate(c.info, values),
                         bundleVersion = c.info.bundleVersion,
                     )
+                    // Each render takes scope.pageIds and filters its own page rows (PE2).
                 }
                 val streamFile = when (prepared) {
                     is StreamSource.Failed -> {
@@ -1152,7 +1301,7 @@ class ExportActivity : AppCompatActivity() {
                 exportPrefs.lastExporter = c.ref.packageName
                 hideProgress()
                 if (isFinishing || isDestroyed) return@launch
-                Dialogs.confirm(this@ExportActivity, R.string.export_done_title, R.string.export_done_body) {
+                Dialogs.confirm(this@ExportActivity, R.string.export_done_title, doneBodyRes()) {
                     finish()
                 }
             } finally {
@@ -1242,6 +1391,7 @@ class ExportActivity : AppCompatActivity() {
     private suspend fun renderedPages(includeTemplate: Boolean, bundleVersion: Int): StreamSource {
         val outcome = ExportRender.render(
             applicationContext, notebookId, includeTemplate, pageProgress(), sourceKey, bundleVersion,
+            scope.pageIds,
         )
         return when (outcome) {
             is ExportRender.Outcome.Ready -> StreamSource.Ready(outcome.file)
@@ -1258,7 +1408,7 @@ class ExportActivity : AppCompatActivity() {
     private suspend fun assembledDocument(c: Candidate): StreamSource {
         stage(R.string.export_assembling)
         val outcome = ExportText.assemble(
-            applicationContext, notebookId, ExportOptions.textFormat(c.info, values), sourceKey,
+            applicationContext, notebookId, ExportOptions.textFormat(c.info, values), sourceKey, scope.pageIds,
         )
         return when (outcome) {
             is ExportText.Outcome.Ready -> StreamSource.Ready(outcome.file)
@@ -1276,7 +1426,7 @@ class ExportActivity : AppCompatActivity() {
      * row is not even on screen while this branch is the live one.
      */
     private suspend fun renderedDocumentPages(): StreamSource {
-        val outcome = DocumentPdfRender.render(applicationContext, notebookId, pageProgress(), sourceKey)
+        val outcome = DocumentPdfRender.render(applicationContext, notebookId, pageProgress(), sourceKey, scope.pageIds)
         return when (outcome) {
             is DocumentPdfRender.Outcome.Ready -> StreamSource.Ready(outcome.file)
             is DocumentPdfRender.Outcome.Failed -> StreamSource.Failed(getString(ExportMessages.of(outcome.problem)))
@@ -1499,6 +1649,11 @@ class ExportActivity : AppCompatActivity() {
         Dialogs.problem(this, titleRes, "$message $note")
     }
 
+    /** The done sentence names what went out: the notebook, or the one page (arc 30 / PE2). */
+    @StringRes
+    private fun doneBodyRes(): Int =
+        if (scope is ExportScope.Page) R.string.export_done_page_body else R.string.export_done_body
+
     /** A dialog that explains why there is nothing to do here, and closes the screen behind it. */
     private fun problemAndClose(@StringRes titleRes: Int, @StringRes bodyRes: Int) {
         if (isFinishing || isDestroyed) { finish(); return }
@@ -1520,6 +1675,7 @@ class ExportActivity : AppCompatActivity() {
         private const val KEY_PACKAGE = "export.package"
         private const val KEY_VALUES = "export.values"
         private const val KEY_SOURCE = "export.documentSource"
+        private const val KEY_SCOPE_WHOLE = "export.scopeWhole"
         private const val KEY_DESTINATION = "export.cloudDestination"
 
         /** The one folder of the provider's tree an export ever writes into (decision 5). The
@@ -1538,9 +1694,25 @@ class ExportActivity : AppCompatActivity() {
         const val EXTRA_NOTEBOOK_ID = "notebookId"
         const val EXTRA_NOTEBOOK_NAME = "notebookName"
 
-        fun intent(context: Context, notebookId: String, notebookName: String): Intent =
+        /** The page-sheet door (arc 30 / PE2): the page the export is seeded to. Absent from the
+         *  library door. Host-internal — an id, never content. */
+        const val EXTRA_PAGE_ID = "pageId"
+
+        /** The page-sheet door: relaunch the notebook when this screen finishes, however it
+         *  finishes (decision 5). Absent from the library door. */
+        const val EXTRA_RETURN_TO_NOTEBOOK = "returnToNotebook"
+
+        fun intent(
+            context: Context,
+            notebookId: String,
+            notebookName: String,
+            pageId: String? = null,
+            returnToNotebook: Boolean = false,
+        ): Intent =
             Intent(context, ExportActivity::class.java)
                 .putExtra(EXTRA_NOTEBOOK_ID, notebookId)
                 .putExtra(EXTRA_NOTEBOOK_NAME, notebookName)
+                .putExtra(EXTRA_PAGE_ID, pageId)
+                .putExtra(EXTRA_RETURN_TO_NOTEBOOK, returnToNotebook)
     }
 }

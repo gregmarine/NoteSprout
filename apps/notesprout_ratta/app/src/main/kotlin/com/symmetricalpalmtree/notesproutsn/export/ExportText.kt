@@ -96,13 +96,14 @@ object ExportText {
         notebookId: String,
         format: String,
         resolved: KeyResolver.Resolved? = null,
+        pageIds: Set<String>? = null,
     ): Outcome = withContext(Dispatchers.IO) {
         // The assembly's own failures are caught inside the open, not around it: they mean the
         // *write* failed, which is a different sentence from the file not opening — and the seal
         // still runs.
         val opened = ExportOpen.readOnly(context, notebookId, "assemble", resolved) { db ->
             try {
-                val markdown = markdownOf(db, notebookId)
+                val markdown = markdownOf(db, notebookId, pageIds)
                 if (markdown == null) Outcome.Failed(Problem.NO_DOCUMENT)
                 else write(context, notebookId, format, markdown)
             } catch (e: CancellationException) {
@@ -136,24 +137,29 @@ object ExportText {
      *
      * Null when the notebook has nothing written in it at all.
      *
+     * **At page scope** (arc 30 / PE2, [pageIds] non-null) the answer is **that page's document or
+     * nothing**: the notebook document is the merged draft of every page and is not what a one-page
+     * export asked for, so it is left out, and the page-document join runs over the scoped rows
+     * only ([ExportScope.pagesInScope]).
+     *
      * The page documents arrive in **one** read ([DocumentDao.pageDocumentsIn]) rather than a SELECT
      * per page: an export of a long notebook is a long enough silence already, and every one of
      * those reads was a round trip into an encrypted file for one row.
      */
-    internal suspend fun markdownOf(db: SoilDatabase, notebookId: String): String? {
+    internal suspend fun markdownOf(db: SoilDatabase, notebookId: String, pageIds: Set<String>? = null): String? {
         val dao = db.dao()
         val documentDao = db.documentDao()
         // Keyed by page, first row wins — `documentFor`'s `LIMIT 1`, which is a cap on damage: the
         // repository never inserts a second row for one parent, but a foreign writer could have.
         val byPage = HashMap<String, SoilObjectEntity>()
         for (row in documentDao.pageDocumentsIn(notebookId)) byPage.getOrPut(row.parentId) { row }
-        val pageDocs = dao.childrenOfType(notebookId, SoilSchema.TYPE_PAGE)
+        val pageDocs = ExportScope.pagesInScope(dao.childrenOfType(notebookId, SoilSchema.TYPE_PAGE), pageIds)
             // Blank means absent — the repository's read rule, kept by hand because the batch read
             // goes round it (and [ExportDocumentRules.assemble] would drop the blanks regardless).
             .map { page -> byPage[page.id]?.text?.takeIf { it.isNotBlank() } }
         // The notebook document is still the repository's own read: one row, one parent, and the
-        // blank rule applied where it is written down.
-        val notebookDoc = DocumentRepository(documentDao, dao).get(notebookId)?.text
+        // blank rule applied where it is written down. Not read at page scope (the class doc).
+        val notebookDoc = if (pageIds == null) DocumentRepository(documentDao, dao).get(notebookId)?.text else null
         val markdown = ExportDocumentRules.assemble(notebookDoc, pageDocs)
         Slog.d(TAG) { "assembled ${markdown?.length ?: 0} chars from ${pageDocs.size} page(s)" }
         return markdown

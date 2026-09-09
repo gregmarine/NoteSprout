@@ -78,4 +78,51 @@ class ExportNamingTest {
         assertEquals("ab c d", spec)
         assertTrue('/' !in spec)
     }
+
+    // ── Page scope (arc 30 / PE2) ────────────────────────────────────────────
+
+    @Test
+    fun pageStemUsesTheHeadingWhenThereIsOne() {
+        assertEquals("Field notes - Standup", ExportNaming.pageStem("Field notes", id, 3, "Standup"))
+    }
+
+    @Test
+    fun pageStemFallsBackToThePageNumber() {
+        assertEquals("Field notes - page 3", ExportNaming.pageStem("Field notes", id, 3, null))
+        // A heading that strips to nothing names nothing — the number stands in.
+        assertEquals("Field notes - page 3", ExportNaming.pageStem("Field notes", id, 3, "🌱 ✨"))
+        assertEquals("Field notes - page 3", ExportNaming.pageStem("Field notes", id, 3, "   "))
+        assertEquals("Field notes - page 3", ExportNaming.pageStem("Field notes", id, 3, ".."))
+    }
+
+    @Test
+    fun pageStemSanitizesTheHeadingLikeTheName() {
+        assertEquals("Field notes - Q2plan draft", ExportNaming.pageStem("Field notes", id, 1, "Q2/plan: *draft*"))
+        // A dash of any other kind is stripped, which is why the separator is a plain hyphen.
+        assertEquals("Field notes - a  b", ExportNaming.pageStem("Field notes", id, 1, "a — b"))
+    }
+
+    @Test
+    fun pageStemCapsALongHeading() {
+        val long = "x".repeat(200)
+        val stem = ExportNaming.pageStem("N", id, 1, long)
+        assertEquals("N - " + "x".repeat(ExportNaming.MAX_TITLE_CHARS), stem)
+    }
+
+    @Test
+    fun pageStemWithoutAPlaceNamesTheNotebookAlone() {
+        // The page could not be placed (it vanished): never "page 0".
+        assertEquals("Field notes", ExportNaming.pageStem("Field notes", id, 0, null))
+        // ...but a heading still names it.
+        assertEquals("Field notes - Standup", ExportNaming.pageStem("Field notes", id, 0, "Standup"))
+    }
+
+    @Test
+    fun stemBasedNamesAgreeWithTheOriginals() {
+        val stem = ExportNaming.pageStem("Field notes", id, 2, null)
+        assertEquals("Field notes - page 2.pdf", ExportNaming.fileName(stem, "pdf"))
+        assertEquals(stem, ExportNaming.specNameOf(stem))
+        assertEquals(ExportNaming.suggestedFileName("Field notes", id, "pdf"), ExportNaming.fileName(ExportNaming.base("Field notes", id), "pdf"))
+        assertTrue(ExportNaming.specNameOf("y".repeat(500)).length <= ExporterContract.MAX_NAME_CHARS)
+    }
 }

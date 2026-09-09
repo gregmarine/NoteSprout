@@ -138,6 +138,10 @@ object ExportRender {
      * [bundleVersion] is the exporter's own ceiling (`ExporterInfo.bundleVersion`): at
      * [PageBundle.VERSION] and above the sticky notes go out as endnotes; below it they stay
      * icons and the bundle is version 1.
+     *
+     * [pageIds] is the scope (arc 30 / PE2, [ExportScope.pageIds]): null bakes every page, a set
+     * bakes those pages only — filtered **before** [plan], so the endnotes (collected from the
+     * baked pages) and every count follow the page for free.
      */
     suspend fun render(
         context: Context,
@@ -146,12 +150,13 @@ object ExportRender {
         progress: suspend (Int, Int) -> Unit,
         resolved: KeyResolver.Resolved? = null,
         bundleVersion: Int = PageBundle.VERSION_1,
+        pageIds: Set<String>? = null,
     ): Outcome = withContext(Dispatchers.IO) {
         // The bake's own failures are caught inside the open, not around it: they mean the *render*
         // failed, which is a different sentence from the file not opening — and the seal still runs.
         val opened = ExportOpen.readOnly(context, notebookId, "render", resolved) { db ->
             try {
-                bake(context, db, notebookId, includeTemplate, bundleVersion, progress)
+                bake(context, db, notebookId, includeTemplate, bundleVersion, pageIds, progress)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -215,10 +220,11 @@ object ExportRender {
         notebookId: String,
         includeTemplate: Boolean,
         bundleVersion: Int,
+        pageIds: Set<String>?,
         progress: suspend (Int, Int) -> Unit,
     ): Outcome {
         val dao = db.dao()
-        val rows = dao.childrenOfType(notebookId, SoilSchema.TYPE_PAGE)
+        val rows = ExportScope.pagesInScope(dao.childrenOfType(notebookId, SoilSchema.TYPE_PAGE), pageIds)
         if (rows.isEmpty()) return Outcome.Failed(Problem.EMPTY)
         // Each refusal keeps its own Problem — routing either through the generic render catch
         // would blame memory or space for a data problem (the D3 review).

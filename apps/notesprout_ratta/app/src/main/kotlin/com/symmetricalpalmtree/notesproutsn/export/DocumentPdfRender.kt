@@ -123,12 +123,13 @@ object DocumentPdfRender {
         notebookId: String,
         progress: suspend (Int, Int) -> Unit,
         resolved: KeyResolver.Resolved? = null,
+        pageIds: Set<String>? = null,
     ): Outcome = withContext(Dispatchers.IO) {
         // The bake's own failures are caught inside the open, not around it: they mean the *render*
         // failed, which is a different sentence from the file not opening — and the seal still runs.
         val opened = ExportOpen.readOnly(context, notebookId, "render the document", resolved) { db ->
             try {
-                bake(context, db, notebookId, progress)
+                bake(context, db, notebookId, pageIds, progress)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -168,15 +169,18 @@ object DocumentPdfRender {
         context: Context,
         db: SoilDatabase,
         notebookId: String,
+        pageIds: Set<String>?,
         progress: suspend (Int, Int) -> Unit,
     ): Outcome {
         // Always the Markdown, never the plain-text strip: the strip exists to make a *text file*
         // readable without the syntax, and there is no syntax left on a typeset page to take out.
-        val markdown = ExportText.markdownOf(db, notebookId) ?: return Outcome.Failed(Problem.NO_DOCUMENT)
+        // At page scope (arc 30 / PE2) it is that page's document alone.
+        val markdown = ExportText.markdownOf(db, notebookId, pageIds) ?: return Outcome.Failed(Problem.NO_DOCUMENT)
 
         // The notebook's own edge — the first page row's authored size, exactly as the page render
-        // takes each page's (the D1 rule read from the document side).
-        val first = db.dao().childrenOfType(notebookId, SoilSchema.TYPE_PAGE).firstOrNull()
+        // takes each page's (the D1 rule read from the document side); at page scope, that page's.
+        val first = ExportScope.pagesInScope(db.dao().childrenOfType(notebookId, SoilSchema.TYPE_PAGE), pageIds)
+            .firstOrNull()
         val pageW = (first?.width ?: 0f).toInt()
         val pageH = (first?.height ?: 0f).toInt()
         val metrics = context.resources.displayMetrics

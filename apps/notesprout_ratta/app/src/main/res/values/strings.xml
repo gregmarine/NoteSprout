@@ -239,6 +239,11 @@
     <!-- The document source kind (arc 19 / M9). Source is the host's own question — the notebook's
          pages, or what was written in it — and both answers are prepared here, so these are host
          sentences: an unwritten notebook is an honest refusal rather than an empty file. -->
+    <!-- Scope (arc 30 / PE2): the page-sheet door's row. -->
+    <string name="export_scope_caption">Scope</string>
+    <string name="export_scope_page">This page</string>
+    <string name="export_scope_notebook">Whole notebook</string>
+    <string name="export_done_page_body">This page was exported.</string>
     <string name="export_source_caption">Source</string>
     <string name="export_source_pages">Notebook pages</string>
     <string name="export_source_document">Document</string>
@@ -576,6 +581,7 @@
     <string name="erase_page_action">Erase page</string>
     <string name="erase_page_title">Erase this page?</string>
     <string name="erase_confirm">Erase</string>
+    <string name="export_page_action">Export page</string>
 
     <!-- Page clipboard (arc 7) -->
     <string name="copy_page_action">Copy page</string>

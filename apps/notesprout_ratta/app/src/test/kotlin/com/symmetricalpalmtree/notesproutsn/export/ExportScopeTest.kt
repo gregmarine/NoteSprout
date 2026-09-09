@@ -1,0 +1,76 @@
+package com.symmetricalpalmtree.notesproutsn.export
+
+import com.symmetricalpalmtree.notesproutsn.data.soil.SoilObjectEntity
+import com.symmetricalpalmtree.notesproutsn.data.soil.SoilSchema
+import com.symmetricalpalmtree.notesproutsn.extension.ExporterContract
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** Arc 30 / PE2: scope is a host-side page filter, and the one exporter rule it adds is Soil's. */
+class ExportScopeTest {
+
+    private var next = 0L
+
+    private fun page(id: String, order: Int) = SoilObjectEntity(
+        id = id, parentId = "nb", type = SoilSchema.TYPE_PAGE, order = order,
+        createdAt = ++next, updatedAt = next, width = 1404f, height = 1872f,
+    )
+
+    private val rows = listOf(page("p1", 0), page("p2", 1), page("p3", 2))
+
+    @Test
+    fun seedsPageFromAnIdAndWholeFromNone() {
+        assertEquals(ExportScope.Whole, ExportScope.seeded(null))
+        assertEquals(ExportScope.Whole, ExportScope.seeded(""))
+        assertEquals(ExportScope.Page("p2"), ExportScope.seeded("p2"))
+    }
+
+    @Test
+    fun wholeHasNoFilterAndPageHasOne() {
+        assertNull(ExportScope.Whole.pageIds)
+        assertEquals(setOf("p2"), ExportScope.Page("p2").pageIds)
+    }
+
+    @Test
+    fun nullFilterKeepsEveryRowInOrder() {
+        assertEquals(rows, ExportScope.pagesInScope(rows, null))
+    }
+
+    @Test
+    fun filterNarrowsToTheNamedPagesInDaoOrder() {
+        assertEquals(listOf("p2"), ExportScope.pagesInScope(rows, setOf("p2")).map { it.id })
+        // Order is the DAO's, never the set's.
+        assertEquals(listOf("p1", "p3"), ExportScope.pagesInScope(rows, setOf("p3", "p1")).map { it.id })
+    }
+
+    @Test
+    fun aVanishedPageYieldsNothing() {
+        // The page went between the sheet and the run: each render refuses its own EMPTY.
+        assertTrue(ExportScope.pagesInScope(rows, setOf("gone")).isEmpty())
+    }
+
+    @Test
+    fun soilIsListedOnlyAtWhole() {
+        assertTrue(ExportScope.lists(ExporterContract.SOURCE_SOIL, ExportScope.Whole))
+        assertFalse(ExportScope.lists(ExporterContract.SOURCE_SOIL, ExportScope.Page("p1")))
+    }
+
+    @Test
+    fun pageAndDocumentExportersServeBothScopes() {
+        for (kind in listOf(ExporterContract.SOURCE_PAGES, ExporterContract.SOURCE_DOCUMENT)) {
+            assertTrue(ExportScope.lists(kind, ExportScope.Whole))
+            assertTrue(ExportScope.lists(kind, ExportScope.Page("p1")))
+        }
+    }
+
+    @Test
+    fun pageScopeIsOfferedOnlyWhenSomethingServesIt() {
+        assertFalse(ExportScope.offerable(emptyList()))
+        assertFalse(ExportScope.offerable(listOf(ExporterContract.SOURCE_SOIL)))
+        assertTrue(ExportScope.offerable(listOf(ExporterContract.SOURCE_SOIL, ExporterContract.SOURCE_PAGES)))
+        assertTrue(ExportScope.offerable(listOf(ExporterContract.SOURCE_DOCUMENT)))
+    }
+}
