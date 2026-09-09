@@ -471,6 +471,15 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   if wanted). **Walk trap:** `am force-stop` the HOST FIRST, then the extension processes, in one
   shell command, then `am start` Bootstrap — an extension killed under a live host hands it a
   cancelled result that pops the entry, and a walk then reports a drop that never happened.
+- **Arc 33 "Focus" is PLANNED (wizard locked 2026-09-09; F1–F5 ⬜)** — a single-finger
+  double-tap on each of the four paper screens (notebook, scratch pad, calendar, sticky editor)
+  hides / shows all of its chrome; while hidden the whole screen is writable paper; the bars are
+  floating overlays over full-bleed paper on every screen (the sticky editor is restructured to
+  match); the calendar's Month / Week / Day grids go full page (insets removed, `CalendarBars`
+  deleted, existing calendar ink shifts one bar height — accepted); one global persisted boolean
+  (`ChromePrefs`, `SnapPrefs`' shape) crosses to the pad and calendar as `EXTRA_CHROME_HIDDEN` on
+  the launch Intent and comes back on the result Intent (a compatible tail, no API bump). **Read
+  the standalone `FOCUS_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by
