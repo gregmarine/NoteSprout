@@ -362,6 +362,18 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   re-raise); version stays `0.1.0-ratta`; 1487 `:app` / 2847 tests. **`docs/notebook.md` (§ Erase
   page, § Export page, § Undo) + `docs/export.md` (§ Scope) are the reference; read the standalone
   `PAGE_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**
+- **Arc 31 "Harvest" is IN PROGRESS (wizard locked 2026-09-08; HV1–HV6 ⬜)** — the export and
+  import extras (`PARITY_BACKLOG.md` item 6): `:ext-image` "NSE · Image Export" (PNG; one file per
+  page into a SAF tree / the cloud folder at whole scope, the host bakes once and splits, the
+  exporter is called once per page; `ExporterInfo.delivery` tail), a page-sheet **Save as template**
+  row (page-sized raster → name → folder picker, fit pinned), presets as an additive `export_preset`
+  index row behind the panel's first radio row (never the secret, never the scope), and
+  **`ICalendar.render`** — `API_VERSION` **8 → 9**, floors untouched, not a ninth point — writing a
+  `PageBundle` to a host-owned fd for the Export screen's calendar mode (an Export button on the
+  calendar bar, Day = both halves, the calendar reopens after) and for the whole-page send, which
+  now inserts a **new page papered with the grid** (ring and marks off so the `IMG#` token dedupes);
+  selection sends stay ink-only. Fourteen modules after HV1. No code review (the user's call).
+  **Read the standalone `HARVEST_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by

@@ -1,0 +1,431 @@
+# HARVEST_PLAN.md — Arc 31 "Harvest" (Notesprout SN, branch `ratta`)
+
+**Standalone plan for the export and import extras** — item 6 of `PARITY_BACKLOG.md`: pages as
+images, page-to-template, export presets, and calendar export in both halves. This file is the
+cross-session memory for the arc: read it whole at every phase start, together with the root
+`CLAUDE.md` and `apps/notesprout_ratta/CLAUDE.md`. **Do not load `RATTA_PLAN.md` for this arc**
+unless a standing trap needs checking; its protocol and traps are summarized at the end so this
+file is enough. `PAGE_PLAN.md` is the shape this file copies.
+
+**Status: 🔄 wizard locked 2026-09-08.** HV1 ⬜ · HV2 ⬜ · HV3 ⬜ · HV4 ⬜ · HV5 ⬜ · HV6 ⬜.
+Baseline before the arc: 1487 `:app` / 2847 JVM tests, g-paper 0.1.28, `API_VERSION` 8, thirteen
+modules, version `0.1.0-ratta`.
+
+**Phase code:** **HV** — two letters, the arc-29/30 precedent.
+
+---
+
+## What this arc is
+
+Four sub-efforts the user named in one breath, all of them about getting things *out* of the
+garden, hence the name. Each rides machinery SN already has:
+
+- **Pages as images.** A fourth exporter, `NSE · Image Export` (`:ext-image`, PNG), on the existing
+  `SOURCE_PAGES` bundle. At page scope it is one PNG through the normal picker; at whole scope the
+  host writes **one PNG per page into a folder** — a SAF tree locally, the picked folder on the
+  cloud leg — calling the exporter once per page with a one-page bundle, so the seam's
+  one-call-one-file contract and `ExportVerification` stay single-file.
+- **Page-to-template.** A page-sheet row **Save as template**: the host rasters the displayed page
+  as the export would (paper + ink, page-sized WEBP q100 — already the byte shape an index template
+  row holds), names it, picks a folder, and lands it in the template library. No close-export-reopen.
+- **Export presets.** Named, saved combinations of exporter + option values + Source + destination
+  (cloud folder included). Never the secret, never the scope (og's rule, kept). Stored as an
+  **additive index row type** so they ride backup and restore. A radio row at the top of the Export
+  panel.
+- **Calendar export, both halves on one seam growth.** `ICalendar` grows a **`render`** call that
+  writes a `PageBundle` of calendar pages (grid · ink · today ring · event marks as flags) to a
+  host-owned fd. The host becomes a fourth bundle producer, so PDF and PNG of a calendar view come
+  free from the exporters that exist. **File export:** an Export button on the calendar's bar → the
+  host opens the Export screen in calendar mode. **Send page to notebook:** the whole-page send
+  inserts a **new page** papered with the grid (rendered without ring or marks so its `IMG#` token
+  dedupes) with the ink on top; the lasso's send-selection stays ink-only onto the displayed page.
+
+**What crosses the seam.** `ExtensionContract.API_VERSION` **8 → 9**: an `ExporterInfo` compatible
+tail (`delivery`: one file · one file per page) and two `ICalendar` methods (`render`,
+`outgoingTarget`). Every floor in `MIN_API_VERSIONS` is unchanged; the render is offered only when
+the installed calendar declares 9. **No ninth point**, no `.soil` version bump, no g-paper change.
+Module count goes to **fourteen** (`:ext-image`).
+
+## What SN already has (do not rebuild)
+
+| Piece | SN today | This arc |
+|---|---|---|
+| `INotebookExporter` (`describe` · `export(source fd, destination fd, spec)`), `ExporterInfo` with its two compatible tails (`sourceKind`, `bundleVersion`) | three exporters | a fourth exporter; a third tail `delivery` (D1) |
+| `ExportRender.bake` → `PageBundle.Writer` (page-sized RGB_565 → WEBP q100; endnotes only at bundle v2) | one bundle per export | baked **once**, then split into one-page bundles for a per-page exporter (D1); the same raster feeds page-to-template (D2) |
+| `PageBundle.Reader` / `Writer` in `:extension-api` (one page at a time) | | the host's splitter and `:ext-image`'s decode (D1); `:ext-calendar`'s writer (D4) |
+| `ExportScope` — host-side page-id filter, `lists` / `offerable` | This page · Whole | `Calendar(targets)` as a third scope; the image exporter inherits page scope for free (D1, D4) |
+| `ExportNaming.pageStem` — `<notebook> - <heading>` else `<notebook> - page N` | the page-scope filename | every per-page PNG's name; the template's default name (D1, D2) |
+| `ExportActivity` — chooser, `ExportPanel.choice` rows (Scope · Source · Destination), `described` vs `candidates`, `reselect()`, `runExport`, cloud leg, `finish()` override | | the Preset row (D3), the folder destination for per-page exporters (D1), calendar mode (D4) |
+| `ExportPrefs.lastExporter` (`sn_export`) | the one remembered thing | untouched; presets are index rows (D3) |
+| Additive index row types (`naming`, `clipboard`, `backup`) — `name` + `flags` + `blob` JSON, identity hash untouched | | `export_preset` (D3) |
+| `TemplateTransfer.ingest` → fit sheet → name dialog → `repo.createTemplate(name, parentId, KIND_IMAGE, fit, bytes)`; `TemplateImport.overCap` (6 MiB); `TemplateLibrary.isReservedName` | SAF picture import | the tail from `Loaded.Ok` reused with fit pinned (D2) |
+| `FolderPickerActivity` in `TEMPLATE_FOLDER` mode (the browser's Move) | | the save-as-template folder pick (D2) |
+| `NotebookSession.mintOrReuse` — reuse before mint by `token + page size`; `TemplateToken.ofImage(bytes, fit)` | re-paper | the calendar grid paper on the new page (D5) |
+| `ICalendar` held bind (`begin` · `receiveInk` · `takeOutgoing` · `end`), `CalendarTarget`, `HeldInkClient.drainOutgoing`, `ExtensionScreenEntry.onResult` | ink both ways | `render` + `outgoingTarget` (D4, D5) |
+| `CalendarTemplate.month/week/day` + `CalendarGeometry` (pure, Context-free, insets as parameters), `BakeKey`, `DayMark` | the screen's bake | the render's painter — insets 0, ring and marks by flag (D4) |
+| `ITagManager`'s bind-per-call shape (the store rides the call) | | `render(store, …)` (D4) |
+| `ExtensionStores.open` + `ExtensionStoreBinder` minted per bind | | the store lent to the render call (D4) |
+| `CalendarToolbar` (`btnSend` GONE unless `sendEnabled`), `RESULT_CALENDAR_*` codes, `reopenCalendarAfterPad` latch | | an Export button + `RESULT_CALENDAR_EXPORT`; reopen after export (D4) |
+| `NotebookActivity.pasteTransferred` (mint ids, append after max order, lasso armed, one `ObjectsPasted`) | the ink landing | selection sends unchanged; page sends go through a new-page road (D5) |
+| `CloudClient.upload` replace-by-name into a picked folder; `CloudBrowserDialog PICK_FOLDER` | one file | N files into the same folder (D1) |
+
+## Decisions (wizard 2026-09-08 — all binding)
+
+| # | Decision | Answer |
+|---|---|---|
+| 1 | Name / code | **Arc 31 "Harvest"**, phase code **HV**, this standalone `HARVEST_PLAN.md`. |
+| 2 | Multi-page images | **One PNG per page into a folder.** Page scope = one file through the normal picker. Local whole scope = SAF tree pick; cloud = the folder already picked. Host calls the exporter once per page. Zip declined; page-scope-only declined. |
+| 3 | Image module | **New `:ext-image`, "NSE · Image Export"**, fourteen modules, the one puzzle icon. |
+| 4 | Page-to-template door | **Page-sheet row "Save as template"** → name dialog (seeded heading or "page N") → **folder picker** (`FolderPickerActivity`, template-folder mode, root allowed). Fit pinned to Fit, 6 MiB cap kept, no undo. og's export-destination door declined. |
+| 5 | Presets | **Additive index row type `export_preset`**; the panel's captioned **radio row first** (`None · names`); a **Save preset…** action; long-press a name → rename / delete; any hand change drops back to None. SharedPreferences declined; a sheet instead of a row declined. |
+| 6 | Calendar seam | **`ICalendar.render`, `API_VERSION` 8 → 9.** The calendar writes a `PageBundle` to a host-owned fd; not a ninth point; the screen floor stays 7. Host-side repaint of the grid declined (painter would move, `CalendarSchema` would become a contract, audit row "the host computes no calendar arithmetic" would break). |
+| 7 | Send with paper | **Send page = a new page after the displayed one, papered with the grid, ink on top, one undo entry. Selection sends stay ink-only** onto the displayed page. Re-papering the displayed page declined; both-sends-carry-paper declined. |
+| 8 | Phases / review | **Six phases HV1–HV6, no code review** (the arc 27–30 shape). HV6 is docs + freeze. |
+
+### Derived rules (not separately asked — recorded so they are not re-litigated)
+
+- **The API bump lands in HV1**, not HV4: `API_VERSION = 9` with the `ExporterInfo.delivery` tail;
+  HV4 adds the `ICalendar` methods under the same 9. `MIN_API_VERSIONS` is untouched (floors 1 / 6 /
+  7 / cloud's). `:ext-image` declares 9 (born there); `:ext-calendar` re-declares 9 at HV4 so the
+  host can offer render; every other extension keeps its declaration. The map-pinning test and the
+  `API_VERSION` ledger in `docs/extensions.md` both change.
+- **`delivery` is a descriptor fact, read by the host only from a service declaring ≥ 9**; absent =
+  `DELIVERY_ONE_FILE` (every existing exporter). `DELIVERY_PER_PAGE` is legal only with
+  `SOURCE_PAGES` (an `ExportOptions.isRenderable` rule, like the reserved-option bindings).
+- **A per-page exporter at whole scope bakes once and splits.** `ExportRender` bakes the bundle
+  as today; a pure host splitter reads it page by page and writes a one-page bundle per exporter
+  call. No second `.soil` open per page. Endnotes never reach a per-page exporter: `:ext-image`
+  declares bundle v1, so `ExportRender` plans none.
+- **The image exporter's options:** `OPTION_PAGE_TEMPLATE` only (host-executed, as PDF's). No
+  password (PNG has none), no keying. PNG at compression 100, RGB_565 decode like `:ext-pdf`.
+- **Per-page delivery verification is per file** (`ExportVerification.verdict` unchanged per
+  call); the done dialog says "N images were exported"; a failure mid-loop stops, keeps what was
+  written, and reports "N of M images were exported" — never a silent partial success.
+- **Filenames in the folder** come from `ExportNaming.pageStem` per page; SAF providers de-dupe
+  collisions themselves (`(1)`), the cloud leg replaces by name after **one** confirmation naming
+  the count.
+- **Page-to-template rasters the page as it is on the glass, minus chrome:** page-sized, paper +
+  ink, `PagePreview.drawContent` over the loaded template — **not** `PagePreview.render` (it draws
+  a page edge) and not `CoverSnapshot` (cover size). `session.store.drain()` first. Encoded with
+  `BuiltInTemplates.toWebp`; over the 6 MiB cap → the import's `TooBig` dialog.
+- **Save as template never opens the `.soil` cold** — the session is open; it reads through the
+  session. No `ExportOpen`, no close.
+- **A preset row:** `type = "export_preset"`, `name` = the preset's name, `flags` = grammar
+  version 1, `blob` = kotlinx JSON `{ exporter (package), values (map), documentSource (bool),
+  destination (LOCAL | CLOUD), cloudPath (list) }`. Soft-deleted on delete. Listed by
+  `aliveOfType`, ordered by name. A corrupt blob is skipped, never crashes the screen.
+- **A preset whose exporter is not installed is not listed** (GONE rule) — it reappears when the
+  exporter is. A preset naming the cloud with no provider connected applies as Local with a toast.
+  A preset whose exporter is hidden by the current scope (Soil at page scope) is not listed at that
+  scope.
+- **Applying a preset sets the format, the option values, Source and Destination, then re-renders;
+  a preset needing a secret leaves the password fields empty for the user** (never stored). The
+  Preset row is absent when there are no presets; the Save action is always present.
+- **Presets apply in calendar mode too** by the same listing rule.
+- **The calendar render signature:** `void render(in IExtensionStore store, in CalendarTarget[]
+  targets, int widthPx, int heightPx, int flags, in ParcelFileDescriptor out)` — bind-per-call
+  (the tag manager's shape), `HostCallerCheck.enforce` first, one `PageBundle` v1 out (no links).
+  `widthPx`/`heightPx` are the page size for a target with **no minted page**; a minted page keeps
+  its own. Insets 0 — a full-page grid. Flags: `RENDER_GRID`, `RENDER_INK`, `RENDER_RING`,
+  `RENDER_MARKS`. Every target validated by `CalendarTarget`'s own unmarshal.
+- **File export renders the view on screen**: Month → one page, Week → one, **Day → both halves**
+  (og's rule) whatever half is showing. Flags = grid (the page-template toggle) · ink · ring off ·
+  marks on. Filename `Calendar - September 2026.<ext>` / `Calendar - Week of 2026-09-06` / `Calendar
+  - 2026-09-08` — pure, tested.
+- **Calendar mode on the Export screen:** `EXTRA_CALENDAR_TARGETS` (kind/date/half triples — not
+  transfer content, not a secret), no notebook, **no `.soil` opened**, Soil and Document hidden
+  (`ExportScope.Calendar` lists only `SOURCE_PAGES`), no Scope row, no Source row, the page-template
+  toggle labelled as today (it means the grid). The door does **not** close a notebook: the
+  calendar was launched for a result by the library or the notebook, the host receives
+  `RESULT_CALENDAR_EXPORT`, ends the bind, starts Export; on Export's finish the caller **reopens
+  the calendar** (the `reopenCalendarAfterPad` idiom). The notebook stays open throughout — no
+  cold-file rule applies because no `.soil` is read.
+- **The render's store is lent per call**: the host opens `Garden/<calendar pkg>.db` the normal
+  `ExtensionStores.open` way, mints an `ExtensionStoreBinder` for the calendar's uid, passes it,
+  revokes after. A render on the held bind (D5) passes the same binder the bind already holds.
+- **Timeout for render is measured, not assumed** (the export trap): first cut `RENDER_TIMEOUT_MS`
+  = `EXPORT_TIMEOUT_MS`; measure a Day pair and a full Month on the Nomad and record.
+- **Send page with paper:** the calendar parks the ink as today and the host asks
+  `outgoingTarget()` on the still-held bind (null = a selection send or nothing parked), then
+  `render(store, [target], w, h, RENDER_GRID, out)` on the same bind before `end()`. The paper
+  bytes are the bundle's one page, re-encoded host-side through `toWebp` only if not already WEBP
+  (the calendar writes WEBP q100 — the F5 recipe), bounded-decoded first (untrusted bytes from an
+  extension: `MAX_TEMPLATE_EDGE`, `MAX_PAGE_BYTES`). Token = `TemplateToken.ofImage(bytes, FIT)`;
+  `mintOrReuse` dedupes a repeat send of the same month.
+- **A page send with no ink sends the paper alone** (og's "Template only") — "Nothing to send"
+  stays for selection sends only. A page send on a calendar opened from the **library** (no
+  notebook) has no Send button, as today.
+- **The new page** goes after the displayed page, sized to the calendar page's size (coordinates
+  1:1, the standing rule), with the grid as its template and the ink appended. **One undo entry**
+  — read `Action.Page(snapshot)` at HV5 start: if the page-insert snapshot already carries the
+  page's children and template on revert/reapply, use it; else a `Action.PageReceived` kind that
+  deletes / re-inserts the page by id. Lands with the lasso armed on the ink, as every landing.
+- **Frame silence:** every new dialog and sheet row is deliberate-tap chrome; the per-page export
+  progress dialog is the existing one.
+- **GONE, never disabled:** the Export button on the calendar bar is absent when no exporter
+  serving `SOURCE_PAGES` is installed (the host passes `EXTRA_CALENDAR_EXPORT_ENABLED`, a fourth
+  boolean on the Intent — audit row 30 gains a word); the Preset row is absent with no presets;
+  Save as template is absent when the page cannot be rastered (no size).
+- **`lastExporter` is written on every export** (image, calendar, preset-driven alike).
+
+---
+
+## Design (binding unless a phase-start question reopens it)
+
+### D1 — Images (HV1)
+
+- **`:extension-api`:** `ExporterContract.DELIVERY_ONE_FILE = 0` / `DELIVERY_PER_PAGE = 1`;
+  `ExporterInfo.delivery: Int = DELIVERY_ONE_FILE` as a third compatible tail (read with
+  `dataAvail`, only meaningful when the service declares ≥ 9; the host reads it through the
+  registry's version answer). `API_VERSION = 9`. Tests: the parcel round-trip both shapes, the
+  version map pin.
+- **`:ext-image`** (`…notesproutsn.ext.image`, "NSE · Image Export", puzzle icon, manifest
+  `API_VERSION 9`, `HostCallerCheck.enforce` first): `ImageDescriptor` (`formatLabel` "PNG image",
+  `fileExtension` "png", `mimeType` "image/png", options = `OPTION_PAGE_TEMPLATE`, `sourceKind =
+  SOURCE_PAGES`, `bundleVersion = VERSION_1`, `delivery = DELIVERY_PER_PAGE`); `ImageExportSpec`
+  (supported options = the one; unknown refused, PDF's rule); `ImageAssembly` — read the bundle
+  (expect exactly one page; more is an `IllegalStateException` naming the count), decode RGB_565,
+  dimension-check against the declaration, `compress(PNG, 100)` through the counting + fsync
+  delivery (`SoilStreams`' rule), recycle. Module deps: `:extension-api` only. Settings +
+  `build.gradle.kts` by the `:ext-pdf` template.
+- **Host, per-page delivery:** `ExportDelivery` (pure rules) — `perPage(info, scope)`: a
+  `DELIVERY_PER_PAGE` exporter at a one-page scope is single-file; at more than one page it is
+  per-page. `ExportActivity.onExportTap`: per-page → `ACTION_OPEN_DOCUMENT_TREE` (local) or the
+  cloud folder pick as today. `runExport` per-page branch: bake once (`renderedPages` unchanged) →
+  `BundleSplit` (pure over `PageBundle.Reader`/`Writer`: page *i* → a one-page v1 bundle file in
+  `cacheDir/export/`) → per page: `DocumentsContract.createDocument(tree, mime, name)` /
+  `openCacheDestination` → `ExporterClient.export` → `verdict` → cloud upload → next. Progress
+  dialog counts pages. Names from `ExportNaming.pageStem(displayName, notebookId, n, title)` — the
+  titles come from the same `readOnce` that answers `PageFacts` today, widened to every page in
+  scope (`PageLabels.titleOf` per page).
+- **Cloud:** `confirmThenUpload` says "N files will be uploaded to <folder>; files with the same
+  name are replaced" once; uploads loop.
+- **Done wording:** `export_done_images_body` "N images were exported." / partial
+  `export_done_images_partial_body` "N of M images were exported."
+- Tests: descriptor tail round-trip; `ImageExportSpec`; `ExportDelivery.perPage`; `BundleSplit`
+  (a 3-page bundle → three 1-page bundles, bytes identical); `ExportOptions.isRenderable` refuses
+  `DELIVERY_PER_PAGE` on a non-pages source; naming per page; the version map.
+
+### D2 — Save as template (HV2)
+
+- Page-sheet row **Save as template** (`ic_template`? — no: that is the Page template row's icon;
+  use Tabler `photo-plus` or `template` variant — check og's `drawable/` first) after Export page.
+- `saveAsTemplate()` (through `runPageOp`): `session.store.drain()` → `PageRaster.of(session,
+  pageId)` (new, host: page-sized RGB_565, white, template bitmap the session already holds —
+  `loadTemplateFor` — then `PagePreview.drawContent` with the page's content read the way the
+  neighbour prefetch reads it) → `toWebp` → `TemplateImport.overCap` → name dialog (`NameDialog`,
+  seeded `PageLabels.titleOf` else "page N", `NameRules.validate`) → `FolderPickerActivity.intent(
+  browseFolderType = TEMPLATE_FOLDER, rootLabel = templates_title)` → `isReservedName` /
+  duplicate check (`TemplateLibrary.duplicateName` for a clash) → `repo.createTemplate(name,
+  folderId, KIND_IMAGE, TemplateFit.FIT, bytes)` → toast `template_saved`. The launcher result
+  callback latches at its **top** (the S2 rule); the bytes are held in the Activity across the
+  picker (not instance state — a rebuilt screen refuses with a dialog, as the export secret does).
+- No `.soil` write, no undo, no recents record, no library row for the page.
+- Tests: `PageRaster` is Android-bound (no JVM test); the name seeding and the dedupe rule are
+  pure and tested.
+
+### D3 — Presets (HV3)
+
+- `ObjectType.EXPORT_PRESET = "export_preset"` (additive; identity hash untouched — pinned by the
+  existing hash test). `ExportPreset` (kotlinx, `data/export/`): `exporter`, `values`,
+  `documentSource`, `destination`, `cloudPath`, `version`. `ExportPresets` (pure): `listable(presets,
+  installed, scope, cloudAvailable)`, `apply(preset) → screen state`, `capture(screen state)`.
+  `IndexRepository`: `exportPresets()`, `createExportPreset`, `renameExportPreset`,
+  `deleteExportPreset` (soft).
+- Screen: container `@id/presets` above `@id/scope`; `ExportPanel.choice` with `None` first; a
+  **Save preset…** text button in the panel under the row (the panel's idiom; `TextButton` needs
+  its own `layout_width` if it goes to XML — it does not, the panel builds it in code); long-press a
+  preset radio → `ActionSheetDialog` Rename · Delete. Applying: `applyingPreset` latch around the
+  widget writes so listeners do not clear the pick (og's shape); any hand change → None.
+- Tests: `ExportPreset` JSON round-trip + corrupt blob skipped; `ExportPresets.listable` (not
+  installed, hidden by scope, no cloud); `capture`/`apply` inverse.
+
+### D4 — Calendar render + file export (HV4)
+
+- **`:extension-api`:** `ICalendar` gains `void render(in IExtensionStore store, in
+  CalendarTarget[] targets, int widthPx, int heightPx, int flags, in ParcelFileDescriptor out)` and
+  `CalendarTarget outgoingTarget()` (appended — existing transaction codes unchanged). Constants
+  `RENDER_GRID = 1`, `RENDER_INK = 2`, `RENDER_RING = 4`, `RENDER_MARKS = 8`;
+  `MIN_API_VERSION_FOR_CALENDAR_RENDER = 9` (a method floor, not an action floor — the map is
+  untouched); `EXTRA_CALENDAR_EXPORT_ENABLED`; `RESULT_CALENDAR_EXPORT = 3`; `RENDER_TIMEOUT_MS`.
+- **`:ext-calendar`:** `CalendarRender` (extension side) — per target: `CalendarStore` header +
+  strokes for the page (or the given size when unminted), `CalendarGeometry.*(w, h, density,
+  0, 0)`, `CalendarTemplate.*` with `ring`/`marks` honoured (add a `ring: Boolean` parameter; marks =
+  `emptyMap()` when the flag is off), ink drawn over it through the shared `:ext-ink` stroke painter
+  (the one the screen's g-paper does not expose — read at phase start whether `:sn-screen` has a
+  bitmap stroke painter; if not, a small `StrokePainter` in `:ext-ink` from `StrokeRows`'
+  decoded points, round caps, 3 px, the notebook's fixed ink), composited on white RGB_565 → WEBP
+  q100 → `PageBundle.Writer` v1. Density: the extension's own display density (the calendar page
+  was sized under it). `CalendarService.render` = enforce → store guard → the loop → close the fd.
+  `outgoingTarget` answers the parked send's target. Manifest `API_VERSION 9`. The bar gains
+  `btnExport` (`ic_download`, GONE unless `EXTRA_CALENDAR_EXPORT_ENABLED`) → parks the current
+  view's targets (Day = both halves) → `finishWithHandoff(RESULT_CALENDAR_EXPORT)`.
+- **Host:** `CalendarClient.render(...)` bind-per-call with a lent store; `CalendarEntry.onClosed`
+  handles `RESULT_CALENDAR_EXPORT` → the caller (library or notebook) starts `ExportActivity.intent(
+  calendarTargets = …)` and latches `reopenCalendarAfterExport`; `ExportScope.Calendar(targets)` —
+  `lists` = `SOURCE_PAGES` only, `offerable` = any such exporter installed **and** the calendar
+  declares 9; `CalendarRender` (host side, a fourth producer beside `ExportRender` /
+  `DocumentPdfRender` / `ExportText`): open the store, bind, `render`, verify the bundle header,
+  `Outcome.Ready(file)`. `ExportNaming.calendarStem(target)`. `PageFacts` absent; `hasDocument`
+  false; the header shows "Calendar".
+- Tests: `ExportScope.Calendar` rules; `calendarStem`; `CalendarRenderPlan` (pure: targets →
+  page list, Day doubles); the render flags; parcel round-trips; the map pin.
+- **Walk (Nomad):** Month → Export → PDF to SAF → one page, grid + ink, no ring, marks present ·
+  PNG → one file · Day → two files AM/PM · the calendar reopens after · with the toggle off → white
+  ground + ink · no exporter → no button · the image exporter uninstalled but PDF present → still
+  offered.
+
+### D5 — Send page with paper (HV5)
+
+- `ExtensionScreenEntry.onResult` on `RESULT_CALENDAR_SEND`: drain ink as today, then
+  `outgoingTarget()`; non-null → `render(store, [target], w, h, RENDER_GRID, out)` on the held bind
+  → `DrainedInk` gains `paper: ByteArray?` (null = selection send). Then `end()`.
+- `NotebookActivity.receiveCalendarPage(drained)`: `session.insertPageAfter(displayed, width,
+  height)` → `session.changeTemplate(PaperSource.Image(paper, FIT), dpi)` on the new page (mint or
+  reuse) → `pasteStrokes` → one undo entry (D-rule above) → `refreshToPage(new)` → lasso armed on
+  the ink. `pasteFromCalendar` keeps the ink-only road for `paper == null`.
+- The empty-page send: the calendar's `sendPage()` no longer refuses an empty page — it parks zero
+  chunks and the target; the host inserts the papered page with no ink. "Nothing to send" only for
+  selections.
+- Tests: `NotebookUndoTest` for the new kind (if any); `TransferCaps` unchanged; a pure
+  `CalendarPaper.accept(bytes)` bound check.
+- **Walk (Nomad, by hand — the pen):** write on a Month → Send page → a new page after the current
+  one with the grid and the ink, lasso armed · undo → page gone · redo → back · send the same month
+  twice → one template row in the `.soil` (`templateDigests`) · send an empty Week → grid alone ·
+  lasso a fragment → Send → lands on the displayed page, no new page, as today · `am crash` after
+  a send → the page persists.
+
+---
+
+## Phases
+
+### ⬜ HV1 — Images (Opus code on a Fable brief for `:ext-image` + host loop · Sonnet scaffold (module, manifest, icon, strings) · Fable seam + review · Sonnet adb walk up to the picker, SAF by hand)
+
+**Questions to resolve at phase start:** app version (stays `0.1.0-ratta`?); PNG compression /
+config (planner: PNG 100 over RGB_565); whether per-page delivery at whole scope should be offered
+on the **library** door too (planner: yes — a whole-notebook image export is the folder case).
+
+- D1. Read first: `ExtensionRegistry`'s per-service version answer (how the host learns a
+  service declares 9); `ExportActivity.runExport`'s `finally` (the cache dir is one directory for
+  every producer — the split files live under it); `CloudClient.upload`'s replace semantics for a
+  loop.
+- **Walk:** page scope PNG to SAF (one file, heading name) · whole notebook to a SAF folder (N
+  files, names, `(1)` on a repeat) · cloud folder N files · template toggle off · Document source
+  as PNG (the preview pages) · the PDF exporter unchanged · uninstall `:ext-image` → PNG gone.
+
+### ⬜ HV2 — Save as template (Opus on a Fable brief · Fable review · walk by hand)
+
+**Questions to resolve at phase start:** app version; the row's position (planner: after Export
+page); the folder picker's root label; whether a heading-less page seeds "page N" or the notebook
+name (planner: "page N").
+
+- D2. Read first: how the neighbour prefetch reads a page's content for `PagePreview`
+  (`PageReads.content` vs the session's cache); `TemplateTransfer`'s dialog chain to copy the
+  tail; `FolderPickerActivity`'s template-mode result contract.
+- **Walk:** page with ink + heading → Save as template → name seeded → folder → toast → the
+  library shows it, its thumbnail is the page → apply it to a new notebook → paper = the page ·
+  cancel at the name / at the folder writes nothing · a reserved name refused · a huge photo-paper
+  page over 6 MiB → TooBig dialog.
+
+### ⬜ HV3 — Presets (Opus on a Fable brief · Sonnet strings · Fable review · Sonnet adb walk)
+
+**Questions to resolve at phase start:** app version; the Save action's placement (planner: under
+the Preset row in the panel); whether applying a preset with a stale cloud folder browses or
+refuses (planner: applies the path; the upload's own failure explains).
+
+- D3. Read first: the identity-hash test for the index; `ExportActivity`'s restore path (a preset
+  pick survives rotation like the format pick); the `applyingPreset` latch's interaction with
+  `reselect()`.
+- **Walk:** save "Drive PDF" (PDF, template off, cloud folder) → reopen Export → row shows it →
+  apply → every control matches → export → done · hand-change → None · rename · delete · a preset
+  for PNG with `:ext-image` disabled → hidden, re-enabled → back · page-sheet door lists presets
+  (Soil preset hidden) · backup → restore → presets present.
+
+### ⬜ HV4 — Calendar render + file export (Fable seam + `CalendarRender` both sides · Opus the Export screen's calendar mode · Sonnet strings/XML · Fable review · walk by hand)
+
+**Questions to resolve at phase start:** app version; whether marks are drawn on a file export
+(planner: yes) and the ring (planner: no); the unminted page size the host passes (planner: the
+notebook page size the library mints new notebooks at); the render timeout after measuring.
+
+- D4. Read first: whether any shared module can paint strokes to a `Canvas` (the g-paper
+  `renderToBitmap` is view-bound); `CalendarStore`'s read path for a page's strokes outside a
+  showing; `ExtensionStoreBinder` minting outside `HeldInkClient.open`.
+- Walk as under D4.
+
+### ⬜ HV5 — Send page with paper (Opus on a Fable brief · Fable review · walk by hand)
+
+**Questions to resolve at phase start:** app version; the undo shape (read `Action.Page`);
+whether the new page inherits the notebook's default size or the calendar page's (planner: the
+calendar's — 1:1).
+
+- D5. Walk as under D5.
+
+### ⬜ HV6 — Docs, ledger, freeze (Fable docs directly or Sonnet fan-out · no code, no code review)
+
+- `docs/export.md`: § Images (per-page delivery, the splitter, folder destinations, naming), §
+  Presets, § Calendar mode, the `EXTRA_*` table, failure rows, Related. `docs/extensions.md`:
+  `API_VERSION` ledger (9 = the third tail + two `ICalendar` methods), the module table
+  (`:ext-image`), the boundary audit rows (the render fd, the lent store, the Intent's fourth
+  boolean), `:ext-image`'s identity. `docs/calendar.md`: § Export, § Send page with paper, the
+  transfer table. `docs/templates.md`: § Save as template. `docs/notebook.md`: the page sheet's
+  eight rows, the received-page undo row. `docs/library.md`, `docs/cloud.md` (N-file upload).
+- `PARITY_BACKLOG.md` item 6 → DONE; `RATTA_PLAN.md` header; app + root `CLAUDE.md`; memory.
+  Freeze.
+
+---
+
+## Planner calls the wizard didn't cover (implementer follows; the user can override at phase start)
+
+- Sheet rows after this arc: Copy · Cut · [Paste] · Page template · Erase page · Delete page ·
+  [Export page] · [Save as template].
+- Image exporter label "PNG image", extension `png`; done wording above.
+- Preset names follow `NameRules`; duplicates refused with the rename dialog's wording.
+- Calendar filenames: `Calendar - <Month YYYY>` · `Calendar - Week of <Sunday ISO>` · `Calendar -
+  <ISO day>` (+ ` AM` / ` PM` per file when the exporter is per-page).
+- The calendar's Export button sits after `btnSend` on the top bar; measure the Nomad bar before
+  adding (arc 29's twelfth-button lesson — the calendar bar is shorter than the notebook's).
+- Walks: adb can drive sheets, the Export screen, the calendar's buttons and the SAF picker up to
+  the file list; **the pen and the folder pick are by hand**.
+
+## Standing traps that bind this arc
+
+- **A new point needs both actions in the host's `<queries>`** — not a new point here, but
+  `:ext-image` is a new *package* on an existing action: discovery is by action, so no manifest
+  change; verify `queryIntentServices` lists four exporters before blaming signatures.
+- **Bytes from an extension are untrusted** — bounded decode, dimension check against the
+  declaration, size caps, never a path or content in an exception message.
+- **A Binder call cannot be cancelled** — size the render timeout by the work (a full Month with
+  ink), measure on the Nomad.
+- **A SAF pick cannot be driven by adb** — tree picks included.
+- **`ExportOpen` guard 2 refuses a held `.soil`** — the calendar mode never opens one; the
+  notebook door still closes first.
+- **ActivityResult callbacks run before `onResume`** — latch at the top of every result callback
+  (the folder pick, the template folder pick, the calendar's export result).
+- **`showSoftInput` from `onResume` is dropped** — the name dialogs use the standing
+  `NameDialog` shape.
+- **GONE, never disabled** — every new control above.
+- **The dialog-border trap** — every new dialog is `Dialogs.*` or a plain `AlertDialog`.
+- **`Widget.Notesprout.TextButton` sets no `layout_width`** — panel buttons are built in code.
+- **File tools can land a raw NUL byte** — byte-scan changed files before calling a phase done.
+- **Drain the shared `SoilWriter` before any raster** of the current notebook.
+- **Reuse before mint; render at the page's own size; `applyTemplate` never decodes.**
+- **`updatedAt` is sacred** — a preset row's rename bumps it; nothing else does.
+- **Backing out of a live notebook through the app before installing** keeps the EPD pin from
+  leaking; the calendar too.
+- **Doc agents never run git, never revert files they did not create** (the Z6 trap).
+- **Check og's `drawable/` before drawing a "fresh" icon.**
+
+## Working protocol (summary — the full text is `RATTA_PLAN.md` § Working protocol)
+
+One phase per session; read this file whole at phase start, flip the phase to 🔄, ask its
+phase-start questions **one at a time**, then code. Fable plans / seams / reviews; Opus features;
+Sonnet scaffold, layouts, resources, docs; ≤ 5 background agents. JVM tests for every pure piece;
+the user gets a **short numbered checklist** only for what needs a hand or an eye. **Nomad only**
+(SNN `SN078D10012852`); the Manta only on explicit ask. Commit + push only when every suite is
+green (or the user's all-clear), after docs / memory / CLAUDE.md are in; then the user runs
+`/clear`. A long explanation and an `AskUserQuestion` never share one turn — explain, wait, then
+ask.
+
+## Ledger
+
+*(one Outcome entry per phase as it closes)*

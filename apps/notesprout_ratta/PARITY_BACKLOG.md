@@ -21,9 +21,10 @@ reference is `docs/encryption.md`, the plan and ledger `ENCRYPTION_PLAN.md`). It
 and ledger `RESTORE_PLAN.md`). Item 3 **DONE** (arc 28 "Objects", H1–H7 landed 2026-09-06, complete + frozen; the reference is
 `docs/objects.md`, the plan and ledger `OBJECTS_PLAN.md`). Item 4 **DONE** (arc 29 "Loop", LE1–LE4
 landed 2026-09-06/07, complete + frozen; the reference is `docs/notebook.md` § Toolbar + § Undo, the
-plan and ledger `LOOP_PLAN.md`). Item 5 **IN PROGRESS** (arc 30 "Page", wizard locked 2026-09-08; the plan
-and ledger is the standalone `PAGE_PLAN.md` — read it, not `RATTA_PLAN.md`). Items 6–7 not started. No ordering has been decided — the numbering below is the order the user listed
-them in, not a priority.
+plan and ledger `LOOP_PLAN.md`). Item 5 **DONE** (arc 30 "Page", PE1–PE3 landed 2026-09-08, complete +
+frozen; the reference is `docs/notebook.md` § Erase page / § Export page + `docs/export.md` § Scope, the
+plan and ledger `PAGE_PLAN.md`). Item 6 **IN PROGRESS** (arc 31 "Harvest", wizard locked 2026-09-08; the
+plan and ledger is the standalone `HARVEST_PLAN.md` — read it, not `RATTA_PLAN.md`). Item 7 not started.
 
 ---
 
@@ -241,7 +242,9 @@ its paper) and a per-page **Export** — both moved into og's canvas long-press 
 
 ---
 
-## 6. Export and import extras
+## 6. Export and import extras — 🔄 IN PROGRESS (arc 31 "Harvest", wizard locked 2026-09-08; plan and ledger `HARVEST_PLAN.md`)
+
+**Locked shape (the eight wizard answers, all in `HARVEST_PLAN.md`):** `:ext-image` "NSE · Image Export" (PNG, one file per page into a folder at whole scope) · page-sheet row **Save as template** (name → folder picker, fit pinned) · presets as an additive `export_preset` index row behind a radio row · `ICalendar.render` (`API_VERSION` 8 → 9, not a ninth point) feeding the Export screen's calendar mode and a **new papered page** on a whole-page send. Six phases HV1–HV6, no code review. The text below is the gap review as it stood before the arc.
 
 **User's call:** "Page-to-template, exporting of pages as images, export presets, and exporting of
 calendar pages (both as normal export, and enhancing the existing cal-to-notebook feature to

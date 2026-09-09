@@ -178,6 +178,11 @@ skill (`.claude/skills/device-build-install/SKILL.md`) — invoked automatically
   `ExportActivity` at page scope → reopen, a host-side page filter with `ExportSpec` and every
   exporter untouched); host-only, no point, no API bump, no code review. **Arcs 1–30 are all
   complete and frozen.**
+  **Arc 31 "Harvest" (export and import extras, PARITY_BACKLOG item 6) is IN PROGRESS (wizard
+  locked 2026-09-08, HV1–HV6)**: read the standalone `apps/notesprout_ratta/HARVEST_PLAN.md` (not
+  `RATTA_PLAN.md`) — `:ext-image` PNG exporter with per-page folder delivery, Save as template,
+  `export_preset` index rows, `ICalendar.render` at `API_VERSION` 9 (not a ninth point) for calendar
+  file export and a papered page on send; no code review.
   **No NINTH extension point
   and no other arc without another user decision. Read `apps/notesprout_ratta/RATTA_PLAN.md`
   first for ANY other work there** — it holds the working protocol, model recipe, standing
