@@ -51,7 +51,9 @@ import com.symmetricalpalmtree.notesproutsn.data.soil.SoilSchema
 import com.symmetricalpalmtree.notesproutsn.data.index.IndexRepository
 import com.symmetricalpalmtree.notesproutsn.data.index.ObjectSummary
 import com.symmetricalpalmtree.notesproutsn.data.index.ObjectType
-import com.symmetricalpalmtree.notesproutsn.data.prefs.BrowseState
+import com.symmetricalpalmtree.notesproutsn.data.prefs.Surface
+import com.symmetricalpalmtree.notesproutsn.data.prefs.SurfaceEntry
+import com.symmetricalpalmtree.notesproutsn.data.prefs.SurfaceStack
 import com.symmetricalpalmtree.notesproutsn.data.prefs.LinkTrail
 import com.symmetricalpalmtree.notesproutsn.data.prefs.RecentsPrefs
 import com.symmetricalpalmtree.notesproutsn.data.prefs.SnapPrefs
@@ -91,6 +93,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import java.util.UUID
 
 /**
  * The notebook screen: a full-bleed g-paper surface with the toolbar and the name strip overlaying
@@ -348,6 +351,10 @@ class NotebookActivity : AppCompatActivity() {
     /** Arrived by following a link (K4): the persisted trail survives and both Backs walk it. */
     private var viaLink = false
 
+    /** The surface stack (arc 32 / RS1) and this instance's token on it — see [SurfaceStack]. */
+    private lateinit var stack: SurfaceStack
+    private lateinit var stackToken: String
+
     /**
      * The follow's target page, overriding the notebook's remembered `refId` for this open only —
      * read from the Intent **only on a fresh create** (locked K4): Android redelivers the original
@@ -449,6 +456,10 @@ class NotebookActivity : AppCompatActivity() {
         notebookName = name
         viaLink = intent.getBooleanExtra(EXTRA_VIA_LINK, false)
         if (savedInstanceState == null) initialPageId = intent.getStringExtra(EXTRA_INITIAL_PAGE_ID)
+        // The surface-stack token (arc 32 / RS1): saved across a same-process recreate so the
+        // attach below refreshes this screen's entry in place instead of stacking a second one.
+        stackToken = savedInstanceState?.getString(KEY_STACK_TOKEN) ?: UUID.randomUUID().toString()
+        stack = SurfaceStack(this)
 
         binding = ActivityNotebookBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -840,12 +851,10 @@ class NotebookActivity : AppCompatActivity() {
             override fun handleOnBackPressed() { backPressed() }
         })
 
-        BrowseState(this).let {
-            it.lastOpenNotebookId = notebookId
-            // A cold restore must reopen this notebook the same way it was open — losing the
-            // via-link flag would clear the persisted trail and take the walk-back with it.
-            it.lastOpenViaLink = viaLink
-        }
+        // On the surface stack from here (arc 32 / RS1): a cold restore must reopen this notebook
+        // the same way it was open — losing the via-link flag would clear the persisted trail and
+        // take the walk-back with it. Popped at every close, never from onDestroy.
+        stack.attach(SurfaceEntry(stackToken, Surface.NOTEBOOK, notebookId, viaLink))
         RecentsPrefs(this).record(notebookId)
         // Any fresh, non-via-link open starts a new story: the old trail would walk back into it.
         // Gated like the initial-page consume above: a recreate or a post-process-death task
@@ -887,7 +896,7 @@ class NotebookActivity : AppCompatActivity() {
                         // Declined: the dialog already explained, so leave quietly — and never
                         // restore into a notebook that would not open.
                         Slog.d(TAG) { "recovery declined — leaving" }
-                        BrowseState(this).lastOpenNotebookId = null
+                        stack.pop(stackToken)
                         finish()
                         return
                     }
@@ -988,7 +997,7 @@ class NotebookActivity : AppCompatActivity() {
         val typed = NotebookPassphrasePrompt.ask(this, notebookId, alive.name)
         if (typed == null) {
             Slog.d(TAG) { "open cancelled at the passphrase prompt" }
-            BrowseState(this).lastOpenNotebookId = null
+            stack.pop(stackToken)
             finish()
             return null
         }
@@ -1155,7 +1164,7 @@ class NotebookActivity : AppCompatActivity() {
         // The box must come down before the dialog goes up — it shields every touch under it, and
         // an OK button that cannot be tapped is a dead screen.
         binding.openingOverlay.root.visibility = View.GONE
-        BrowseState(this).lastOpenNotebookId = null
+        stack.pop(stackToken)
         if (isFinishing || isDestroyed) return
         Dialogs.style(
             AlertDialog.Builder(this)
@@ -2873,6 +2882,12 @@ class NotebookActivity : AppCompatActivity() {
     private fun onCalendarClosed(resultCode: Int) {
         if (resultCode != ExtensionContract.RESULT_CALENDAR_OPEN_SCRATCH_PAD) return
         if (!opened || closing) return
+        // The latch, persisted structurally (arc 32 / RS1): a CALENDAR entry beneath the pad's, so
+        // a cold launch puts the chain back. The calendar's own entry popped itself at its result,
+        // and this callback runs in a POSTED coroutine — after this screen's onResume, whose
+        // markTop has already dropped everything above it — so the re-attach lands on top and the
+        // pad's push goes above it.
+        stack.attach(calendar.stackEntry)
         reopenCalendarAfterPad = true
         scratchPad.open()
     }
@@ -3835,6 +3850,10 @@ class NotebookActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Resumed = the top of the surface stack: whatever was above this screen has closed (arc
+        // 32 / RS1). Runs AFTER the result callbacks, so an entry's pop always precedes this drop.
+        // Guarded because an IndexGuard bounce returns from onCreate but still gets this callback.
+        if (::stack.isInitialized) stack.markTop(stackToken)
         if (::paper.isInitialized) paper.resumeDrawing()
         // Re-discovered on every resume: a package can be disabled or replaced under us, and this
         // is also the resume that follows a return from the pad.
@@ -3864,6 +3883,7 @@ class NotebookActivity : AppCompatActivity() {
      */
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        if (::stackToken.isInitialized) outState.putString(KEY_STACK_TOKEN, stackToken)
         outState.putBoolean(
             KEY_DOCUMENT_SHOWING,
             ::documentEntry.isInitialized && documentEntry.isShowing,
@@ -3948,7 +3968,7 @@ class NotebookActivity : AppCompatActivity() {
         RecentsPrefs(this).touch(notebookId)
         // The relay's source closes over the session about to be sealed — drop it with the screen.
         if (::linkPickFlow.isInitialized) linkPickFlow.close()
-        BrowseState(this).lastOpenNotebookId = null
+        stack.pop(stackToken)
         if (!::session.isInitialized || !session.isOpen) { andThen?.invoke(); finish(); return }
         val p = paper; val s = session; val id = notebookId
         val versionCode = packageManager.getPackageInfo(packageName, 0).longVersionCode.toInt()
@@ -4064,6 +4084,7 @@ class NotebookActivity : AppCompatActivity() {
         /** Host-internal (K4): the follow's target page, overriding the notebook's own `refId`
          *  for this open only. Applied once — see [initialPageId]. */
         const val EXTRA_INITIAL_PAGE_ID = "initialPageId"
+        private const val KEY_STACK_TOKEN = "stackToken"
         /** Set on the Intent by the screen itself once recovery has been offered (U6). */
         private const val EXTRA_RECOVERY_ATTEMPTED = "recoveryAttempted"
 

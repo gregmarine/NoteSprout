@@ -3,6 +3,7 @@ package com.symmetricalpalmtree.notesproutsn.extension
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import com.symmetricalpalmtree.notesproutsn.R
+import com.symmetricalpalmtree.notesproutsn.data.prefs.Surface
 
 /**
  * The Calendar's entry button (arc 23 / Y1, its transfers Y3) — both doors, the library's and the
@@ -36,6 +37,7 @@ class CalendarEntry(
     activity = activity,
     button = button,
     tag = TAG,
+    surface = Surface.CALENDAR,
     discover = { ExtensionRegistry.calendar(it) },
     newClient = { context, ref -> CalendarClient(context, ref) },
     wording = WORDING,

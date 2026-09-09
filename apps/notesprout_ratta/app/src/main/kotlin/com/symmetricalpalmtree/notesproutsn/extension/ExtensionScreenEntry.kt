@@ -11,10 +11,14 @@ import com.symmetricalpalmtree.gpaper.core.model.Stroke
 import com.symmetricalpalmtree.notesproutsn.core.Dialogs
 import com.symmetricalpalmtree.notesproutsn.core.OpeningOverlay
 import com.symmetricalpalmtree.notesproutsn.core.Slog
+import com.symmetricalpalmtree.notesproutsn.data.prefs.Surface
+import com.symmetricalpalmtree.notesproutsn.data.prefs.SurfaceEntry
+import com.symmetricalpalmtree.notesproutsn.data.prefs.SurfaceStack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 /** Ink to hand an extension **before** its screen is launched: the notebook's lasso selection, the
  *  page px size it was authored in, and where it should land ([P] — the pad's `PLACEMENT_*` int, the
@@ -77,6 +81,14 @@ class EntryWording(
  *    point carries it and the send was a whole page ([paperOnPageSend], arc 31 / HV5).
  *  - **The bind's life.** [HeldInkClient.finish] runs from the result callback — after the drain,
  *    never before it — and from [close] as the backstop for a caller destroyed while the screen is up.
+ *  - **Its place on the surface stack** (arc 32 / RS1). An extension screen is another process, so
+ *    it has no lifecycle of its own here to maintain it from: the entry does it instead. The
+ *    [stackEntry] is pushed the instant [launcher] has actually launched — never at the tap, where
+ *    the open can still fail with nothing on the glass — and popped at the very top of [onResult],
+ *    synchronously, because a result callback runs **before** the host's `onResume` and that
+ *    `markTop` must find this entry already gone. [close] pops as the backstop. Never from an
+ *    `onDestroy`, the extension's least of all: a killed process gets none, which is the whole
+ *    point of the stack.
  *
  * Neither extension opens a `.soil`, and the notebook is **not** sealed behind either — the one way
  * this hop differs from arc 10's notebook switch. What the notebook gives up is the pipeline, not its
@@ -88,6 +100,8 @@ open class ExtensionScreenEntry<I : Any, P>(
     private val button: View,
     /** This entry's own log tag — counts and result codes, never a stroke. */
     private val tag: String,
+    /** Which surface this door raises, for the surface stack (arc 32 / RS1). */
+    private val surface: Surface,
     /** The point's `ExtensionRegistry` lookup: the one trusted provider, or null. */
     private val discover: suspend (Context) -> ProviderRef?,
     /** How one showing's client is minted — the point's own [HeldInkClient] subclass. */
@@ -152,6 +166,22 @@ open class ExtensionScreenEntry<I : Any, P>(
     private var ref: ProviderRef? = null
     private var client: HeldInkClient<I, P>? = null
 
+    /** The surface stack this door pushes onto (arc 32 / RS1) — the prefs door, nothing more. */
+    private val stack = SurfaceStack(activity)
+
+    /**
+     * One token per **entry instance**, not per surface: a host holds one entry per door for its
+     * whole life, and it can raise its screen many times — the same token each time is exactly
+     * right, because only one of those showings can ever be up at once (the [opening] latch). A
+     * second door on another host screen is a second instance and mints its own.
+     */
+    private val token: String = UUID.randomUUID().toString()
+
+    /** This door's entry on the stack. Public because the calendar's pad chain re-attaches it from
+     *  the host: the latch that brings the calendar back is persisted structurally, as a `CALENDAR`
+     *  entry beneath the pad's (arc 32 / RS1, D1). */
+    val stackEntry: SurfaceEntry get() = SurfaceEntry(token, surface)
+
     /**
      * Latched **at the tap**, not when the client lands. E-ink gives a tap no feedback for hundreds
      * of ms so users tap twice, and the open is asynchronous twice over (a pre-draw hop, then the
@@ -207,6 +237,9 @@ open class ExtensionScreenEntry<I : Any, P>(
                 // until here the open could still have failed and left this screen writing.
                 beforeLaunch()
                 launcher.launch(intent)
+                // On the stack only once the launch has actually happened (arc 32 / RS1): every
+                // path above this line leaves nothing on the glass, so there is nothing to restore.
+                stack.attach(stackEntry)
             }
         }
     }
@@ -262,6 +295,10 @@ open class ExtensionScreenEntry<I : Any, P>(
      * showing and wipe the parked chunks.
      */
     private fun onResult(result: ActivityResult) {
+        // First, and synchronously (arc 32 / RS1): a result callback runs **before** the host's
+        // own `onResume`, whose `markTop` drops everything above it — this entry must already be
+        // gone by then, or the host would drop it as if it were still showing.
+        stack.pop(token)
         val open = client
         client = null
         Slog.d(tag) { "screen returned: resultCode=${result.resultCode}" }
@@ -347,6 +384,9 @@ open class ExtensionScreenEntry<I : Any, P>(
      *  Called from the caller's `onDestroy`. */
     fun close() {
         opening = false
+        // The stack's backstop too (arc 32 / RS1) — unconditional, before the early return: a door
+        // whose caller is going away has nothing left to restore, showing or not.
+        stack.pop(token)
         val open = client ?: return
         client = null
         MainScope().launch { open.finish() }

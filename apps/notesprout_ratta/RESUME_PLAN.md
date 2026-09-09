@@ -7,7 +7,7 @@ together with the root `CLAUDE.md` and `apps/notesprout_ratta/CLAUDE.md`. **Do n
 `RATTA_PLAN.md` for this arc** unless a standing trap needs checking; its protocol and traps are
 summarized at the end so this file is enough. `HARVEST_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 wizard locked 2026-09-09 — RS1 ⬜ · RS2 ⬜ · RS3 ⬜.**
+**Status: 🔄 wizard locked 2026-09-09 — RS1 ✅ 2026-09-09 · RS2 ⬜ · RS3 ⬜.**
 Baseline before the arc: 1564 `:app` / 2945 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. Host-only: no point, no API bump, no schema change, no g-paper
 change, no new module.
@@ -211,7 +211,7 @@ entry whose target is gone and keeping the rest.
 
 ## Phases
 
-### ⬜ RS1 — The stack (Fable the model + the notebook's lifecycle wiring · Opus the entries and the library replay on a Fable brief · Sonnet tests fan-out · Sonnet adb walk)
+### ✅ RS1 — The stack (landed 2026-09-09) (Fable the model + the notebook's lifecycle wiring · Opus the entries and the library replay on a Fable brief · Sonnet tests fan-out · Sonnet adb walk)
 
 **Questions to resolve at phase start:** version (stays `0.1.0-ratta` unless said otherwise);
 whether the token is saved in `onSaveInstanceState` or re-minted (planner: saved — a recreate
@@ -268,6 +268,13 @@ choosing).
 - **Backing out of a live notebook through the app before installing** keeps the EPD pin from
   leaking; `force-stop` in a walk is the one sanctioned exception (it is the door under test).
 - **Doc agents never run git, never revert files they did not create.**
+- **`am force-stop` on the host alone is NOT a device death** (RS1 walk): the extension screen on
+  top lives in its own process and stays on the glass, and `am start` is *delivered to the
+  currently running top-most instance* — no cold launch happens. A restore walk kills the
+  extension process(es) too (`am force-stop …ext.calendar.dev` / `…ext.scratchpad.dev` /
+  `…ext.document.dev`) before the host, then `am start`s Bootstrap.
+- **`adb shell dumpsys window` on the Nomad does not print `mResumedActivity`** — use
+  `dumpsys activity activities | grep mResumedActivity`.
 
 ## Working protocol (summary — the full text is `RATTA_PLAN.md` § Working protocol)
 
@@ -283,3 +290,47 @@ ask.
 ## Ledger
 
 *(one Outcome entry per phase as it closes)*
+
+### RS1 — Outcome (2026-09-09)
+
+**Landed:** `data/prefs/SurfaceStack.kt` — `Surface { NOTEBOOK, CALENDAR, SCRATCH_PAD,
+DOCUMENT_EDITOR }`, `SurfaceEntry(token, surface, notebookId?, viaLink)`, the pure
+`SurfaceStackCodec` (decode treats the blob as untrusted: corrupt → empty, an unknown surface name
+or blank token drops that entry only; `attach` appends or refreshes in place by token; `markTop`
+drops everything above the token and is a no-op for an unknown token; `pop` removes by token;
+`migrate` reads the pre-arc `lastOpenNotebookId`/`lastOpenViaLink` as a one-entry NOTEBOOK stack
+only when no `surfaceStack` key exists) and the prefs door `SurfaceStack` (`sn_view_state`, key
+`surfaceStack`; `snapshotAndClear` reads once, migrates, removes all three keys). `BrowseState`
+lost the two legacy properties. `library/ReplayPlan` — pure `of(stack)` → `Notebook(id, viaLink,
+above)` (the above-list stops at a second NOTEBOOK) · `LibraryLevel(top, calendarBeneath)` ·
+`Nothing`. **NotebookActivity:** `stackToken` minted per instance, saved under `KEY_STACK_TOKEN`
+(phase-start answer: saved, so a recreate refreshes in place); attach in `onCreate` where the old
+id was written; `markTop` first line of `onResume` (guarded on init — the IndexGuard bounce);
+`pop` at the four old clear sites (recovery declined, passphrase cancelled, `failOpen`, `close`).
+**LibraryActivity:** `stack.snapshotAndClear()` in `onCreate` on a cold launch into a local copy
+(before `onResume`'s `reset()`); `replayStack()` replaces `reopenLastNotebookIfNeeded` in the
+first-layout listener with the same three gates; RS1 replays the notebook only — entries above it
+and a library-level entry are logged and dropped. **Entries:** `ExtensionScreenEntry` takes
+`surface`, mints one token per entry instance, exposes `stackEntry`, pushes right after
+`launcher.launch`, pops synchronously at the top of `onResult` and in `close()`;
+`DocumentEditorEntry` the same (`reconnect` untouched). **The calendar → pad latch is
+structural:** both hosts' `onCalendarClosed` re-attach `calendar.stackEntry` before
+`scratchPad.open()` — the callback is posted, so it runs after the host's `onResume` markTop.
+
+**Tests:** 1564 → **1591** `:app` (`SurfaceStackCodecTest` 15 + `ReplayPlanTest` 12), 2945 →
+**2972** across the modules, all green. Version
+stays `0.1.0-ratta`. No code review (decision 6).
+
+**Nomad walk (adb, by Fable):** the pre-arc migration — the device was left in a notebook under
+the old build; force-stop, install, cold launch → the notebook came back and the prefs held a
+one-entry stack with both legacy keys gone · new-format restore → the notebook · notebook →
+calendar → pad → back → back read `NOTEBOOK CALENDAR SCRATCH_PAD` → `NOTEBOOK CALENDAR` →
+`NOTEBOOK` in prefs at each step · killed behind the calendar → the notebook alone with
+`restore: [CALENDAR] above the notebook dropped (RS1)` · document editor push/pop · notebook close
+→ `[]` and a restart stays on the library · a library-level calendar → `CALENDAR`, killed → the
+library with its drop line · a hand-written stack naming a dead notebook id plus a `BOGUS` surface
+→ the library, `restore: the notebook is gone — chain dropped`, no crash, stack cleared. Not
+walked: via-link (the flag rides the entry exactly as the old key did — codec-tested) and the
+own-key cancel (the same `pop` on the same line; the Nomad library is all GLOBAL) — both by the
+user's hand if wanted.
+

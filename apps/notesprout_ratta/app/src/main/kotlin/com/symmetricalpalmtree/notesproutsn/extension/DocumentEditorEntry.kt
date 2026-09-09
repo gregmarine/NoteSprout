@@ -10,10 +10,14 @@ import com.symmetricalpalmtree.notesproutsn.R
 import com.symmetricalpalmtree.notesproutsn.core.Dialogs
 import com.symmetricalpalmtree.notesproutsn.core.OpeningOverlay
 import com.symmetricalpalmtree.notesproutsn.core.Slog
+import com.symmetricalpalmtree.notesproutsn.data.prefs.Surface
+import com.symmetricalpalmtree.notesproutsn.data.prefs.SurfaceEntry
+import com.symmetricalpalmtree.notesproutsn.data.prefs.SurfaceStack
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 /**
  * The host's side of the Document entry button (arc 19 / M3) — [ScratchPadEntry]'s shape with the
@@ -37,6 +41,14 @@ import kotlinx.coroutines.launch
  *    [close] as the backstop for a caller destroyed while the editor is up. There is no drain to
  *    sequence it after — a save is committed by the time `saveChunk` returns, which is exactly what
  *    the callback binder buys.
+ *  - **Its place on the surface stack** (arc 32 / RS1). The editor is another process with no
+ *    lifecycle here to maintain it from, so this entry does it: [stackEntry] is pushed the instant
+ *    [launcher] has actually launched — never at the tap, where the open can still fail with
+ *    nothing on the glass — and popped at the very top of [onResult], synchronously, ahead of both
+ *    [onClosed] and the lazy teardown, because a result callback runs **before** the caller's
+ *    `onResume` and that `markTop` must find this entry already gone. [close] pops as the backstop.
+ *    Never from an `onDestroy`, the editor's least of all: a killed process gets none, which is the
+ *    whole point of the stack. [reconnect] touches nothing — see its doc.
  *  - **The reconnect** (M4). A host killed behind the live editor leaves the extension holding text
  *    and a dead binder. [reconnect] re-opens the client without launching anything, and the fresh
  *    `begin` is what the extension flushes against — see its doc, and [onResult] for the one race
@@ -74,6 +86,16 @@ class DocumentEditorEntry(
 
     private var ref: ProviderRef? = null
     private var client: DocumentEditorClient? = null
+
+    /** The surface stack this door pushes onto (arc 32 / RS1) — the prefs door, nothing more. */
+    private val stack = SurfaceStack(activity)
+
+    /** One token per **entry instance**, not per surface: the caller holds one entry for its whole
+     *  life and can raise the editor many times, but only one showing can be up at once. */
+    private val token: String = UUID.randomUUID().toString()
+
+    /** This door's entry on the stack (arc 32 / RS1). */
+    val stackEntry: SurfaceEntry get() = SurfaceEntry(token, Surface.DOCUMENT_EDITOR)
 
     /** Latched at the tap, released with the result or the moment the open fails — see the class doc. */
     private var opening = false
@@ -145,6 +167,9 @@ class DocumentEditorEntry(
                 // written there records a showing that never launched.
                 client = fresh
                 launcher.launch(intent)
+                // On the stack only once the launch has actually happened (arc 32 / RS1): every
+                // path above this line leaves nothing on the glass, so there is nothing to restore.
+                stack.attach(stackEntry)
             }
         }
     }
@@ -179,6 +204,11 @@ class DocumentEditorEntry(
      * A failure is silent by design. There is no window to put a dialog in, and nothing is lost by
      * staying quiet: the extension keeps its text and keeps retrying, and the [close] backstop
      * still runs when this screen finally goes.
+     *
+     * **The surface stack is not touched here** (arc 32 / RS1). This mints a binder for a showing
+     * already on the glass, which the old instance's entry already recorded; the recreated host's
+     * own `onResume` `markTop` clears that stale entry, and the pop at the result is the new
+     * token's alone. Attaching here would put a second entry on for one showing.
      */
     fun reconnect() {
         if (client != null) { Slog.d(TAG) { "reconnect: already open" }; return }
@@ -204,6 +234,10 @@ class DocumentEditorEntry(
     /** One showing is over: `end()`, unbind, revoke both binders. Nothing to drain — every save
      *  landed in the `.soil` as its last chunk crossed. */
     private fun onResult(result: ActivityResult) {
+        // First, and synchronously (arc 32 / RS1) — ahead of [onClosed] and the lazy teardown
+        // below: a result callback runs **before** the caller's own `onResume`, whose `markTop`
+        // drops everything above it, and this entry must already be gone by then.
+        stack.pop(token)
         val pending = reconnectJob
         Slog.d(TAG) { "document editor returned: resultCode=${result.resultCode}" }
         // A detached scope: `finish` has an `end()` call plus an unbind and two revokes to run, and
@@ -238,6 +272,9 @@ class DocumentEditorEntry(
      *  — flush-before-seal, on the destroy path too (M11). */
     fun close(): Job? {
         opening = false
+        // The stack's backstop too (arc 32 / RS1) — unconditional, before the early return: a door
+        // whose caller is going away has nothing left to restore, showing or not.
+        stack.pop(token)
         // A destroy is the one place the reconnect is cancelled rather than joined: there is no
         // showing left to serve, and a bind opened after this point would outlive its screen.
         reconnectJob?.cancel()

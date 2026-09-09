@@ -16,6 +16,9 @@ enum class BrowseMode { NORMAL, PINNED, RECENTS, SEARCH }
  *
  * **Ids and enum names only, never a display name.** [folderId] is validated against the index on
  * restore (a folder deleted since falls back to root); nothing here is trusted as still existing.
+ *
+ * The screens that were open live beside this in the same file as [SurfaceStack] (arc 32 — the
+ * pre-arc `lastOpenNotebookId` / `lastOpenViaLink` keys were retired into it).
  */
 class BrowseState(context: Context) {
 
@@ -42,30 +45,9 @@ class BrowseState(context: Context) {
             prefs.edit().putString(KEY_MODE, value.name).apply()
         }
 
-    /**
-     * The notebook that was open when the app last died, so a cold launch can put it back on top of
-     * the library. Set on notebook open, cleared on close; read once and cleared regardless of
-     * outcome (`LibraryActivity.reopenLastNotebookIfNeeded`).
-     */
-    var lastOpenNotebookId: String?
-        get() = prefs.getString(KEY_LAST_OPEN, null)
-        set(value) { prefs.edit().putString(KEY_LAST_OPEN, value).apply() }
-
-    /**
-     * Whether [lastOpenNotebookId] was open **via a link follow** (arc 6 / K4). A cold restore
-     * must reopen it the same way: relaunching without the flag would count as a fresh open,
-     * clear the persisted trail, and take the mid-chain walk-back with it. Meaningless while
-     * [lastOpenNotebookId] is null.
-     */
-    var lastOpenViaLink: Boolean
-        get() = prefs.getBoolean(KEY_LAST_VIA_LINK, false)
-        set(value) { prefs.edit().putBoolean(KEY_LAST_VIA_LINK, value).apply() }
-
     private companion object {
         const val FILE = "sn_view_state"
         const val KEY_FOLDER = "folderId"
         const val KEY_MODE = "mode"
-        const val KEY_LAST_OPEN = "lastOpenNotebookId"
-        const val KEY_LAST_VIA_LINK = "lastOpenViaLink"
     }
 }

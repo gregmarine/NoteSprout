@@ -32,6 +32,8 @@ import com.symmetricalpalmtree.notesproutsn.data.index.ObjectSummary
 import com.symmetricalpalmtree.notesproutsn.data.index.ObjectType
 import com.symmetricalpalmtree.notesproutsn.data.prefs.BrowseMode
 import com.symmetricalpalmtree.notesproutsn.data.prefs.BrowseState
+import com.symmetricalpalmtree.notesproutsn.data.prefs.SurfaceEntry
+import com.symmetricalpalmtree.notesproutsn.data.prefs.SurfaceStack
 import com.symmetricalpalmtree.notesproutsn.data.prefs.RecentsPrefs
 import com.symmetricalpalmtree.notesproutsn.data.prefs.SortField
 import com.symmetricalpalmtree.notesproutsn.data.prefs.SortOrder
@@ -76,6 +78,11 @@ class LibraryActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityLibraryBinding
     private lateinit var browseState: BrowseState
+    /** The screens that were open (arc 32 / RS1). Read once and cleared in [onCreate] on a cold
+     *  launch, reset on every resume — nothing can stand above a resumed library. */
+    private lateinit var stack: SurfaceStack
+    /** The cold-launch read of [stack], held locally until the grid can replay it. */
+    private var restoreStack: List<SurfaceEntry> = emptyList()
     private lateinit var sortPrefs: SortPrefs
     private lateinit var recentsPrefs: RecentsPrefs
     private val repo by lazy { IndexRepository() }
@@ -90,6 +97,12 @@ class LibraryActivity : AppCompatActivity() {
 
     private fun onCalendarClosed(resultCode: Int) {
         if (resultCode != ExtensionContract.RESULT_CALENDAR_OPEN_SCRATCH_PAD) return
+        // The latch, persisted structurally (arc 32 / RS1): a CALENDAR entry beneath the pad's, so
+        // a cold launch puts the chain back. The calendar's own entry popped itself at its result,
+        // and this callback runs in a POSTED coroutine — after this screen's onResume, whose
+        // markTop has already dropped everything above it — so the re-attach lands on top and the
+        // pad's push goes above it.
+        stack.attach(calendar.stackEntry)
         reopenCalendarAfterPad = true
         scratchPad.open()
     }
@@ -179,6 +192,10 @@ class LibraryActivity : AppCompatActivity() {
         folderId = browseState.folderId
         mode = browseState.mode
         coldLaunch = savedInstanceState == null
+        // Read BEFORE onResume resets it (two handlers on one piece of state: the read first), and
+        // cleared at once so a target that fails is never retried on the next launch.
+        stack = SurfaceStack(this)
+        if (coldLaunch) restoreStack = stack.snapshotAndClear()
 
         // Built before the bars are wired: the Search button's listener reaches for it.
         search = LibrarySearch(this, repo, tagsAvailable = { ::tags.isInitialized && tags.isAvailable }) {
@@ -253,7 +270,7 @@ class LibraryActivity : AppCompatActivity() {
                 repo.ensurePinnedListExists()
                 // A remembered folder may have been deleted since; fall back to the root.
                 folderId?.let { id -> if (repo.alive(id) == null) navigateTo(null, refreshNow = false) }
-                if (coldLaunch) reopenLastNotebookIfNeeded()
+                if (coldLaunch) replayStack()
                 refresh()
             }
         }
@@ -262,6 +279,9 @@ class LibraryActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         launching = false
+        // The library is resumed, so nothing is open above it: the notebook finished before this
+        // resume, and an extension screen over the library is a result that already popped itself.
+        if (::stack.isInitialized) stack.reset()
         // Re-discovered on every resume: a package can be disabled or replaced under us. Guarded
         // because an IndexGuard bounce returns from onCreate but still gets this callback.
         if (::scratchPad.isInitialized) scratchPad.refresh()
@@ -366,22 +386,40 @@ class LibraryActivity : AppCompatActivity() {
     }
 
     /**
-     * A notebook was open when the process died (the id survives in [BrowseState]) — put it back
-     * on top of the library, but only when its index row is still alive **and** its `.soil` exists
-     * (never mint a ghost file). The id is read once and cleared regardless of outcome.
+     * The screens that were open when the process died (arc 32 / RS1 — the [SurfaceStack]) — put
+     * them back on top of the library. A notebook comes back only when its index row is still
+     * alive, it is a NOTEBOOK, **and** its `.soil` exists (never mint a ghost file); a notebook
+     * that fails any gate empties the whole chain, since nothing above it can stand. The stack was
+     * read once and cleared in `onCreate`, so nothing here is retried on the next launch.
+     *
+     * RS1 replays the notebook alone: the surfaces above it are logged and dropped, and a
+     * library-level entry (the calendar or the pad over the library itself) is logged and dropped.
+     * RS2 hands the chain down as `EXTRA_RESUME_ABOVE` and opens the library-level screen.
      */
-    private fun reopenLastNotebookIfNeeded() {
-        val id = browseState.lastOpenNotebookId ?: return
-        browseState.lastOpenNotebookId = null
-        // Reopen the way it was open (K4): a via-link notebook restored without the flag would
-        // read as a fresh open, clear the persisted trail, and lose the mid-chain walk-back.
-        val viaLink = browseState.lastOpenViaLink
-        lifecycleScope.launch {
-            val s = repo.alive(id) ?: return@launch
-            if (s.type != ObjectType.NOTEBOOK) return@launch
-            val exists = withContext(Dispatchers.IO) { soilFile(this@LibraryActivity, id).exists() }
-            if (!exists) return@launch
-            openNotebook(s.id, s.name, viaLink)
+    private fun replayStack() {
+        val stack = restoreStack
+        restoreStack = emptyList()
+        when (val plan = ReplayPlan.of(stack)) {
+            is ReplayPlan.Notebook -> {
+                if (plan.above.isNotEmpty()) Slog.d(TAG) { "restore: ${plan.above} above the notebook dropped (RS1)" }
+                // Reopen the way it was open (K4): a via-link notebook restored without the flag
+                // would read as a fresh open, clear the persisted trail, and lose the walk-back.
+                lifecycleScope.launch {
+                    val s = repo.alive(plan.id)
+                    if (s == null || s.type != ObjectType.NOTEBOOK) {
+                        Slog.d(TAG) { "restore: the notebook is gone — chain dropped" }
+                        return@launch
+                    }
+                    val exists = withContext(Dispatchers.IO) { soilFile(this@LibraryActivity, plan.id).exists() }
+                    if (!exists) {
+                        Slog.d(TAG) { "restore: the notebook has no .soil — chain dropped" }
+                        return@launch
+                    }
+                    openNotebook(s.id, s.name, plan.viaLink)
+                }
+            }
+            is ReplayPlan.LibraryLevel -> Slog.d(TAG) { "restore: library-level ${plan.top} dropped (RS1)" }
+            ReplayPlan.Nothing -> Unit
         }
     }
 

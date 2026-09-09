@@ -3,6 +3,7 @@ package com.symmetricalpalmtree.notesproutsn.extension
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import com.symmetricalpalmtree.notesproutsn.R
+import com.symmetricalpalmtree.notesproutsn.data.prefs.Surface
 
 /**
  * The Scratch Pad's entry button (arc 11 / J4, its transfers J5) — both doors, the library's and the
@@ -32,6 +33,7 @@ class ScratchPadEntry(
     activity = activity,
     button = button,
     tag = TAG,
+    surface = Surface.SCRATCH_PAD,
     discover = { ExtensionRegistry.scratchPad(it) },
     newClient = { context, ref -> ScratchPadClient(context, ref) },
     wording = WORDING,
