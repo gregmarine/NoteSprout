@@ -274,6 +274,76 @@ class NotebookSession(
         pages[pos]
     }
 
+    /**
+     * **A page received whole from the calendar** (arc 31 / HV5): a new page *after* the one on
+     * screen, papered with [paper], carrying [strokes], landed on — one transaction, one undo
+     * entry, [insertBlank]'s shape with two deliberate differences.
+     *
+     * The first is the size. [width] x [height] is the **sender's** page, not this notebook's: the
+     * ink is written 1:1 against the grid it was drawn on, and a page of another size would put
+     * that grid somewhere else under it. The notebook's other pages are not touched — one page
+     * arrived, and the pages either side of it are none of its business.
+     *
+     * The second is the paper. [paper] is the picture the extension drew (null = no paper, the
+     * page's `refId` stays `""`), resolved **reuse before mint** at the new page's own size: the
+     * same view sent twice lands on one template row, because the row is filed under a token of
+     * the bytes ([PagePaper.token]) and the size. The render runs before the transaction — it is
+     * the expensive half, and it must never sit inside one — but the row it makes is written
+     * **inside**, with the page and its strokes, so a failure anywhere leaves this file exactly as
+     * it was. [PaperRenderFailed] propagates with nothing written.
+     *
+     * The stroke ids are the caller's ([com.symmetricalpalmtree.notesproutsn.extension.TransferCaps.toStrokes]
+     * minted them on this side; no id ever crosses the wire), and `"order"` is still rebased
+     * against the page's max **inside** the transaction — a fresh page's max is nothing, but the
+     * rule that a paste reads its max where it writes is not one to make an exception to.
+     *
+     * The returned [Structural] is the receive's undo record: its `objectIds` are the rows this
+     * created, the paste's direction — see `Action.PageReceived`. **Drain the writer first**, as
+     * every page op does.
+     */
+    suspend fun receivePage(
+        width: Int,
+        height: Int,
+        paper: PaperSource.Image?,
+        strokes: List<Stroke>,
+        dpi: Float,
+    ): Structural = withContext(Dispatchers.IO) {
+        require(width > 0 && height > 0) { "a received page has no size" }
+        val cur = currentPage
+        val beforeIds = pages.map { it.id }
+        val now = System.currentTimeMillis()
+        val newId = java.util.UUID.randomUUID().toString()
+        val pos = PageMath.insertPosition(currentIndex, after = true)
+        // Before the transaction, and before the page row that will name it: a render that throws
+        // must leave nothing behind at all. `prefer` is empty — the new page has no paper yet.
+        val resolved = paper?.let { resolvePaper(it, PagePaper.token(it), width, height, prefer = "", dpi = dpi) }
+        val newRow = SoilObjectEntity(
+            id = newId, parentId = notebookId, type = SoilSchema.TYPE_PAGE, order = pos,
+            createdAt = now, updatedAt = now,
+            refId = resolved?.id ?: "", width = width.toFloat(), height = height.toFloat(),
+        )
+        val newPages = pages.toMutableList().apply { add(pos, newRow.toPageRef(pos)) }
+        db.withTransaction {
+            resolved?.row?.let { db.dao().upsert(it) }
+            db.dao().upsert(newRow)
+            renumber(newPages, now)
+            if (strokes.isNotEmpty()) {
+                var order = db.dao().maxOrder(newId, SoilSchema.TYPE_STROKE)
+                val rows = strokes.map { StrokeRows.toRow(it, newId, ++order, now) }
+                rows.chunked(ROW_CHUNK).forEach { db.dao().upsertAll(it) }
+            }
+        }
+        pages = newPages.reindexed()
+        currentIndex = pos
+        loadTemplateFor(currentPage)
+        mirror(now)
+        Slog.d(TAG) {
+            "received page $newId at $pos (${strokes.size} strokes, " +
+                "${if (resolved == null) "no paper" else "paper ${resolved.id}"}, ${pages.size} pages)"
+        }
+        Structural(beforeIds, pages.map { it.id }, strokes.map { it.id }, cur.id, newId)
+    }
+
     // ── Clipboard (arc 7) ────────────────────────────────────────────────────
 
     /**
@@ -760,24 +830,49 @@ class NotebookSession(
     /** Thrown when paper that is *not* blank will not draw at the page's size. See [changeTemplate]. */
     class PaperRenderFailed : IllegalStateException("template render failed")
 
-    /** The id of a row already holding this paper at this page's size, or a freshly stored one.
-     *  A render that comes back null throws rather than falling back to blank: this is only ever
-     *  called with a non-empty token, so "nothing to draw" here means the paper is broken, not
-     *  absent, and the page must keep what it has. */
-    private suspend fun mintOrReuse(paper: PaperSource, token: String, page: PageRef, dpi: Float): String {
-        PageTemplate.reusableId(db.dao().templateDigests(notebookId), token, page.width, page.height, prefer = page.templateId)
-            ?.let { Slog.d(TAG) { "re-paper reuses template $it" }; return it }
-        val bitmap = PagePaper.render(paper, page.width, page.height, dpi) ?: throw PaperRenderFailed()
+    /** Paper resolved to a row id, and the row to write when there was nothing to reuse ([row] is
+     *  null when [id] names a template already in this file). Splitting the two lets a caller that
+     *  is building a page put the write in **its own** transaction ([receivePage]); [mintOrReuse]
+     *  is the same thing for a caller that only wants the id. */
+    private class ResolvedPaper(val id: String, val row: SoilObjectEntity?)
+
+    /**
+     * Reuse before mint, at [widthPx] x [heightPx] — never the screen's size. [prefer] is the id to
+     * pick when several rows hold the same paper (the page's own, so a re-papering that comes back
+     * to where it started lands on the row it left). The render is the expensive half and happens
+     * here, outside any transaction.
+     *
+     * A render that comes back null throws rather than falling back to blank: this is only ever
+     * called with a non-empty token, so "nothing to draw" here means the paper is broken, not
+     * absent, and the caller must write nothing.
+     */
+    private suspend fun resolvePaper(
+        paper: PaperSource,
+        token: String,
+        widthPx: Int,
+        heightPx: Int,
+        prefer: String,
+        dpi: Float,
+    ): ResolvedPaper {
+        PageTemplate.reusableId(db.dao().templateDigests(notebookId), token, widthPx, heightPx, prefer = prefer)
+            ?.let { Slog.d(TAG) { "paper reuses template $it" }; return ResolvedPaper(it, null) }
+        val bitmap = PagePaper.render(paper, widthPx, heightPx, dpi) ?: throw PaperRenderFailed()
         val blob = try { BuiltInTemplates.toWebp(bitmap) } finally { bitmap.recycle() }
-        val id = java.util.UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
-        db.dao().upsert(SoilObjectEntity(
+        val id = java.util.UUID.randomUUID().toString()
+        Slog.d(TAG) { "paper mints template $id ($token, ${blob.size} B)" }
+        return ResolvedPaper(id, SoilObjectEntity(
             id = id, parentId = notebookId, type = SoilSchema.TYPE_TEMPLATE,
             createdAt = now, updatedAt = now, text = token,
-            width = page.width.toFloat(), height = page.height.toFloat(), blob = blob,
+            width = widthPx.toFloat(), height = heightPx.toFloat(), blob = blob,
         ))
-        Slog.d(TAG) { "re-paper minted template $id ($token, ${blob.size} B)" }
-        return id
+    }
+
+    /** The id of a row already holding this paper at this page's size, or a freshly stored one. */
+    private suspend fun mintOrReuse(paper: PaperSource, token: String, page: PageRef, dpi: Float): String {
+        val resolved = resolvePaper(paper, token, page.width, page.height, page.templateId, dpi)
+        resolved.row?.let { db.dao().upsert(it) }
+        return resolved.id
     }
 
     private suspend fun loadTemplateFor(page: PageRef) {

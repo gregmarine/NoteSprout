@@ -67,6 +67,23 @@ class CalendarClient(context: Context, ref: ProviderRef) :
          *  (the host reads a target only on a result code an older calendar never returns). */
         override fun outgoingTarget(iface: ICalendar): CalendarTarget? = iface.outgoingTarget()
 
+        /** One page of paper on the **held** bind (arc 31 / HV5) — the whole-page send's grid. The
+         *  store is the showing's own, handed straight back to the extension that lent it its use;
+         *  [render] below is the same call bind-per-call, for the Export screen. */
+        override fun render(
+            iface: ICalendar,
+            store: IExtensionStore,
+            target: CalendarTarget,
+            widthPx: Int,
+            heightPx: Int,
+            flags: Int,
+            destination: ParcelFileDescriptor,
+        ) = iface.render(store, arrayOf(target), widthPx, heightPx, flags, destination)
+
+        /** Drawing a page is not a state read: the measured budget the Export screen's render
+         *  takes, for the same work. */
+        override val renderTimeoutMs: Long get() = ExtensionContract.CALENDAR_RENDER_TIMEOUT_MS
+
         override fun describe(placement: CalendarTarget): String =
             "target=${placement.kind}/${placement.date}/${placement.half}"
 

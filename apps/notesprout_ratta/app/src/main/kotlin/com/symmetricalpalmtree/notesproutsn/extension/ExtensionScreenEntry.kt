@@ -73,7 +73,8 @@ class EntryWording(
  *    **held bind** before the screen is launched, and never rides the Intent — and a failure there
  *    stops the whole thing: the dialog says so and the screen is not opened, because nothing was
  *    placed. Coming back, [resultSend] is drained on the bind that is *still held* and handed to
- *    [onDrained] before the bind is finished.
+ *    [onDrained] before the bind is finished — with the page's **paper** beside the ink when the
+ *    point carries it and the send was a whole page ([paperOnPageSend], arc 31 / HV5).
  *  - **The bind's life.** [HeldInkClient.finish] runs from the result callback — after the drain,
  *    never before it — and from [close] as the backstop for a caller destroyed while the screen is up.
  *
@@ -126,6 +127,16 @@ open class ExtensionScreenEntry<I : Any, P>(
     /** The page the extension asked to have exported, read off the held bind. Runs on Main with the
      *  bind already finished — everything it needs is in the target it is handed. */
     private val onExport: (P) -> Unit = {},
+
+    /**
+     * True when a **whole-page** send from this point comes back with the page's paper as well as
+     * its ink (arc 31 / HV5 — the calendar's grid). The extension is asked for the page it sent
+     * ([HeldInkClient.outgoingTarget], null after a selection send, which is what keeps a selection
+     * ink-only) and then to draw it ([HeldInkClient.renderPaper]); both happen on the bind that is
+     * still held, before it is finished. Gated again at the tap on the version the drawing call was
+     * born at — a point that declares less has no `render` to be asked for.
+     */
+    private val paperOnPageSend: Boolean = false,
     /** The showing is over and the bind is finished; [opening] is already released, so the caller
      *  may open another door from here (the calendar's pad chain, arc 23 / Y4). The result code is
      *  the screen's own — a drained send, a cancel, or a door it asked the host to walk through. */
@@ -259,15 +270,19 @@ open class ExtensionScreenEntry<I : Any, P>(
         MainScope().launch {
             try {
                 if (open != null && result.resultCode == resultSend) {
-                    val drained = runCatching { open.drainOutgoing() }
+                    var drained = runCatching { open.drainOutgoing() }
                         .onFailure { Slog.d(tag) { "drain failed: ${it.message}" } }
                         .getOrNull()
                     try {
+                        // Inside the `try`: the paper is read on the same held bind, and whatever
+                        // it answers, `finish()` below still ends the showing.
+                        if (drained != null) drained = withPaperIfWholePage(open, drained)
                         // The extension already closed saying it sent something. Nothing arriving —
                         // a dead bind, a timeout mid-drain, or an empty reply — is a tap that did
                         // nothing, and on e-ink that reads as broken. The ink is still over there;
-                        // say so.
-                        if (drained != null && drained.strokes.isNotEmpty()) onDrained(drained)
+                        // say so. Since HV5 a whole page may arrive with no ink at all and still be
+                        // something: its paper is the thing the send was for.
+                        if (drained != null && (drained.strokes.isNotEmpty() || drained.paper != null)) onDrained(drained)
                         else problem(wording.drainFailedTitleRes, wording.drainFailedBodyRes)
                     } finally {
                         // After `onDrained`, per the contract above: the callback may still read the
@@ -297,6 +312,35 @@ open class ExtensionScreenEntry<I : Any, P>(
             }
             if (!activity.isFinishing && !activity.isDestroyed) onClosed(result.resultCode)
         }
+    }
+
+    /**
+     * The drained ink with the page's paper on it, when this point carries paper on a whole-page
+     * send and this showing was a whole-page send (arc 31 / HV5). Both questions are the
+     * extension's own: [HeldInkClient.outgoingTarget] answers null after a selection send, which is
+     * the only thing that tells the two apart, and everything here runs on the bind that is still
+     * held — [HeldInkClient.finish] is what takes the store and the bind away.
+     *
+     * A failure at either step is **logged and dropped**, and the drain travels on as it is: ink
+     * that landed on the displayed page is a smaller wrong than a send that did nothing. An empty
+     * send whose paper failed carries nothing, and the caller's "nothing arrived" road says so.
+     */
+    private suspend fun withPaperIfWholePage(open: HeldInkClient<I, P>, drained: DrainedInk): DrainedInk {
+        if (!paperOnPageSend) return drained
+        val version = ref?.apiVersion ?: return drained
+        if (version < ExtensionContract.MIN_API_VERSION_FOR_CALENDAR_RENDER) return drained
+        // The page size is the extension's own answer, and it is what the paper is asked for at;
+        // a drain that came back without one has nothing to draw against.
+        val width = drained.pageWidth.toInt()
+        val height = drained.pageHeight.toInt()
+        if (width <= 0 || height <= 0) return drained
+        val target = runCatching { open.outgoingTarget() }
+            .onFailure { Slog.d(tag) { "the sent page could not be read: ${it.message}" } }
+            .getOrNull() ?: return drained
+        val paper = runCatching { open.renderPaper(target, width, height, ExtensionContract.RENDER_GRID) }
+            .onFailure { Slog.d(tag) { "the paper could not be drawn: ${it.message}" } }
+            .getOrNull() ?: return drained
+        return drained.withPaper(paper)
     }
 
     /** The backstop: the bind must not outlive the screen that opened it, result or no result.

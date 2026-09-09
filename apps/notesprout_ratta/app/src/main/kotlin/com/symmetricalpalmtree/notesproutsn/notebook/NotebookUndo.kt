@@ -301,6 +301,25 @@ object NotebookUndo {
         }
 
         /**
+         * A page **received whole from the calendar** (arc 31 / HV5) — a new page after the one on
+         * screen, papered with the view that was sent and carrying its ink, made in one
+         * transaction and undone in one step.
+         *
+         * [PagePasted]'s snapshot and [PagePasted]'s replay to the line: `objectIds` are rows the
+         * receive **created**, so undo soft-deletes them along with the page they hang under and
+         * redo revives them in place. Its own kind all the same, for the same reason the paste is
+         * not a `Page`: what an entry *is* is what a future undo label reads off it, and "the page
+         * from the calendar" is not "a page you pasted".
+         *
+         * The template row the receive may have minted is left standing, exactly as a paste's is:
+         * a template is cheap, deleting one is not undoable, and leaving it is what makes the same
+         * send land on the same row the second time.
+         */
+        data class PageReceived(val snapshot: NotebookSession.Structural) : Action {
+            override val pageId: String get() = snapshot.afterCurrentId
+        }
+
+        /**
          * One page re-papered (arc 12) — the two template-row ids the page moved between, `""` for
          * blank. Replayed through [NotebookSession.applyTemplate] in either direction; no rows are
          * created or destroyed by the replay, because the template row the change may have minted

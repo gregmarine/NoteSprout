@@ -185,6 +185,14 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
         CalendarSession.parkTarget(if (wholePage) document?.target else null)
     }
 
+    /**
+     * A whole page always has something to send (arc 31 / HV5): the host inserts a **new page
+     * papered with this view's grid**, rendered back through `ICalendar.render` on the bind it is
+     * still holding, and writes whatever ink there is on top. A blank week is a blank week's paper,
+     * which is a thing to want. A selection send keeps the refusal — an empty lasso is empty.
+     */
+    override val emptyPageSendCarriesPaper: Boolean get() = true
+
     // ── Export (arc 31 / HV4) ────────────────────────────────────────────────
 
     /**

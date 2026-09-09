@@ -164,6 +164,15 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
     protected open fun parkOutgoing(chunks: List<List<WireStroke>>, pageWidth: Float, pageHeight: Float, wholePage: Boolean) =
         parkOutgoing(chunks, pageWidth, pageHeight)
 
+    /**
+     * Whether an **empty whole-page** send is still worth sending (arc 31 / HV5). False everywhere
+     * but the calendar: the host inserts a page papered with the grid this screen draws, so a page
+     * with no ink on it still has something to send — the paper — and refusing it would be refusing
+     * the very thing the send is for. A selection send is never covered by this: an empty pick is a
+     * pick of nothing, whatever the screen is.
+     */
+    protected open val emptyPageSendCarriesPaper: Boolean get() = false
+
     /** Record a stroke-level edit, wrapped in the consumer's action type. */
     protected abstract fun record(action: InkAction)
 
@@ -437,7 +446,8 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
      * **Send is a copy** — the screen keeps its ink, and nothing goes on its undo stack. The page is
      * **flushed first**, under the same lock every other page op takes, so what the screen keeps and
      * what the notebook gets are the same ink. An empty pick is a dialog, never silence: a tap that
-     * did nothing reads as broken on e-ink.
+     * did nothing reads as broken on e-ink — unless the whole page carries something besides its ink
+     * ([emptyPageSendCarriesPaper], arc 31 / HV5).
      *
      * The chunking is the contract's own ([InkChunks]), so the host's `takeOutgoing` loop and the
      * extension's parked list can never disagree about what one Binder call holds. The
@@ -451,12 +461,16 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
             page.flushUntilClean()
             val picked = if (ids == null) page.strokes else page.strokes.filter { it.id in ids }
             val wire = InkWire.toWireStrokes(picked)
-            if (wire.isEmpty()) {
+            val wholePage = ids == null
+            if (wire.isEmpty() && !(wholePage && emptyPageSendCarriesPaper)) {
                 showProblem(nothingToSendTitleRes, nothingToSendBodyRes)
                 return@runPageOp
             }
+            // Zero chunks is a legal park (arc 31 / HV5): `takeOutgoing(0)` still answers the page
+            // size the host needs to ask for paper at, and the host's drain reads an empty first
+            // bundle as "done" exactly as it does at the end of any transfer.
             val chunks = InkChunks.chunk(wire)
-            parkOutgoing(chunks, page.pageWidth, page.pageHeight, wholePage = ids == null)
+            parkOutgoing(chunks, page.pageWidth, page.pageHeight, wholePage = wholePage)
             Slog.d(logTag) { "send: ${wire.size} strokes in ${chunks.size} chunks" }
             // Nothing more may run against the document: the host drains and then revokes the store.
             closing = true

@@ -63,6 +63,10 @@ class CalendarEntry(
     },
     resultExport = ExtensionContract.RESULT_CALENDAR_EXPORT,
     onExport = onExport,
+    // A whole-page send comes home with the calendar's grid as well as its ink (arc 31 / HV5): the
+    // notebook lands a NEW page papered with it. The calendar is the one point that can draw a
+    // page, and only from API 9 — the entry checks that itself before it asks.
+    paperOnPageSend = true,
     onClosed = onClosed,
 ) {
 

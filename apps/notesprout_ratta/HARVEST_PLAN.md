@@ -7,7 +7,7 @@ cross-session memory for the arc: read it whole at every phase start, together w
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `PAGE_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 HV4 ✅ 2026-09-09.** HV1 ✅ · HV2 ✅ · HV3 ✅ · HV4 ✅ · HV5 ⬜ · HV6 ⬜.
+**Status: 🔄 HV5 ✅ 2026-09-09.** HV1 ✅ · HV2 ✅ · HV3 ✅ · HV4 ✅ · HV5 ✅ · HV6 ⬜.
 Baseline before the arc: 1487 `:app` / 2847 JVM tests, g-paper 0.1.28, `API_VERSION` 8, thirteen
 modules, version `0.1.0-ratta`.
 
@@ -357,7 +357,7 @@ door) · a Send page / Export… sheet when both are open — the user's call ov
   showing; `ExtensionStoreBinder` minting outside `HeldInkClient.open`.
 - Walk as under D4.
 
-### ⬜ HV5 — Send page with paper (Opus on a Fable brief · Fable review · walk by hand)
+### ✅ HV5 — Send page with paper (Opus on a Fable brief · Fable review · walk by hand)
 
 **Questions to resolve at phase start:** app version; the undo shape (read `Action.Page`);
 whether the new page inherits the notebook's default size or the calendar page's (planner: the
@@ -502,6 +502,55 @@ same-named file so no replace question) · page-sheet door: "soil" hidden at Thi
 confirm, both gone, the caption and radios with them, *Save preset…* stays · crash log empty. Walk
 notes: presets are library-wide (by design — a preset is an answer about *how*, not *which*
 notebook); the page sheet is a long press on the canvas (arc-8 door, unchanged).
+
+### HV5 — Send page with paper (2026-09-09, Fable brief + review · Opus the code · Sonnet adb walk)
+
+**Phase-start answers:** version stays `0.1.0-ratta`; undo = a **new kind `Action.PageReceived
+(snapshot)`** replayed on `PagePasted`'s exact arm (its own kind so a future undo label can name it);
+the new page is sized to the **calendar page's size** (the drained bundle's `pageWidth`/`pageHeight`,
+ink 1:1), not the displayed page's.
+
+**Outcome.** **`:ext-ink`:** `InkScreenActivity.emptyPageSendCarriesPaper` (open, false) — an empty
+**whole-page** send is no longer a "Nothing to send" refusal when the screen carries paper: zero
+chunks are parked with `wholePage = true` (the session's `outgoing(0)` still answers the page size);
+selection sends and the scratch pad keep the refusal. `CalendarActivity` overrides it `true`.
+**Host seam:** `DrainedInk.paper: ByteArray?` (+ `withPaper`); `HeldInkPoint.render(iface, store,
+target, w, h, flags, destination)` with a throwing default + `renderTimeoutMs` (default = the call
+budget) — `CalendarClient.Point` overrides both (`CALENDAR_RENDER_TIMEOUT_MS`);
+`HeldInkClient.renderPaper(target, w, h, flags)` on the **held** bind with the **held store binder**
+(a render during a showing hands the extension the store it already lent — never a second lease;
+`CalendarService.render` leaves the session untouched), writing `cacheDir/received/received.pages`,
+fd closed right after the call, the bundle re-read **whole** through `PageBundle.Reader` (exactly one
+page, no links) before a byte is trusted, the file deleted in `finally`. `ExtensionScreenEntry`
+grew `paperOnPageSend` (the calendar passes `true`): on `resultSend`, after the drain and inside the
+same `try` (so `finish()` still runs), `withPaperIfWholePage` gates on `ref.apiVersion ≥
+MIN_API_VERSION_FOR_CALENDAR_RENDER` and a positive page size, asks `outgoingTarget()` (null after a
+selection send — the one thing that tells the roads apart), then `renderPaper(…, RENDER_GRID)`;
+either failure is logged and dropped (the ink travels the ink-only road). The "nothing arrived" rule
+became `strokes.isNotEmpty() || paper != null`. **Notebook:** pure `notebook/CalendarPaper.accept
+(byteCount, w, h, pageW, pageH)` (≤ `TemplateImport.MAX_BLOB_BYTES`, decoded size == the page,
+zero refused); `NotebookSession.receivePage(width, height, paper, strokes, dpi): Structural` — the
+page row after the current one at the sender's size, paper resolved **reuse before mint** through
+the new `resolvePaper` (`mintOrReuse` split so the minted row is upserted **inside** the receive's
+one transaction with the page and its stroke rows; `changeTemplate` unchanged), `maxOrder` read
+inside, `renumber`/`loadTemplateFor`/`mirror`; `NotebookActivity.pasteFromCalendar` forks on
+`paper` — `receiveCalendarPage` bounded-decodes off Main and refuses through `CalendarPaper` (refused
+with ink → the ink-only paste; refused with no ink → "Couldn't add the page"), then `runPageOp` →
+drain → `receivePage` → `Action.PageReceived` → `navigateTo` (its loads complete before the
+landing) → the shared `landTransferred` tail (lasso armed before `setSelection`, the O2 rule; the
+truncated dialog; the toast "A page from the calendar was added."; nothing selected on an ink-less
+page) — `pasteTransferred` now uses the same tail rather than a copy. Three strings. Tests
+`:app` +4 (**1564**: `CalendarPaperTest`, `NotebookUndoTest` `PageReceived`) → **2945**. Version
+stays `0.1.0-ratta`. **Measured on the Nomad:** the grid-only Month render 835–895 ms, 24 360 B
+bundle → a 24 166 B WEBP template row. **Nomad walk (Sonnet over adb, 2026-09-09) PASSED 7/7
+reachable:** notebook door → Month with ink → Send page → 3/5 became 4/6, the grid with **no ring and
+no glyphs**, the ink on top, selection outline + lasso, the toast; the grid's header sits at the
+same offset as on the calendar screen (the screen's bar insets — no extra band) · second send of the
+same month → `paper mints template …(IMG#9b38ffa8)` then `paper reuses template …` (one row) · an
+ink-less Week → no dialog, a blank week grid, toast, nothing selected, a second token minted · force-
+stop + relaunch → both pages persist · crash log empty, no failure-path lines · cleaned up via Delete
+page. **By hand (the user, 2026-09-09) PASSED:** undo → page gone, redo → back; a lasso fragment → Send →
+lands on the displayed page, no new page.
 
 ### HV4 — Calendar render + file export (2026-09-09, Fable seam + `:ext-calendar` render + review · Opus the host · Sonnet adb walk)
 

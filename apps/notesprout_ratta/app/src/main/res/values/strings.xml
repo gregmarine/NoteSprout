@@ -859,6 +859,11 @@
     <string name="calendar_truncated_title">Not everything came back</string>
     <string name="calendar_paste_failed_body">The ink from the calendar could not be written to this page. Nothing was changed — it is still on the calendar.</string>
     <string name="calendar_truncated_body">The calendar page had more ink than one transfer can carry. The first %1$d strokes were pasted; the rest are still on the calendar.</string>
+    <!-- Arc 31 / HV5 — a whole page from the calendar arrives as a NEW page after the one on
+         screen, papered with the view that was sent. The failure landed nothing at all. -->
+    <string name="calendar_page_received_toast">A page from the calendar was added.</string>
+    <string name="calendar_receive_failed_title">Couldn\'t add the page</string>
+    <string name="calendar_receive_failed_body">The calendar page couldn\'t be added to the notebook. Nothing was changed.</string>
 
     <!-- Arc 26 / U5 — the doors onto notebook scope. The New Notebook screen's key radio, the one
          set-passphrase dialog and its verdicts, and the library sheet's two rows. -->

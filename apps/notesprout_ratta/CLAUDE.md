@@ -362,7 +362,7 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   re-raise); version stays `0.1.0-ratta`; 1487 `:app` / 2847 tests. **`docs/notebook.md` (§ Erase
   page, § Export page, § Undo) + `docs/export.md` (§ Scope) are the reference; read the standalone
   `PAGE_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**
-- **Arc 31 "Harvest" is IN PROGRESS (wizard locked 2026-09-08; HV1 ✅ HV2 ✅ 2026-09-08, HV3 ✅ HV4 ✅ 2026-09-09, HV5–HV6 ⬜)** — the export and
+- **Arc 31 "Harvest" is IN PROGRESS (wizard locked 2026-09-08; HV1 ✅ HV2 ✅ 2026-09-08, HV3 ✅ HV4 ✅ HV5 ✅ 2026-09-09, HV6 ⬜)** — the export and
   import extras (`PARITY_BACKLOG.md` item 6): `:ext-image` "NSE · Image Export" (PNG; one file per
   page into a SAF tree / the cloud folder at whole scope, the host bakes once and splits, the
   exporter is called once per page; `ExporterInfo.delivery` tail), a page-sheet **Save as template**

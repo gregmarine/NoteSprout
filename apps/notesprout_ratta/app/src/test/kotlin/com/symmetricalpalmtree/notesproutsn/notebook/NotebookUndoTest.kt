@@ -48,6 +48,12 @@ class NotebookUndoTest {
         // A paste replays through the same snapshot but runs the opposite direction — same rule
         // for where it landed.
         assertEquals("N", Action.PagePasted(snap).pageId)
+        // And a page received from the calendar (arc 31 / HV5) is a paste the calendar made: the
+        // paste's snapshot, the paste's replay, its own kind.
+        val received: Action = Action.PageReceived(snap)
+        assertEquals("N", received.pageId)
+        assertTrue(received !is Action.PagePasted)
+        assertTrue(received !is Action.Page)
     }
 
     @Test

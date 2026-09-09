@@ -41,8 +41,11 @@ import com.symmetricalpalmtree.notesproutsn.crypto.KeyResolver
 import com.symmetricalpalmtree.notesproutsn.crypto.NotebookRecovery
 import com.symmetricalpalmtree.notesproutsn.crypto.KeyScope
 import com.symmetricalpalmtree.notesproutsn.crypto.NotebookPassphrasePrompt
+import com.symmetricalpalmtree.notesproutsn.core.Bitmaps
 import com.symmetricalpalmtree.notesproutsn.data.clip.ClipEnvelope
 import com.symmetricalpalmtree.notesproutsn.data.clip.ClipStore
+import com.symmetricalpalmtree.notesproutsn.data.template.PaperSource
+import com.symmetricalpalmtree.notesproutsn.data.template.TemplateFit
 import com.symmetricalpalmtree.notesproutsn.data.soil.SoilDatabase
 import com.symmetricalpalmtree.notesproutsn.data.soil.SoilSchema
 import com.symmetricalpalmtree.notesproutsn.data.index.IndexRepository
@@ -1969,6 +1972,11 @@ class NotebookActivity : AppCompatActivity() {
                 session.reconcile(a.snapshot.before, emptyList(), a.snapshot.objectIds, a.snapshot.beforeCurrentId)
                 refreshToPage(session.currentPage.id)
             }
+            // A received page is a paste the calendar made: the same two lines, its own kind (HV5).
+            is Action.PageReceived -> {
+                session.reconcile(a.snapshot.before, emptyList(), a.snapshot.objectIds, a.snapshot.beforeCurrentId)
+                refreshToPage(session.currentPage.id)
+            }
             // No drain: a re-papering writes one page row and never touches the stroke writer.
             is Action.TemplateChanged -> { session.applyTemplate(a.pageId, a.from); refreshToPage(a.pageId) }
         }
@@ -2052,6 +2060,10 @@ class NotebookActivity : AppCompatActivity() {
                 refreshToPage(session.currentPage.id)
             }
             is Action.PagePasted -> {
+                session.reconcile(a.snapshot.after, a.snapshot.objectIds, emptyList(), a.snapshot.afterCurrentId)
+                refreshToPage(session.currentPage.id)
+            }
+            is Action.PageReceived -> {
                 session.reconcile(a.snapshot.after, a.snapshot.objectIds, emptyList(), a.snapshot.afterCurrentId)
                 refreshToPage(session.currentPage.id)
             }
@@ -2916,8 +2928,79 @@ class NotebookActivity : AppCompatActivity() {
      * but the three strings they say, and a copy is how the `RattaNotebookView` trap is recreated one
      * file at a time.
      */
-    private fun pasteFromCalendar(drained: DrainedInk) =
-        pasteTransferred(drained.strokes, drained.truncated, CALENDAR_WORDING, "the calendar")
+    private suspend fun pasteFromCalendar(drained: DrainedInk) {
+        val paper = drained.paper
+        // Ink only: a selection send, or a whole-page send whose paper never arrived (the entry
+        // logged why). The arc-23 road, unchanged — it lands on the page that is displayed.
+        if (paper == null) {
+            pasteTransferred(drained.strokes, drained.truncated, CALENDAR_WORDING, "the calendar")
+            return
+        }
+        receiveCalendarPage(drained, paper)
+    }
+
+    /**
+     * **A whole page from the calendar** (arc 31 / HV5): a new page after the one on screen,
+     * papered with the view that was sent, the ink on top, one undo entry, the ink selected with
+     * the lasso armed. An empty send is a page of paper and nothing else, which is the whole point
+     * of it — the calendar refuses an empty *selection*, never an empty page.
+     *
+     * [paperBytes] came out of another process and is checked before anything is written: the size
+     * against [com.symmetricalpalmtree.notesproutsn.data.template.TemplateImport.MAX_BLOB_BYTES]
+     * and the **decoded** picture against the page it claims to be ([CalendarPaper.accept]) — a
+     * bounded decode, off Main, whose bitmap is thrown away at once (the row stores the bytes, and
+     * the page swap is what decodes them for the glass). Paper that fails that falls back to the
+     * ink-only road: ink on the displayed page is a smaller wrong than a send that vanished. Paper
+     * that fails it with **no** ink behind it landed nothing at all, and says so.
+     */
+    private suspend fun receiveCalendarPage(drained: DrainedInk, paperBytes: ByteArray) {
+        if (!opened || closing) return
+        val width = drained.pageWidth.toInt()
+        val height = drained.pageHeight.toInt()
+        val usable = withContext(Dispatchers.IO) {
+            val bitmap = Bitmaps.decodeBounded(paperBytes, NotebookSession.MAX_TEMPLATE_EDGE)
+            if (bitmap == null) false else try {
+                CalendarPaper.accept(paperBytes.size, bitmap.width, bitmap.height, width, height)
+            } finally {
+                bitmap.recycle()
+            }
+        }
+        if (!usable) {
+            Slog.d(TAG) { "the calendar's paper was refused (${paperBytes.size} B against ${width}x$height)" }
+            if (drained.strokes.isNotEmpty()) {
+                pasteTransferred(drained.strokes, drained.truncated, CALENDAR_WORDING, "the calendar")
+            } else {
+                Dialogs.problem(this, R.string.calendar_receive_failed_title, R.string.calendar_receive_failed_body)
+            }
+            return
+        }
+        runPageOp {
+            // The shared writer first, as every page op does: a stroke commit still queued would
+            // land after the page list has already been swapped out from under it.
+            session.store.drain()
+            val strokes = TransferCaps.toStrokes(drained.strokes)
+            val snap = runCatching {
+                session.receivePage(
+                    width, height,
+                    PaperSource.Image(paperBytes, TemplateFit.FIT),
+                    strokes,
+                    resources.displayMetrics.densityDpi.toFloat(),
+                )
+            }.onFailure { Log.w(TAG, "the calendar's page could not be added", it) }.getOrNull()
+            if (snap == null) {
+                // Nothing was written — the render threw, or the transaction did. One sentence.
+                Dialogs.problem(this, R.string.calendar_receive_failed_title, R.string.calendar_receive_failed_body)
+                return@runPageOp
+            }
+            undo.record(Action.PageReceived(snap))
+            // The paste's road home: the page, its template and its strokes all come off the rows,
+            // and it is synchronous within this page op — so the selection below lands on ink that
+            // is already on the glass.
+            navigateTo(session.currentIndex)
+            landTransferred(strokes, drained.truncated, CALENDAR_WORDING, R.string.calendar_page_received_toast)
+            Slog.d(TAG) { "received a page from the calendar (${strokes.size} strokes) as ${snap.afterCurrentId}" }
+        }
+    }
 
     /**
      * Ink coming back from an extension's screen — the strokes are already sanitized and capped by
@@ -2931,11 +3014,8 @@ class NotebookActivity : AppCompatActivity() {
      * and the notebook page are both this device's screen, and a cross-size page clips the ink like
      * any other.
      *
-     * It lands **selected with the lasso armed**, so the pen can drag it into place at once — a
-     * selection under the pen can neither be dragged nor dismissed, so the tool is switched
-     * **before** `setSelection`, and the tool the user had comes back pen-idle when that selection
-     * is dismissed. That frame is the selection toolbar's own recorded exception, at a boundary
-     * (nothing is being written — the user has just come back from another screen).
+     * It lands **selected with the lasso armed** and says so — [landTransferred], which the
+     * received-page road (arc 31 / HV5) shares rather than copying.
      */
     private fun pasteTransferred(
         wire: List<WireStroke>,
@@ -2966,12 +3046,37 @@ class NotebookActivity : AppCompatActivity() {
             // same replay — so it takes arc-8's entry rather than a fifteenth kind (J5 Q1).
             undo.record(Action.ObjectsPasted(pageId, strokes.map { it.id }, emptyList(), emptyList()))
 
+            landTransferred(strokes, truncated, wording, R.string.objects_pasted_toast)
+            Slog.d(TAG) { "pasted ${strokes.size} strokes from $source onto $pageId" }
+        }
+    }
+
+    /**
+     * The tail both transfer roads share (arc 31 / HV5 — the ink-only paste's and the received
+     * page's): [strokes] selected with the lasso armed, then the word that follows.
+     *
+     * It lands **selected with the lasso armed**, so the pen can drag it into place at once — a
+     * selection under the pen can neither be dragged nor dismissed, so the tool is switched
+     * **before** `setSelection` (the O2 lesson): arming the lasso dismisses whatever selection was
+     * still up, and that dismissal runs `restoreToolAfterTransferPaste` — which would otherwise
+     * consume the parked tool and put the pen back under the selection being made here. The tool
+     * the user had comes back pen-idle when this selection is dismissed. That frame is the
+     * selection toolbar's own recorded exception, at a boundary (nothing is being written — the
+     * user has just come back from another screen).
+     *
+     * A **cut** drain is a problem the user has to know about — the rest of their ink is still over
+     * there — so it is a dialog and not [toastRes]. An empty [strokes] selects nothing: a page that
+     * arrived as paper alone has nothing to point at.
+     */
+    private fun landTransferred(
+        strokes: List<Stroke>,
+        truncated: Boolean,
+        wording: TransferWording,
+        toastRes: Int,
+    ) {
+        if (strokes.isNotEmpty()) {
             var box = strokes.first().bounds
             for (i in 1 until strokes.size) box = box.union(strokes[i].bounds)
-            // The write lands AFTER the tool change, never before it (the O2 lesson): arming the
-            // lasso dismisses whatever selection was still up, and that dismissal runs
-            // `restoreToolAfterTransferPaste` — which would consume this very field and put the pen
-            // back under the selection we are about to make.
             armLassoForLanding()
             val strokeIds = strokes.mapTo(HashSet()) { it.id }
             val selection = Selection(strokeIds, emptySet(), box)
@@ -2979,18 +3084,14 @@ class NotebookActivity : AppCompatActivity() {
             selectionActive = true
             currentSelection = selection
             showSelectionToolbar(selection)
-
-            // A cut drain is a problem the user has to know about — the rest of their ink is still
-            // over there. Otherwise the ordinary paste toast, in arc-8's words (J5 Q2).
-            if (truncated) {
-                Dialogs.problem(
-                    this, getString(wording.truncatedTitleRes),
-                    getString(wording.truncatedBodyRes, strokes.size),
-                )
-            } else {
-                toast(getString(R.string.objects_pasted_toast))
-            }
-            Slog.d(TAG) { "pasted ${strokes.size} strokes from $source onto $pageId" }
+        }
+        if (truncated) {
+            Dialogs.problem(
+                this, getString(wording.truncatedTitleRes),
+                getString(wording.truncatedBodyRes, strokes.size),
+            )
+        } else {
+            toast(getString(toastRes))
         }
     }
 

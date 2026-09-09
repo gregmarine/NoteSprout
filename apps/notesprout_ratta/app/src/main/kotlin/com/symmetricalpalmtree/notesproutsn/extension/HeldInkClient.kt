@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.IBinder
+import android.os.ParcelFileDescriptor
 import com.symmetricalpalmtree.notesproutsn.core.Slog
 import com.symmetricalpalmtree.notesproutsn.data.extstore.ExtensionStoreBinder
 import com.symmetricalpalmtree.notesproutsn.data.extstore.ExtensionStores
@@ -11,6 +12,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.IOException
 
 /**
  * What a [HeldInkClient] needs to know about **one** ink-carrying screen-owning point: its two
@@ -69,6 +72,30 @@ interface HeldInkPoint<I : Any, P> {
      */
     fun outgoingTarget(iface: I): P?
 
+    /**
+     * Paint [target] as a finished page into [destination] — one `PageBundle` v1 carrying exactly
+     * one page (arc 31 / HV5, the calendar's `render`). Only a point that has such a call
+     * overrides this; every other one answers the way it always did, which is that it has no
+     * pixels to give.
+     *
+     * [store] is the binder this showing was `begin`'d with: a render made **during** a showing is
+     * handed the same store the bind already holds, never a second lease — the extension documents
+     * that it leaves the session untouched.
+     */
+    fun render(
+        iface: I,
+        store: IExtensionStore,
+        target: P,
+        widthPx: Int,
+        heightPx: Int,
+        flags: Int,
+        destination: android.os.ParcelFileDescriptor,
+    ): Unit = throw UnsupportedOperationException("this point draws no pages")
+
+    /** How long one [render] may take. Drawing a page is not a state read, so it is its own budget;
+     *  a point with no [render] never uses it. */
+    val renderTimeoutMs: Long get() = callTimeoutMs
+
     /** How the placement reads in the send log line. Names and numbers only — never a stroke. */
     fun describe(placement: P): String
 }
@@ -81,7 +108,20 @@ class DrainedInk(
     val pageWidth: Float,
     val pageHeight: Float,
     val truncated: Boolean,
-)
+    /**
+     * The page the ink was written on, as **pixels** (arc 31 / HV5) — one encoded image at
+     * [pageWidth] x [pageHeight], read back out of the extension's own `render`. Null is the
+     * ordinary answer and means *ink only*: a selection send, a point that draws no pages, or a
+     * whole-page send whose render failed. Untrusted bytes, like everything else that crossed —
+     * the consumer bounds-checks them before any decode.
+     */
+    val paper: ByteArray? = null,
+) {
+    /** This drain with [paper] on it — the whole-page road's one addition, made where the paper is
+     *  read rather than by widening every drain site. */
+    fun withPaper(paper: ByteArray): DrainedInk =
+        DrainedInk(strokes, pageWidth, pageHeight, truncated, paper)
+}
 
 /**
  * The host's client for **one showing** of an ink-carrying, screen-owning extension point — SN's
@@ -246,6 +286,85 @@ open class HeldInkClient<I : Any, P>(
         return target
     }
 
+    /**
+     * **The page the ink was written on, as pixels** (arc 31 / HV5) — one encoded image at
+     * [widthPx] x [heightPx], drawn by the extension under [flags] and read back here.
+     *
+     * On the **held** bind, with the **held** store binder: a render during a showing is the same
+     * bind and the same store the showing already has (the extension's own `render` documents that
+     * it leaves the session untouched), never a second lease — and it must happen before [finish],
+     * which takes both away. [outgoingTarget]'s rule, for [outgoingTarget]'s reason.
+     *
+     * The file is the host's, in its own cache directory, and the descriptor is closed the instant
+     * the call returns (the fd is duplicated on the far side — the near copy is ours to let go of);
+     * the file itself is deleted in `finally`, whatever happened. What comes back is **untrusted**:
+     * the bundle is read to the end through [PageBundle.Reader] — which is what bounds-checks the
+     * page count, the dimensions and the image length — and must hold exactly one page and no
+     * links, because that is what was asked for. The consumer bounds-checks the bytes again before
+     * it decodes them.
+     *
+     * Logs counts, flags and durations. Throws [ExtensionCallException] — a dead bind, a timeout,
+     * a refusal, a file that would not open, or a bundle that is not the one page it was asked for.
+     * Never a path in a message.
+     */
+    suspend fun renderPaper(target: P, widthPx: Int, heightPx: Int, flags: Int): ByteArray {
+        val binding = held ?: throw ExtensionCallException("not open")
+        val store = storeBinder ?: throw ExtensionCallException("not open")
+        val t0 = System.currentTimeMillis()
+        val file = File(File(appContext.cacheDir, PAPER_DIR), PAPER_FILE)
+        try {
+            val pfd = try {
+                withContext(Dispatchers.IO) {
+                    file.parentFile?.mkdirs()
+                    ParcelFileDescriptor.open(
+                        file,
+                        ParcelFileDescriptor.MODE_WRITE_ONLY or
+                            ParcelFileDescriptor.MODE_CREATE or
+                            ParcelFileDescriptor.MODE_TRUNCATE,
+                    )
+                }
+            } catch (e: IOException) {
+                // Never the path: the host's own cache directory is not the user's business and not
+                // a log line's either.
+                throw ExtensionCallException("the paper destination would not open", e)
+            }
+            try {
+                binding.call(point.renderTimeoutMs) {
+                    point.render(it, store, target, widthPx, heightPx, flags, pfd)
+                }
+            } finally {
+                runCatching { pfd.close() }
+            }
+            val image = withContext(Dispatchers.IO) {
+                try {
+                    onePageOf(file)
+                } catch (e: IOException) {
+                    throw ExtensionCallException("the paper is not one page", e)
+                }
+            }
+            Slog.d(tag) {
+                "renderPaper: ${point.describe(target)} flags=$flags size=${widthPx}x$heightPx → " +
+                    "${image.size} bytes in ${System.currentTimeMillis() - t0} ms"
+            }
+            return image
+        } finally {
+            runCatching { file.delete() }
+        }
+    }
+
+    /** The one page in a bundle the extension wrote, or an [IOException]. The reader is the bounds
+     *  check (magic, version, count, dimensions, lengths); what is added here is the one thing the
+     *  container cannot know — this bundle was asked for a single page, and being version 1 it may
+     *  carry no links. */
+    private fun onePageOf(file: File): ByteArray = file.inputStream().use { input ->
+        PageBundle.Reader(input).use { reader ->
+            if (reader.pageCount != 1) throw IOException("${reader.pageCount} pages for one target")
+            val page = reader.readPage()
+            if (reader.readLinks().isNotEmpty()) throw IOException("a one-page bundle may carry no links")
+            page.image
+        }
+    }
+
     /** Settle any orphaned call (a placement still running past its budget — the store must not be
      *  revoked under it), then `end()` (best effort, ≤ [HeldInkPoint.callTimeoutMs]), then unbind +
      *  revoke in `finally`. Idempotent. */
@@ -266,5 +385,13 @@ open class HeldInkClient<I : Any, P>(
             binding.close()
             store?.revoke()
         }
+    }
+
+    private companion object {
+        /** The cache subdirectory one [renderPaper] writes into, and the bundle's name in it — the
+         *  export cache's hygiene in miniature (`calendar.pages`), on a directory of its own so a
+         *  send can never step on an export's artifact. One showing at a time, so one file. */
+        const val PAPER_DIR = "received"
+        const val PAPER_FILE = "received.pages"
     }
 }
