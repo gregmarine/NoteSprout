@@ -360,7 +360,7 @@ ask.
   "This page was exported." → notebook reopens on the same page · Whole notebook re-lists Soil and
   the filename drops the suffix · Cancel at the picker stays; Back from Export reopens the
   notebook · immediate Back reopens the notebook · library door unchanged (no Scope row, Soil
-  listed) · no crash lines. **Not exercised on-device:** the `page N` filename (JVM-pinned),
-  Document at page scope (no dev-library page carries its own document), a failed cloud export, the
-  no-exporter sheet.
+  listed) · no crash lines. **The rest walked by hand by the user, all passed:** the `page N`
+  filename, Document at page scope, a failed cloud export → problem dialog → the notebook reopens,
+  and the no-exporter sheet (no Export row). PE2 walk complete.
 
