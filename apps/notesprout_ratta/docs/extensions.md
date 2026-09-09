@@ -119,7 +119,7 @@ reading reference — the feature is new to this family.
 
 ## Module layout
 
-Thirteen modules, SN's own Gradle root:
+Fourteen modules, SN's own Gradle root:
 
 | Module | Type | Depends on | Holds |
 |---|---|---|---|
@@ -135,6 +135,7 @@ Thirteen modules, SN's own Gradle root:
 | `:ext-tags` | Android application (its own installable APK) | `:extension-api` + `:sn-screen` (g-paper arrives through its `api` and is deliberately never touched); **never** `:app`, no Application class, no drawing engine | the TENTH module (arc 21 / W1–W4, grown onto rows at arc 22 / X3, **NSE · Tags**, Tabler `tag` icon): one service + a screen, `TagManagerService` + `TagsActivity`, over `TagSession` (the `ScratchSession` shape — the two share a process), `TagSchema` (schema v1: `tag`/`assignment`), `TagSql`, `TagStore`, `TagIndex` (moved here from `:extension-api` at X3 — the screen's query-only in-memory model, built from two reads), `TagManage`, `TagPaging`, `TagRowView` — see [`tags.md`](tags.md) |
 | `:ext-calendar` | Android application (its own installable APK) | `:extension-api` + `:sn-screen` (g-paper arrives through its `api`) + `:ext-ink` + androidx; **never** `:app`, no Room / SQLCipher / serialization | the TWELFTH module (arc 23 / Y1–Y3, **NSE · Calendar**, Tabler `calendar` icon): `CalendarApplication` (registers `RattaEngine` — its own process), `CalendarService` (the `ICalendar` stub, thin on `:ext-ink`'s `InkTransferSession` since Y4 — supplies only the target's own null check and the log wording), `CalendarSession` (an `InkTransferSession<CalendarTarget, CalendarStore.Received>(recordInboundPageSize = false)`), `CalendarSchema` (schema v1: `period`/`page`/`stroke`/`state` — the `stroke` half is `:ext-ink`'s `InkSql` since Y4), `CalendarSql` (`: InkDocument.StrokeSql by InkSql` since Y4), `CalendarStore` (on `:ext-ink`'s `InkStore`), `CalendarDocument` (thin over `:ext-ink`'s `InkDocument` — the calendar's own layer keeps which period/page is showing, whether its rows exist yet, and its size — and implements `:ext-ink`'s `InkPage` since Y4), `CalendarGeometry`, `CalendarTemplate`, `CalendarNavigation`, `DayPickerModel`, `DayPickerDialog`, `CalendarToolbar`, `CalendarActivity` (thin on `:ext-ink`'s `InkScreenActivity` since Y4 — keeps navigation, template bake, the picker, double-tap, `followReplay()`) — `CalendarSelectionToolbar` **deleted** (arc 23 / Y4) in favour of `:sn-screen`'s `InkSelectionBar`; **grown in place by arc 24 "Events" (Z1–Z5, not a point, no API bump — still declares 7)**: two more in-process screens, `EventsActivity` (the day's list) and `EventEditorActivity` (one event), both `exported="false"` and launched only in-process with an `ActivityResultLauncher` (the list by `CalendarActivity`, the editor by the list) — same process, so neither needs a `HostCallerCheck`; `CalendarSchema.V2` (V1's step untouched + one events step: `event` / `event_weekday` / `event_exception` / `event_reminder` / `note_stroke`); `EventStore : InkStore, MarkSource`, `EventSql`, `NoteSql : InkDocument.StrokeSql`, `Recurrence`, `EventRules`, `EventWrites`, `EventRows`, `Upcoming`, `EventWording`, `EventDraft`, `GridMarks`, `DayRows`; and `NoteSurface`, a second g-paper surface in the same process (the calendar hands nothing over before the list; the editor's surface releases before every `finish()`) — see [`docs/calendar.md`](calendar.md) |
 | `:ext-cloud` | Android application (its own installable APK) | `:extension-api` + `:sn-screen` (g-paper is never touched — this point has no paper) + `kotlinx.serialization` (arc 25 / V2 — already on the graph via `:app`, no new library); **never** `:app`; the **only** module carrying `INTERNET` | the THIRTEENTH module (arc 25 / V1–V5, **NSE · Cloud Storage**, the family's puzzle icon): one service + a screen on SN's eighth point, `CloudService` (the `ICloudStorage` stub — every method `HostCallerCheck.enforce`'d, thin over `DriveOps`) + `ConnectActivity` (the tier-2 sign-in behind `HostCallerCheck.enforceActivity` — WebView PKCE, Chrome UA spoofed before `loadUrl`, the `http://localhost/oauth2callback` redirect intercepted, `RESULT_OK` only after both store writes land), `ConnectSession` (the parked store between `beginConnect`/`endConnect`, one monitor), `DriveSchema` (schema v1: one table, `account(key, value)` — refresh token, account label, cached root/`Exports`/`Backups` folder ids), `DriveSql` (every statement against it — `account` has no children, so a plain `INSERT OR REPLACE` is safe, unlike the tag manager's tables), `DriveStore` (on the host's `IExtensionStore`), `DriveAuth` (pure PKCE/OAuth core), `DriveHttp` (the one `HttpTransport` impl, over `HttpURLConnection`), `DriveTokens` (the access token in memory only, refreshed from the store), `DriveApi` (REST v3: about/find/create/ensure/list/multipart-or-resumable-upload/download/delete, replace-by-name throughout), `DriveOps` (the testable body the service delegates to), `DriveFailures` (the marshalable funnel — every transport failure becomes the verbatim `NETWORK`), `DRIVE_CLIENT_ID`/`DRIVE_CLIENT_SECRET` compiled from the shell env into this APK only, `ROOT_FOLDER_NAME` "Notesprout SN" / "Notesprout SN Dev" by build type (`DRIVE_PLAN.md` decision 9) — see [`docs/cloud.md`](cloud.md) |
+| `:ext-image` | Android application (its own installable APK) | `:extension-api` only | the FOURTEENTH module (arc 31 / HV1, **NSE · Image Export**, the family's puzzle icon byte-identical): `ImageExporterService` (a third exporter on arc 15's one `NOTEBOOK_EXPORTER` point, bound stateless like `:ext-soil` and `:ext-pdf`), `ImageDescriptor` (PNG image · `png` · `image/png` · one page-template toggle · `SOURCE_PAGES` · `bundleVersion = PageBundle.VERSION_1` · `delivery = DELIVERY_PER_PAGE`), `ImageExportSpec` (unknown option ids and any export secret refused, not ignored — the opposite of `:ext-soil`'s forward-compat rule, because an id this build cannot act on can only mean a host or a descriptor this process does not understand), `ImageAssembly` (`requireOnePage` — a multi-page bundle is an `IllegalStateException`, never its first page; a bounded RGB_565 decode checked against the bundle's declared size, PNG at quality 100 through `CountingOutputStream`, the `S_ISREG` fsync rule), `CountingOutputStream` (the `:ext-pdf` shape, module-local in both — the only honest count for a transform, never the container's own size). Manifest declares API version **9** (`ExporterContract.MIN_API_VERSION_FOR_DELIVERY`) — an API-8 host would read no `delivery` tail, bake a whole notebook into one bundle and hand it here as if it were one page, so it must skip this service at discovery instead. Fifteen JVM tests |
 | `:app` (`extension/` package) | part of the host APK | `:extension-api` | `ExtensionRegistry`, `ExtensionBinder`, `ExtensionCallException`, `InkCaps`, `RecognizerClient`, `RecognizerReadiness`, `HeldInkClient` (arc 23 / Y4 — the pad's and the calendar's held-bind lifecycle written once: `HeldInkPoint` is the per-point names/budgets interface, `DrainedInk` the one drained-result class), `ExtensionScreenEntry` (Y4 — the pad's and the calendar's entry-button door written once: `InkSend` the one outbound-ink class, `EntryWording` the four strings), `TransferSelection` (Y4 — the pure ink-only/writing-order rule both lasso sends obey), `ScratchPadClient` / `CalendarClient` / `ScratchPadEntry` / `CalendarEntry` (since Y4, thin points on the two classes above — a point's companion is a `HeldInkPoint`, its constructor a set of `ExtensionScreenEntry` wiring), `TransferCaps`, `ExporterClient`, `ImporterClient`, `DocumentEditorClient`, `DocumentEditorEntry`, `DocumentHostBinder`, `DocumentHostSession`, `TagClient`, `TagManagerEntry`, and (arc 25) `CloudClient` (the store-taking, bind-per-call file ops — no held bind), `CloudConnectClient` (the one held bind on the point, the connect showing's bracket), `CloudConnectEntry` (the entry-button door over it — registered in `onCreate`, closed in `onDestroy`, always answers even on the sign-in-could-not-open path), `CloudArgs` (host-side checks run before any bind), `CloudTimeouts` (the measured per-method budget table), `CloudWording`, `CloudNotConnectedException` / `CloudNetworkException`; and in `data/extstore/`, the extension store — rebuilt on `SupportSQLiteOpenHelper` at arc 22 / X1, Room's `KvEntity`/`KvDao` deleted with it (`ExtensionStores`, `ExtensionStoreDatabase`, `StoreFormat`, `StoreExecutor` / `SupportStoreExecutor`, `ExtensionStoreGate`, `ExtensionStoreBinder`) — plus, in `export/` and `crypto/`, export's own host-side half (`ExportActivity`, `ExportPanel`, `ExportOptions`, `ExportArtifact`, `ExportNaming`, `ExportKeying`, `SoilOpenFiles`, and arc 19's `ExportText`, `ExportDocumentRules`, `DocumentPdfRender`, `DocumentPdfMetrics`), in `importing/` and `crypto/`, import's (`ImportFlow`, `NotebookImport`, `ImporterMatch`, `ImportNames`, `AncestryPlan`, `SafeImportId`, `ImportDialogs`, `ImportOverlay`, `ImportKeying`, `NotebookRemap` in `data/soil/`, and arc 19's `TextImport`), in `notebook/`, tags' own host-side half (`TagsPopup`, `TagTargets`, `TagSelection`), and in `notebook/`, the calendar's own host-side half (`CalendarTargets`, arc 23 / Y3 — the four Send-to-Calendar choices, every one through `CalendarTarget.of`); and, arc 25, the cloud point's three consumers' own host-side halves — in `export/`, `ExportDestination` (the pure Destination-row rules) and `cloud/CloudBrowserDialog` + `CloudBrowserRules` (the host-drawn folder/file browser, shared with import); in `data/backup/`, `DeviceFolder`, `SelfContainedSnapshot` (the WAL-absorbing cache copy — the cloud never holds a sidecar) and `CloudBackupLeg` + `CloudBackupRules` (the backup run's second leg); in `importing/`, `CloudImportRules` (the download's three-way byte corroboration) |
 
 `:sn-screen` is deliberately **not** in that dependency chain: it never sees `:extension-api`, so a
@@ -1326,6 +1327,44 @@ field and keeps treating every descriptor as it always did, and an exporter buil
 phase is read by a newer host as `bundleVersion = 1` — the compatible-tail contract holding in
 both directions at once, same as it did for `sourceKind` at arc 18. The ledger stays at 8.
 
+### The delivery tail (arc 31 / HV1)
+
+`ExporterInfo` grew a **third** compatible parcel tail, read the same `dataAvail()` way as the two
+before it: `delivery: Int = ExporterContract.DELIVERY_ONE_FILE`, either that or
+`ExporterContract.DELIVERY_PER_PAGE`. The seam's one call is unchanged — `export(source,
+destination, spec)` is still one bundle in, one file out — what a `DELIVERY_PER_PAGE` exporter
+changes is what the **host** does *around* the call at a scope of more than one page: it bakes the
+bundle once (the arc-18 rule holds — the render never runs twice for one export), splits it into
+one-page bundles (`export/BundleSplit`, pure over streams and JVM-tested: any bundle version in,
+version-1 one-page bundles out, links dropped because a one-page file has nowhere to jump to, one
+page in memory at a time on either side), and calls the exporter once per page into a folder the
+user picked — `export/ExportDelivery` is the whole of the host's reading of the tail, two pure
+functions (`delivery(apiVersion, info)`, `perPage(delivery, scope)`).
+
+**This is a floor, not a parcel need.** `ExporterContract.MIN_API_VERSION_FOR_DELIVERY = 9`: the
+tail is read only from a service whose manifest declares at least 9 — below that, `delivery` is
+`DELIVERY_ONE_FILE` whatever the parcel actually carried, so the declaration and the tail can never
+disagree about what the host will do (the D3 skew guard, restated for a third field). Facing an
+API-8 host, a per-page exporter would otherwise be handed a whole-notebook bundle and asked to
+write one file from it — silently reporting a notebook as exported when one page was — so
+`:ext-image`, the first and so far only `DELIVERY_PER_PAGE` exporter, declares 9 and an older host
+skips it at discovery instead. **`API_VERSION` moves to 9 for this alone** — see the ledger above —
+and it is not a ninth capability point: no existing interface changes shape, `MIN_API_VERSIONS` is
+untouched, and every extension already installed keeps binding exactly as it did. The one
+collateral edit is `CloudContractTest`, which had pinned the cloud floor to *the current*
+`API_VERSION` rather than to the literal 8 — re-pinned so a future bump does not silently move a
+floor that was never meant to follow it.
+
+**`ExportScope.Whole = a folder`, deliberately, even at one page.** `ExportDelivery.perPage`
+answers true for a `DELIVERY_PER_PAGE` exporter at `ExportScope.Whole` unconditionally — a
+one-page notebook still goes to a folder rather than falling through to the ordinary single-file
+picker, because a scope that sometimes made a folder and sometimes a file depending on how many
+pages a notebook happened to have would not be a rule a person could hold. At `ExportScope.Page`
+there is exactly one page by construction, so a per-page exporter is an ordinary single file and
+nothing about the flow changes; at `ExportScope.Calendar` (arc 31 / HV4) the page count is counted
+rather than assumed — a Day is two pages and goes to a folder, a Month or a Week is one and goes
+through the picker, because the calendar's own page decides it, not a scope the person chose.
+
 ---
 
 ## The importer point (arc 16)
@@ -1950,6 +1989,143 @@ the arc.
 The feature itself — the store, the recurrence engine, the two screens, the note, the grid, the
 failure table, tests and traps — is [`docs/calendar.md`](calendar.md) § Events.
 
+### Render and the outgoing target (arc 31 / HV4–HV5)
+
+`ICalendar` grew two methods, both appended **after** `end()` so every earlier transaction code is
+unchanged and a calendar declaring 7 or 8 is still bound for the original four and never asked
+these two:
+
+```
+void          render(IExtensionStore store, in CalendarTarget[] targets, int widthPx, int heightPx, int flags, in ParcelFileDescriptor destination);
+CalendarTarget outgoingTarget();
+```
+
+(`destination`, not `out` — `out` is an AIDL keyword.) `MIN_API_VERSION_FOR_CALENDAR_RENDER = 9` is
+a **method** floor, not an action floor: `ExtensionContract.MIN_API_VERSIONS` is untouched, the
+contract test pins that a calendar still declaring 7 binds for everything it always did, and only a
+calendar declaring 9 is ever asked to `render`. `render` is **bind-per-call, store lent for the
+call alone** — the tag manager's and the cloud point's shape, not the held showing's: a call made
+*during* a showing (the Export screen's flow, and HV5's own paper read) is handed the **same**
+store binder the bind already holds, never a second lease, and the extension's own `CalendarStore`
+documents that a render leaves the showing's session untouched. `outgoingTarget()` answers the page
+a parked whole-page send or export request came from, read on the held bind **before** `end()` —
+null after a selection send, which is the one thing that tells a selection and a whole page apart.
+
+**The lease that made a fifth copy unnecessary.** `ExtensionStores.lease(context, pkg, tag)`
+(`data/extstore/ExtensionStoreLease.kt`) is the pre-open-then-mint-a-uid-bound-binder sequence four
+clients had each hand-written — `TagClient`, `CloudClient`, `CloudConnectClient`, and
+`HeldInkClient.open`'s own copy for the showing's bind. HV4 pulled it out and repointed the first
+three; `HeldInkClient.open`'s copy is deliberately **left** — its own log wording differs and it is
+already the showing's one-time-per-open call, so folding it in would buy nothing a fourth
+near-identical line didn't already cost. `CalendarClient.render` (bind-per-call, off any showing —
+the Export screen's own call) is the seam's first consumer of the new function.
+
+**`RENDER_GRID` / `RENDER_INK` / `RENDER_RING` / `RENDER_MARKS`** (`1`/`2`/`4`/`8`) plus
+`RENDER_ALL` are the flag mask `flags` is checked against (`RenderRequest`'s constructor refuses
+anything outside it as `IllegalArgumentException`); `RENDER_MAX_TARGETS = 8` bounds how many pages
+one call may ask for. `CALENDAR_RENDER_TIMEOUT_MS = 30_000L` is measured, not guessed: a Month with
+46 strokes plus ring and marks rendered in **1012 ms** on the Nomad, a two-page Day pair with no ink
+in **1600 ms** — eight targets is comfortably under 10 s, and 30 s leaves a cold-store margin on
+top of that (down from the export flow's own 120 s budget, because a render is one page at a time,
+never a whole `.soil`).
+
+**Extension side.** `RenderRequest` (pure, JVM-tested) is every refusal `render`'s Binder thread
+must make before it touches a bitmap: no targets, over `RENDER_MAX_TARGETS`, a flag outside
+`RENDER_ALL`, `widthPx`/`heightPx` outside `1..PageBundle.MAX_DIMENSION_PX` — and `pageSize`, the
+one arithmetic it owns: a target with a minted page keeps its **stored** size (itself bounds-checked
+against `MAX_DIMENSION_PX` rather than trusted), an unminted one takes the host's `widthPx` ×
+`heightPx`. `CalendarRender` (internal, off the Binder thread's own g-paper-free path) does the
+rest per target: `CalendarStore.open()` on the **lent** binder (the host's gate refuses a query
+before the schema is declared) → `readPage`/`readHeader` by whether ink was asked for → a white
+RGB_565 ground → the ruling from `CalendarTemplate` **at the screen's own bar insets**
+(`CalendarBars.topInsetPx`/`.bottomInsetPx`, built from `toolbar_bar_thickness` + the new
+`calendar_bar_rule` dimen, with `today` now **nullable** so a ring-less render is legal) → marks
+from `EventStore.marksFor(GridMarks.rangeOf(target))` only when both `RENDER_MARKS` and
+`RENDER_GRID` are asked for → the ink through g-paper's own public `StrokeRasterizer.draw` — the
+same door the host's own endnote bake already uses, so ink on a calendar file is pixel-identical to
+ink on a notebook file — → WEBP q100 → one `PageBundle.Writer.writePage` per target. Every failure
+that is not an argument fault becomes the seam's one text, `IllegalStateException("render
+failed")`; the store gone is `IllegalStateException("store unavailable")`, the pad's exact wording.
+Never a path, a stroke or an event title crosses in a message or a log line.
+
+**Why insets, not a full page.** `ICalendar.aidl`'s own comment still describes "insets 0, a
+full-page ruling" — the plan's original call (D4) — but the first Nomad walk found the ink sitting
+one bar-height low against a grid drawn at inset 0: the ink on a page was written against the grid
+the *screen* drew, which starts under the top bar, so a word in the 13th's cell landed across the
+20th's. `CalendarBars` is HV4's fix, landed before the freeze rather than as a follow-up: the
+rendered page carries the same blank bands top and bottom that the ink-only page (template off)
+already had, and a re-walk after the fix confirmed the header row and a known event both land where
+the screen shows them.
+
+**The Export screen's calendar mode (host, HV4).** `EXTRA_CALENDAR_EXPORT_ENABLED` is the screen
+Intent's fourth boolean — `CalendarEntry`'s `decorateIntent` sets it only when this calendar
+declares `apiVersion >= MIN_API_VERSION_FOR_CALENDAR_RENDER` **and** `ExtensionRegistry.exporters`
+finds at least one, the arc-30 page-sheet rule read onto a second door: the button exists whenever
+*something* might take pages, and the Export screen is what answers "does anything take a
+calendar's pages" with its own dialog rather than a door that lies. `RESULT_CALENDAR_EXPORT = 3` is
+the result code the calendar's own out-door sheet answers with (`CalendarToolbar`'s Send page /
+Export… choice, one button replacing what would otherwise be a twelfth on the Nomad's bar);
+`ExtensionScreenEntry`'s `resultExport`/`onExport` read the parked page with `outgoingTarget()` on
+the bind that is **still held**, exactly where `resultSend`'s drain reads its own answer, and only
+then call `HeldInkClient.finish()` — nothing arriving (a dead bind, a timeout, a calendar that
+closed without parking anything) is "Export didn't start," never silence. `CalendarClient.render`
+is what `ExportActivity`'s calendar mode calls, over the new `ExtensionStores.lease`, to bake the
+`export/CalendarRender` bundle (`cacheDir/export/calendar.pages` — the fourth bundle producer
+beside `ExportRender`, `DocumentPdfRender` and `BundleSplit`'s own parts) that `CalendarRenderPlan`
+(pure: a Day is AM then PM, two pages, one flag set) and `ExportNaming.calendarStem` (`"Calendar -
+September 2026"` / `"Calendar - Week of 2026-09-06"` / `"Calendar - 2026-09-08"`, ` AM`/` PM` per
+page under per-page delivery) plan and name. `ExportScope.Calendar(target)` opens no `.soil` at
+all — there is no notebook behind this scope — so the screen shows no Scope or Source row and its
+header reads "Calendar · September 2026." `finish()` on this mode always reopens the calendar
+(`reopenCalendarAfterExport`, consumed on `onResume`; lost to process death, which just leaves the
+calendar closed rather than crashing to reopen it).
+
+**Send page with paper (HV5) — a whole-page send now carries the grid home too.**
+`InkScreenActivity.emptyPageSendCarriesPaper` (default `false`, `CalendarActivity` overrides
+`true`) is what keeps a papered send from refusing an ink-less page: a **whole**-page send with
+nothing on it still has the grid to give, so zero chunks are parked with `wholePage = true` rather
+than showing "Nothing to send" — `parkOutgoing`'s new `wholePage`-carrying overload (the pad keeps
+its original three-argument call, since it has no paper to offer) and the session's
+`outgoing(0)` still answer the page's size even at zero strokes, which is what the render is asked
+for at. `HeldInkPoint.render` (a throwing default — "this point draws no pages" — plus
+`renderTimeoutMs`, defaulting to the call budget; `CalendarClient.Point` overrides both) and
+`HeldInkClient.renderPaper(target, widthPx, heightPx, flags)` are the host's read of it: **on the
+held bind, with the held store binder** — never a second lease, `outgoingTarget`'s rule for
+`outgoingTarget`'s reason, since `finish()` takes both away — writing into
+`cacheDir/received/received.pages`, closing the fd the instant the call returns, then re-reading
+the file **whole** through `PageBundle.Reader` (exactly one page, no links, both bounds-checked)
+before trusting a byte, and deleting the file in `finally` whatever happened. `DrainedInk` grew a
+nullable `paper: ByteArray?` (+ `withPaper`) for it. `ExtensionScreenEntry.paperOnPageSend` (the
+calendar's `true`) is what asks for it: after the ordinary drain, inside the same `try` so
+`finish()` still runs regardless, `withPaperIfWholePage` gates on `ref.apiVersion >=
+MIN_API_VERSION_FOR_CALENDAR_RENDER` and a positive drained page size, asks `outgoingTarget()`
+(null is the selection-send answer, and is what keeps a selection ink-only), then renders at
+`ExtensionContract.RENDER_GRID` alone — no ring, no marks, so the resulting page's `IMG#` token
+still dedupes against a plain grid template. Either step's failure is logged and dropped, and the
+send travels the ink-only road rather than failing outright — "nothing arrived" widened to
+`strokes.isNotEmpty() || paper != null`, so an ink-less whole page whose grid rendered is still
+something. On the Nomad the grid-only render measured 835–895 ms for a 24 360-byte bundle.
+
+### What HV4–HV5 proved on the Nomad
+
+**HV4:** a Month with 46 strokes + ring + marks rendered in **1012 ms** (client-measured 1065 ms,
+41 KB bundle); a two-page Day pair with no ink in **1600 ms** (1724 ms, 60 KB). The Export screen's
+calendar mode offered PNG and PDF only, no Scope or Source row; a Month PDF via SAF (129 556 B)
+showed the grid, the ring on the correct day, glyphs on the days carrying events, and the ink — at
+the second pass, after `CalendarBars`' inset fix, the page opened with a 133 px white band, the
+Sun–Sat header at row 133, and an event's text sitting inside the right day's cell (render 972 ms).
+A Day export walked the per-page folder road: "Exporting image 1 of 2…" → "2 images were exported"
+→ `Calendar - 2026-09-09 AM.png` / ` PM.png`. Template off exported one PDF with a white ground on
+an ink-less day. `pm disable-user`/`enable` and a crash-log check were not re-walked here — Y1–Y3
+already proved them for the point itself. **HV5:** a Send from a Month with ink landed a **new**
+page after the displayed one, the grid with no ring and no marks, the ink on top 1:1, selection
+outline and lasso armed, and the toast; a second send of the same month minted the template token
+once and reused it on the second; an ink-less Week sent with no dialog, landing a blank grid with
+nothing selected and minting its own token; a force-stop and relaunch left both received pages in
+place; undo removed the new page and redo brought it back (by the user's own hand); a lasso
+fragment's Send still landed on the displayed page with no new page, confirming the whole-page road
+never fires for a selection.
+
 ---
 
 ## The cloud-storage point (arc 25)
@@ -2244,6 +2420,12 @@ than a run, the same shape as row 34.
 | 42 | **No secret, no device path, no URL crosses this seam in either direction, and the account label is the one piece of user content that does — logged nowhere.** The refresh token, the access token, the OAuth client id and secret, and every Drive URL live and die inside `:ext-cloud`'s own process and its store; the host never receives, requests or logs any of them. `accountLabel` is the sole exception to "nothing personal crosses," and it is bounded (`MAX_ACCOUNT_LABEL_CHARS` 254) and printable-only (`isLabel` refuses control characters) precisely because it is display text the host's Cloud section and Destination/Source rows must show — every log line on both sides of the seam (`CloudService`, `CloudClient`, `CloudConnectClient`, `CloudConnectEntry`) prints its length only, never its value. | `CloudStatus.accountLabel`, `CloudContract.isLabel`/`MAX_ACCOUNT_LABEL_CHARS`, `DriveAuth`/`DriveTokens` (token lifecycle, never parceled), `CloudService`/`CloudClient`/`CloudConnectClient`/`CloudConnectEntry` (log lines) |
 | 43 | **Arc 28's only crossing is a second compatible tail on `ExporterInfo`, and it opens no new point.** `bundleVersion` rides behind `sourceKind` on the exporter point's existing `describe()` reply, read the identical `dataAvail()` way; nothing rides a sticky note's, a text object's or a shape's own row across any seam — `SelectionToolbar`'s Pad and Calendar buttons stay gated on `mode == SelectionMode.STROKES`, so both Sends stay `View.GONE` for the three new selection modes rather than growing a case for them, and a sticky, a text object or a shape has never had anywhere to go but this one PDF-endnote path. `PageBundle`'s v2 trailer (link rectangles + page numbers, no ids, no notebook name, no stroke content) is the only new *shape* of data an extension ever reads, and it reads it from the same `cacheDir/export/` bundle `:ext-pdf` already consumed at arc 18 — one more `readLinks()` call after the pages it already reads, on the same fd. | `ExporterInfo.bundleVersion` (constructor `require`, JVM-tested), `PageBundle.Writer`/`.Reader` (JVM-tested), `PdfDescriptor.info`, `PdfLinks.annotations`, `PdfAssembly.assemble`, `Endnotes.plan` (JVM-tested), `ExportRender.endnoteSources`/`.render`, `ExportDocumentRules.endnotesUnavailable` (JVM-tested) |
 
+| 44 | **`:ext-image`'s bytes are a one-page `PageBundle` in and a PNG out, and nothing else ever crosses.** `ImageExporterService.export` takes exactly the two fds the exporter point always hands over — the `.soil` never reaches this or any exporter — reads a bounded RGB_565 bitmap off the source through `ImageAssembly` (`requireOnePage` refuses anything but exactly one page as `IllegalStateException`, and the decoded size is checked against the bundle's own declared dimensions before a byte is trusted), and writes only what `Bitmap.compress`'s counting stream actually pushed through to the destination. `ImageExportSpec.require` refuses before any byte is read: an option id this build never declared, or an export secret nothing here asks for (a PNG has no password), both cross as `IllegalArgumentException` rather than being silently ignored — the opposite of `:ext-soil`'s forward-compat rule, because an unrecognized id here can only mean a host or a descriptor this process does not understand. | `ImageExporterService.export`, `ImageAssembly.assemble`/`.requireOnePage`, `ImageExportSpec.require`, `CountingOutputStream` |
+| 45 | **The `delivery` tail is declared by the extension and executed entirely by the host — the extension never sees the split.** `ExporterInfo.delivery` rides `describe()`'s existing reply; `ExportDelivery.delivery` reads it only from a service whose own manifest declares at least `MIN_API_VERSION_FOR_DELIVERY` (9), so an older host's blind spot and the tail's own meaning can never disagree. `BundleSplit` does the actual work **host-side**, before `export()` is ever called a second time: one bake, N one-page bundles, N calls with a fresh destination each — `:ext-image` is handed the same one-call, one-bundle-in, one-file-out shape every exporter has always seen, and never learns that a split happened. | `ExporterInfo.delivery` (constructor `require`, JVM-tested), `ExportDelivery.delivery`/`.perPage` (JVM-tested), `BundleSplit.split` (JVM-tested), `ExportActivity.exportPerPage` |
+| 46 | **A calendar `render` call's fd is host-owned, extension-written, and re-read whole before a byte is trusted — on both roads that reach it.** The Export screen's `CalendarClient.render` and the whole-page send's `HeldInkClient.renderPaper` each open the destination file themselves, hand the extension only the fd (never a path), close their own copy of it the instant the call returns, and then open the file again for reading — `PageBundle.Reader` bounds-checks the page count, every page's declared dimensions and its image length before either caller decodes a pixel. `renderPaper`'s copy is deleted in `finally` whatever happened; the Export screen's lives only in the export cache directory its own `finally` already wipes. | `CalendarClient.render`, `HeldInkClient.renderPaper`, `export/CalendarRender`, `PageBundle.Reader` (JVM-tested) |
+| 47 | **The store handle a `render` call rides is a lease during an ordinary call, and the held showing's own binder during a showing — never a second one minted alongside it.** `CalendarClient.render` (the Export screen's call, off any showing) opens its own binder through the new `ExtensionStores.lease` and revokes it in `finally`, the tag manager's and the cloud point's own shape; `HeldInkClient.renderPaper` (called *during* a showing, HV5) passes the **same** `ExtensionStoreBinder` the held bind already lent at `open()` — the extension's own `CalendarStore.open()` on that binder documents that a render leaves the showing's session untouched, and `finish()` still revokes exactly once. | `ExtensionStoreLease.kt` (`ExtensionStores.lease`), `CalendarClient.render`, `HeldInkClient.renderPaper`, `CalendarService.render` |
+| 48 | **The calendar screen's Intent grows a fourth boolean, and it gates a door rather than carrying content.** `EXTRA_CALENDAR_EXPORT_ENABLED` is set by `CalendarEntry`'s `decorateIntent` only when this calendar declares `apiVersion >= MIN_API_VERSION_FOR_CALENDAR_RENDER` **and** the host finds at least one installed exporter — both are IO the entry already runs in its own coroutine, and neither is the calendar's business to know about itself. `RESULT_CALENDAR_EXPORT` carries no target of its own: the page it means is read separately, with `outgoingTarget()`, on the bind that is still held — the same reason `RESULT_CALENDAR_SEND` never carries ink on the Intent either. | `ExtensionContract.EXTRA_CALENDAR_EXPORT_ENABLED`/`.RESULT_CALENDAR_EXPORT`, `CalendarEntry.decorateIntent`, `ExtensionScreenEntry.onResult` (the `resultExport` arm) |
+
 **One recorded asymmetry.** The host forces inbound colour to opaque black; the extension does not
 force it on the ink the host sends. That is not an oversight and not a hole: SN's ink is fixed
 black, so the host has no other colour to send, and the sender is signature-matched. The *untrusted*
@@ -2297,14 +2479,26 @@ failure funnel on the seam (`DriveFailures.marshalable`) carries the exception's
 only**, the same principle the document editor's and the importer's funnels already apply, since a
 transport exception's own message could name a URL or a path.
 
+**`:ext-image` sees exactly one page and nothing that names it** (arc 31 / HV1): the source fd it
+is handed is a one-page `PageBundle` the host baked, never the `.soil`, never a notebook id or a
+page id — `ImageExporterService`'s own log line on a failure carries the exception's class name
+only, the exporter-point rule every service on it already follows. **The calendar's `render` sees
+its own store and nothing the host does not already have another door to** (arc 31 / HV4–HV5): the
+extension reads back exactly the rows it would show on its own screen, through the binder the host
+lent it for the one call, and answers with pixels — `CalendarRender`'s log line names a target's
+`kind`/`date`/`half` (where, not what) and counts, the same distinction the transfer's own logging
+already draws; an event's title or a stroke's geometry never leaves the bitmap they were painted
+into.
+
 ---
 
 ## Identity
 
-All eight extensions share one recipe; only the name and the point differ. (`:ext-soil` serves
+All nine extensions share one recipe; only the name and the point differ. (`:ext-soil` serves
 **two** points — exporter and importer — under one identity: the user's arc-16 call was no rename,
 so the label stays `NSE · Soil Export` even though it imports too. `:ext-pdf` is the second
-exporter on the same point — arc 18, no new point. `:ext-document` serves **three** points under
+exporter on the same point — arc 18, no new point — and `:ext-image` (arc 31 / HV1) is the third,
+no new point either. `:ext-document` serves **three** points under
 one identity — its own editor point plus one service each on the exporter and importer points.
 **Every extension in the family wears the same Tabler "puzzle" glyph, byte-identical** — the
 user's call of 2026-09-05, which reversed the three per-subject icons the wizard had granted along
@@ -2395,7 +2589,7 @@ network.)
 | Launcher activity | **None** — the screen `<activity>` is exported under its own action with `<category DEFAULT>` and is refused unless launched for a result by the host; the Supernote launcher shows the package anyway, the family recipe |
 | versionName | host lockstep: `0.1.0-ratta` (`-dev` suffixed in debug), bumped together with `:app` at arc freezes |
 | Release APK | ≈ 6.9 MB signed (the Y4 build; the pad's is 6.9 MB too) — no module-local dependency beyond `:extension-api`, `:sn-screen` and `:ext-ink`; no Room, no SQLCipher, no serialization library (the calendar's rows live in the host's extension store, not in a file this APK owns) — almost exactly the pad's own size, the two sharing `:ext-ink` |
-| API version | declares **7** (`MIN_API_VERSION_FOR_CALENDAR`) from its first phase — the point was born at 7, so unlike the pad, the tag manager and the editor, `:ext-calendar` was never live-but-skipped between a store rebuild and its own redeclaration: there was no lower number for it to have declared first |
+| API version | declares **9** since arc 31 / HV4 (`MIN_API_VERSION_FOR_CALENDAR_RENDER`, a *method* floor on `render`/`outgoingTarget` — the *action* floor `MIN_API_VERSION_FOR_CALENDAR` stays 7, and a calendar that only ever declared 7 still binds for the original four methods). The point was born at 7, so unlike the pad, the tag manager and the editor, `:ext-calendar` was never live-but-skipped between a store rebuild and its own redeclaration: there was no lower number for it to have declared first |
 
 **`:ext-cloud`** (arc 25 / V1–V5, the THIRTEENTH module — `CloudService` + `ConnectActivity`, one APK on one point)
 
@@ -2421,6 +2615,18 @@ APK is a different package: it must be uninstalled, and because the token store 
 | versionName | host lockstep: `0.1.0-ratta` (`-dev` suffixed in debug), bumped together with `:app` at arc freezes |
 | Release APK | ≈ 7.2 MB — the one module carrying `INTERNET`; `kotlinx.serialization` is already on the graph via `:app` (no new library), and there is no OkHttp/Gson — V2's REST core is `HttpURLConnection` plus the same serializer |
 | API version | declares **8** (`CloudContract.MIN_API_VERSION_FOR_CLOUD`) from its first phase — the point was born at 8, so like the calendar, `:ext-cloud` was never live-but-skipped between a store rebuild and its own redeclaration: there was no lower number for it to have declared first |
+
+**`:ext-image`** (arc 31 / HV1, the FOURTEENTH module — `ImageExporterService`, a third exporter on arc 15's one point)
+
+| | |
+|---|---|
+| Label | **"NSE · Image Export"** (`"NSE · Image Export Dev"` in debug — a build-type string override, not a suffix) |
+| Package | `com.symmetricalpalmtree.notesproutsn.ext.image` (`.dev` in debug) |
+| Icon | the same Tabler "puzzle" glyph as every other extension, byte-identical vector — the family mark, granted without asking (the 2026-09-05 rule) |
+| Launcher activity | **None** — the Supernote launcher shows the package anyway; the family recipe |
+| versionName | host lockstep: `0.1.0-ratta` (`-dev` suffixed in debug), bumped together with `:app` at arc freezes |
+| Release APK | no module-local dependency beyond `:extension-api` — the framework's own `Bitmap.compress` is the whole encoder, so this is the smallest exporter APK in the family (no pdfbox, no bouncycastle) |
+| API version | declares **9** (`ExporterContract.MIN_API_VERSION_FOR_DELIVERY`) from its first phase — the exporter was born declaring the `delivery` tail, so unlike `:ext-pdf`'s `sourceKind` floor it was never live-but-skipped at a lower number; an API-8 host skips this service at discovery entirely |
 
 ---
 

@@ -229,7 +229,8 @@ The third door into the library, and the first from a **page**: the notebook's p
 size). `notebook/SaveAsTemplateFlow` runs it inside the page-op lock: `store.drain()` → the page
 rastered **as the export bakes it** — white RGB_565, the page's paper scaled into the page rect, then
 `PagePreview.drawContent`, WEBP q100 — through `notebook/PageRaster`, which is the bake's own
-`bakePage`/`decodeTemplate` moved out of `ExportRender` so the two can never drift → the import's
+`bakePage`/`decodeTemplate` moved out of `ExportRender` verbatim and repointed, so **a template made
+from a page is the picture the page exports as**, and the two bakes can never drift apart → the import's
 6 MiB cap (`TemplateImport.overCap`, the same TooBig dialog) → **name** (`NameDialog`, seeded by
 `TemplateSeedName`: the topmost heading reduced to the name charset, else `page N`; confirm "Next")
 → **folder** (`FolderPickerActivity.pickIntent` in `TEMPLATE_FOLDER` mode with `PickVerb.SAVE_TEMPLATE`
@@ -246,6 +247,9 @@ export secret's rule). Nothing is written to the `.soil`, no undo entry, no rece
 Walked on the Nomad 2026-09-08 (Sonnet over adb): row · seed `page 5` · picker chrome · saved ·
 card with the page's ink as thumbnail · a Heading seeds its text · duplicate refused with the folder
 kept · both cancels write nothing · applied from the new-notebook screen, the page is the paper.
+**Not walked:** the reserved-name ("Default") refusal and the > 6 MiB TooBig dialog — both are the
+import's own lines, shared verbatim, and needed typing/a huge photo-paper page respectively to
+reach.
 
 ---
 
@@ -380,6 +384,20 @@ that *is* the wanted paper at the page's exact size, and only then renders anoth
 - **Render at the page's own size, never the screen's.** A page pasted from a larger device keeps its
   authored size.
 
+### Paper from the calendar (arc 31 / HV5)
+
+A whole-page **Send** from the calendar is the third source of a `KIND_IMAGE` template row, beside
+an imported picture and Save as template — and it goes through the exact same reuse-before-mint
+gate. The calendar renders its grid-only view (`RENDER_GRID`, no ring, no marks:
+[`docs/calendar.md`](calendar.md) § Export / § Calendar → notebook) to a WEBP bundle; the host
+resolves it as paper through `NotebookSession.resolvePaper`, called **inside** `receivePage`'s own
+transaction rather than as a separate write, because the row it might mint has to land atomically
+with the page and the ink it papers. Ring and marks being off is what makes reuse actually happen:
+the same month sent twice renders to the same bytes, so `PagePaper.token`'s digest — the `IMG#<8
+hex>` token above — matches itself and the second send reuses the row the first one minted rather
+than growing a duplicate. Measured on the Nomad: a grid-only Month render came to a 24 360 B bundle
+and a **24 166 B WEBP** template row.
+
 ### The apply path
 
 `PaperSource` is what a built-in and a picture have in common, and `PagePaper.render` / `.token` are
@@ -418,6 +436,7 @@ never a blob in an Intent extra — and the notebook's own session does the read
 | A duplicate name among siblings | problem dialog | `IndexRepository` sibling check |
 | An empty search | its **own** two strings — *"Nothing to search for"* — never `name_problem_title` | `FuzzyRank.isRunnable` |
 | An import succeeded · an export succeeded | **toast** | `TemplateTransfer` |
+| The calendar's whole-page send arrived over-size or decoding to the wrong dimensions (arc 31 / HV5) | **refused**, never scaled/cropped/re-encoded; ink behind it still lands on the ink-only road, "Couldn't add the page" if there was none | `CalendarPaper.accept` |
 
 The rule behind the column: **a toast only confirms something that already happened; anything
 explaining why a tap didn't work is a dialog.** On e-ink a missed toast reads as "broken".
@@ -542,5 +561,7 @@ the next reader knows it was seen and weighed, not missed.
 ## Related
 
 `docs/library.md` (the Templates entry point and the sort/name rules the browser reuses) ·
-`docs/notebook.md` (the page sheet's **Page template** row, and re-papering as an undo step) ·
-`docs/clipboard.md` (the content dedupe a pasted page's template already went through).
+`docs/notebook.md` (the page sheet's **Page template** row, **Save as template**, and re-papering
+as an undo step; § The received page for the calendar's papered send) ·
+`docs/clipboard.md` (the content dedupe a pasted page's template already went through) ·
+`docs/calendar.md` (§ Export, § Calendar → notebook — the render this page's paper comes from).

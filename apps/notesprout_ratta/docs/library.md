@@ -313,7 +313,19 @@ only — never a `File` — latched against a double-tap the same way every othe
 library is. See [`docs/export.md`](export.md) for the screen itself. Since arc 30 / PE2 this is no
 longer the only door: the notebook's page sheet has an **Export page** row that enters the same
 screen at page scope (with a Scope row this door never shows — [`docs/export.md`](export.md) §
-Scope); the library's export is whole-notebook with no control, exactly as before.
+Scope); the library's export is whole-notebook with no control, exactly as before. Since arc 31 /
+HV1 the same door offers **`NSE · Image Export`** (PNG) alongside PDF and Soil — a one-page notebook
+exports one file, a multi-page one goes **per-page into a folder** (a SAF tree pick locally, the
+cloud's own picked folder on that leg), one exporter call per page.
+
+**The calendar's own Export door** (arc 31 / HV4) also lands here: `CalendarEntry`'s `onExport`
+callback (wired at `calendar.open()`'s construction, alongside `onDrained`) is `onCalendarExport`
+— it latches `reopenCalendarAfterExport` and starts `ExportActivity.intent(this, target)` in
+**calendar mode** (no notebook, no `.soil` opened, no Scope/Source row —
+[`docs/export.md`](export.md) § Calendar mode). `onResume` consumes the latch and reopens the
+calendar once the Export screen is done, whatever the outcome — the page-sheet door's own rule,
+carried over. The latch is process-lifetime only: killed behind the Export screen, the calendar
+simply stays closed on the way back rather than reopening to a stale target.
 
 **Tags…** (arc 21 / W1) is notebooks-only too, for the same reason Export… is — a folder's sheet
 never even offers it. It sits between Export… and Exclude from backup, and it shows on the same
@@ -672,6 +684,13 @@ Deleting the folder you are standing in navigates out to its parent.
 - Cards do not long-press here.
 - A name collision in the destination is a problem dialog and the picker **stays open**, so the
   user can walk somewhere else without starting the move over.
+
+Since arc 31 / HV2 the same class answers a second verb: `pickIntent`'s `browseFolderType` /
+`rootLabel` already let it browse either hierarchy (notebooks or templates), and a new `PickVerb`
+picks its own header/root/button chrome on top of that — `IMPORT` (default, this Move door's own
+shape) or `SAVE_TEMPLATE` ("Save to…" / root "Templates" / "Save here"), which the notebook's page
+sheet opens for **Save as template** ([`docs/notebook.md`](notebook.md);
+[`docs/templates.md`](templates.md) § Save as template).
 
 ---
 

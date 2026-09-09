@@ -18,15 +18,21 @@ copied. Arc 19 grew a third: **`NSE · Document`**'s document exporter produces 
 Markdown or plain-text document, streamed verbatim like the soil exporter but assembled from
 `.soil` document rows rather than the file itself — plus a Document mode for the PDF exporter
 that renders the editor's own preview instead of the page canvas, with no change to `:ext-pdf`
-at all. See [The document exporter](#the-document-exporter-arc-19) below. The three exporters
+at all. See [The document exporter](#the-document-exporter-arc-19) below. Arc 31 / HV1 grew a
+fourth: **`NSE · Image Export`** produces one PNG per page — a page-bundle exporter exactly like
+PDF, but declaring **per-page delivery** rather than one file, so a whole-notebook export becomes
+one call per page into a folder instead of one call into a single document. See
+[Images](#images-arc-31--hv1) below. The four exporters
 split into two behavioral shapes — a verbatim byte stream (`.soil`, and now the document text) or
-a host-rendered page bundle the extension only assembles (PDF, in either of its two modes) — which
+a host-rendered page bundle the extension only assembles (PDF, in either of its two modes, and
+now PNG) — which
 is why the seam itself grew a second shape to carry both; see
 [The source-kind seam](#the-source-kind-seam-arc-18) below. Arc 25 / V3 grew the screen a second
-kind of *destination*, orthogonal to all three exporters: the panel's **Destination** row can send
+kind of *destination*, orthogonal to all four exporters: the panel's **Destination** row can send
 the finished file to the one installed cloud provider instead of a SAF document — see
 [Cloud destination](#cloud-destination-arc-25--v3) below and [`docs/cloud.md`](cloud.md) for the
-seam it rides on.
+seam it rides on. Arc 31 also grew the screen a third *scope*, calendar pages rather than a
+notebook's — see [Calendar mode](#calendar-mode-arc-31--hv4) below.
 
 This is the feature doc. The seam it rides on — the point, the AIDL, the fd handshake, the
 source-kind tail, the export-secret carrier, trust — is [`docs/extensions.md`](extensions.md)
@@ -47,7 +53,15 @@ browser + the upload leg, all three exporters unaware, walked on the Nomad (2302
 checklist passed 2026-09-04). **Arc 30 "Page" PE2 complete** — page scope: the notebook's page-sheet
 door (`EXTRA_PAGE_ID` + `EXTRA_RETURN_TO_NOTEBOOK`), the host-owned Scope row, `ExportScope`'s
 host-side page filter ahead of every render, all three exporters unaware, walked on the Nomad
-(1487 `:app` / 2847 JVM tests, 2026-09-08). See [Scope](#scope-arc-30--pe2) below.
+(1487 `:app` / 2847 JVM tests, 2026-09-08). See [Scope](#scope-arc-30--pe2) below. **Arc 31
+"Harvest" HV1 complete** — a fourth exporter, `NSE · Image Export` (`:ext-image`, PNG,
+per-page delivery at whole scope), `ExtensionContract.API_VERSION` 8 → 9 with `ExporterInfo
+.delivery` as the compatible tail (1501 `:app` / 2877 tests, 2026-09-08). See
+[Images](#images-arc-31--hv1) below. **HV3 complete** — export presets, an additive
+`export_preset` index row (1538 `:app` / 2914 tests, 2026-09-09). See
+[Presets](#presets-arc-31--hv3) below. **HV4 complete** — `ICalendar.render` at `API_VERSION` 9
+and the Export screen's calendar mode, a third `ExportScope` alongside Whole and Page (1560
+`:app` / 2941 tests, 2026-09-09). See [Calendar mode](#calendar-mode-arc-31--hv4) below.
 
 ---
 
@@ -654,9 +668,16 @@ before the flag is read. The library's intent carries neither extra and behaves 
 
 | Extra | Set by | Meaning |
 |---|---|---|
-| `EXTRA_NOTEBOOK_ID` / `EXTRA_NOTEBOOK_NAME` | both doors | the notebook — never a `File` |
+| `EXTRA_NOTEBOOK_ID` / `EXTRA_NOTEBOOK_NAME` | both notebook doors | the notebook — never a `File` |
 | `EXTRA_PAGE_ID` | the page-sheet door only | seeds `ExportScope.Page(pageId)`; absent or empty = `Whole` |
 | `EXTRA_RETURN_TO_NOTEBOOK` | the page-sheet door only | `finish()` relaunches the notebook first |
+| `EXTRA_CALENDAR_TARGET` (arc 31 / HV4) | the calendar door only, never beside the notebook extras | seeds `ExportScope.Calendar(target)`; a bad value is *no door at all*, never a guessed page |
+
+These are all this screen's own extras. The calendar seam itself carries two more that decide
+whether the door is even offered — `ExtensionContract.EXTRA_CALENDAR_EXPORT_ENABLED` (the calendar
+Intent's fourth boolean, set by `CalendarEntry`) and `ExtensionContract.RESULT_CALENDAR_EXPORT = 3`
+(the calendar's exit code when its own Export button is tapped) — both documented alongside
+`ACTION_CALENDAR` in [`docs/extensions.md`](extensions.md), not here.
 
 **`ExportScope`** (`export/ExportScope.kt`, pure, sealed `Whole` · `Page(pageId)`) owns the rules;
 the screen owns the value (saved / restored, `KEY_SCOPE_WHOLE` — Whole is restorable only where the
@@ -707,6 +728,89 @@ the name is the notebook's, suffix-free, as before. Pure, tested (`ExportScopeTe
 
 **What did not change.** `ExportVerification` (bytes are bytes), every exporter, `ExportSpec`, the
 seam, the keying flow, the cloud leg. The library door: no Scope row, Soil listed, whole notebook.
+
+## Images (arc 31 / HV1)
+
+**`NSE · Image Export`** (`:ext-image`, the fourteenth module, `:extension-api` only) is a fourth
+exporter on the same point: `formatLabel` "PNG image", `fileExtension` "png", `mimeType`
+"image/png", one option (`OPTION_PAGE_TEMPLATE`, host-executed exactly as PDF's — the bundle
+carries finished pixels, so there is nothing left to add or strip afterwards), `sourceKind =
+SOURCE_PAGES` (a host-rendered page bundle, PDF's own shape), and `bundleVersion =
+PageBundle.VERSION_1` **on purpose** — a PNG is one picture with nowhere to put an endnote link, so
+declaring 1 tells `ExportRender` to plan none. There is no password option and no keying option: a
+PNG has neither.
+
+**The one new thing a raster exporter needs is `ExporterInfo.delivery`** — the third compatible
+parcel tail, right after `bundleVersion` (same `dataAvail()`-gated read as `sourceKind` and
+`bundleVersion` before it): `ExporterContract.DELIVERY_ONE_FILE` (absent = this, so every exporter
+built before this arc keeps its meaning on real wire) or `DELIVERY_PER_PAGE`. It says *how many
+files* one export produces, never *what* it produces — the seam's `export(source, destination,
+spec)` call is still one call, one file, whatever the tail says; what changes is what the **host**
+does around those calls. `ExportDelivery` (pure, JVM-tested) is the whole of the host's reading of
+it: `delivery(apiVersion, info)` reads the tail **only from a service declaring at least
+`ExporterContract.MIN_API_VERSION_FOR_DELIVERY` (9)** — below that it is always `DELIVERY_ONE_FILE`
+whatever the parcel carried, so the declaration and the tail can never disagree about what the host
+will do (the D3 skew-guard recipe, read from the host's side). `perPage(delivery, scope)` is per-page
+**at more than one page**: at `ExportScope.Page` there is exactly one page, so a per-page exporter is
+a single file through the ordinary picker and nothing about the flow changes; at `ExportScope.Whole`
+it is always the folder case, **deliberately including a one-page notebook** — Whole = folder is a
+rule the person can hold, and a scope that sometimes made a folder and sometimes a file would not
+be. `ExportScope.Calendar` counts rather than assumes: a Day target draws two pages and goes to a
+folder, a Month or a Week draws one and goes through the ordinary picker (see
+[Calendar mode](#calendar-mode-arc-31--hv4) below).
+
+**`BundleSplit`** (pure, over streams, JVM-tested) is the host's splitter: the render bakes
+**once** (`ExportRender`/`DocumentPdfRender`, unchanged) and `BundleSplit.split` reads that one
+bundle back a page at a time, writing each as its own **version-1, one-page** bundle into
+`cacheDir/export/` (`page-1.pages` … `page-N.pages`) — so the exporter still receives exactly what
+its contract says it may: a bundle of one page. Any version in, version 1 out (a v2 bundle's link
+trailer is dropped — links jump between pages of one document, and a one-page file has nowhere to
+jump to); one page alive in memory at a time on both sides; the pixels themselves are never
+re-encoded, only re-framed into a new container. `ExportRender.Outcome.Ready.pageTitles`
+(`PageLabels.titleOf`, read beside the page's content in the same bake, not a second `readOnce`)
+carries a title per page — a heading if the page has one, else null, which per-page naming falls
+back from.
+
+**On the screen.** `Destination` grows two cases beside the SAF document: `SafTree(uri)` (a second
+`treeLauncher` over `ACTION_OPEN_DOCUMENT_TREE`, **no persistable grant** — the tree is used once,
+for this export, and never held past it) and `CloudFolder(path)` (the same folder pick the ordinary
+cloud export uses). `exportPerPage` is the per-page flow: split the bake into parts, then for each
+page — build the stem (`ExportNaming.pageStem`, per-page delivery's own filename per file) and
+spec, `DocumentsContract.createDocument` on the tree or a cache file for the cloud leg, call
+`export()`, verify the result, upload if cloud, move to the next. `SHORT` on any page deletes that
+one document and stops the whole run; `UNCONFIRMED` stops with the check-the-file dialog; every
+early stop's dialog leads with **"N of M images were exported."** (`export_done_images_partial`,
+a plural). `exportPrefs.lastExporter` is written only after **every** file finished — a run that
+stopped partway did not "use" the format the way a completed export did. The progress dialog counts
+pages (`export_exporting_image`, "Exporting image %1$d of %2$d…").
+
+**The cloud-folder confirmation is the one deviation from the design (D1).** The plan called for a
+count in the confirmation ("N files will be uploaded…"), but the page names are not known until the
+bundle has been baked and split, and asking after the bake would interrupt the progress dialog with
+a question. So the confirmation is asked **once, always, before any work runs**, and names no
+count: *"Each page will be uploaded as its own image. Files with the same names will be replaced."*
+(`export_cloud_folder_title`/`_body`, `export_upload_confirm` "Upload") — the same shape as every
+other cloud confirmation on this screen, just earlier in the flow than the plan assumed.
+
+**What this needed elsewhere.** `ExporterInfo`'s own constructor refuses `DELIVERY_PER_PAGE`
+declared on any `sourceKind` but `SOURCE_PAGES` — an unmarshal refusal, never a second check the
+screen has to run at describe time — and `ImageExportSpec` (`:ext-image`) refuses any unknown
+option id and any secret, the same rule `PdfExportSpec` already enforces. `ImageAssembly` is the
+extension's own read of the bundle: `requireOnePage` throws if the host ever hands it more than
+one page (a host that cannot split reaching this service at all, since `MIN_API_VERSION_FOR_DELIVERY`
+is meant to keep that from happening), the page decodes RGB_565 (matching the host's own bake) and
+is dimension-checked against the bundle's own declaration before a byte is trusted, `compress(PNG,
+100)` runs through the same counting-stream-plus-`S_ISREG`-fsync delivery `PdfAssembly` and
+`SoilStreams` already use, and every `IOException` surfaces as an `IllegalStateException` naming the
+stage ("reading the page bundle" / "writing the PNG"). Full boundary detail —
+the delivery tail's wire shape, the caps, the trust rules a new exporter must meet — is
+[`docs/extensions.md`](extensions.md).
+
+**Nomad walk (Sonnet over adb, 2026-09-08) passed:** the library door exported five PNGs named by
+heading or `page N`, a repeat run appended ` (1)` from the provider; the page-sheet door's
+single-page export used the ordinary picker (`Objects - page 5.png`, ` (2)` on a third collision);
+the template-off toggle exported; PDF was unaffected; a cloud folder export ran the
+once-always confirmation then five uploads. `:app` 1501, `:ext-image` 15, 2877 tests total.
 
 ## Presets (arc 31 / HV3)
 
@@ -782,6 +886,120 @@ unanswered then, and its worst case is the replace that would have happened anyw
 **What did not change.** `ExportSpec`, every exporter, the seam, `ExportPrefs.lastExporter` (still
 written on every finished export, preset-driven or not), the keying flow, the verification.
 
+## Calendar mode (arc 31 / HV4)
+
+The calendar (`docs/calendar.md`) is the third door onto this screen, and the first that opens no
+notebook at all. Every calendar view's bar grew **one out-door button** — `CalendarToolbar` picks
+its face by what is open: Send alone, Export alone (`ic_download`), or (both installed) an
+`ActionSheetDialog` offering *Send page* / *Export…* — because a twelfth 62 dp top-bar button does
+not fit the Nomad (11 × 62 dp + margins already comes to 726 of 749 dp with Send and the pad
+showing; see [Traps recorded](#traps-recorded) below). Export calls `exportPage()`, which parks the
+current view's target (a Day parks itself; both halves are drawn regardless — see below) and exits
+with `ExtensionContract.RESULT_CALENDAR_EXPORT` (= 3). `ExtensionScreenEntry.onExport` reads the
+parked target off the held bind **before** `finish()` (the drain's own shape) and, on the host side,
+`CalendarEntry` sets `ExtensionContract.EXTRA_CALENDAR_EXPORT_ENABLED` — the Intent's fourth boolean
+— only when the installed calendar declares `API_VERSION` ≥
+`ExtensionContract.MIN_API_VERSION_FOR_CALENDAR_RENDER` (9, a **method** floor — `MIN_API_VERSIONS`
+itself is untouched, since `ACTION_CALENDAR`'s own floor was already 7) **and** some exporter is
+installed at all — the arc-30 door's own rule, so the screen never offers a button that opens onto
+nothing.
+
+**The door.** Both callers (`LibraryActivity`, `NotebookActivity`) answer `onExport` the same way:
+start `ExportActivity.intent(context, calendarTarget)` — a second, calendar-only overload beside the
+notebook one, carrying **no** `EXTRA_NOTEBOOK_ID`/`EXTRA_NOTEBOOK_NAME` — and latch
+`reopenCalendarAfterExport = true`, consumed in `onResume` on whichever screen opened the calendar
+(the calendar itself is closed by the time the Export screen shows; a process death between the two
+loses the latch, and the calendar simply stays closed rather than reopening to a stale state).
+`EXTRA_CALENDAR_TARGET` — `ExportActivity`'s own host-internal constant, wire form
+`"<kind>/<date>/<half>"` (three numbers and an ISO day, never content, never a secret) — is present
+instead of the notebook extras, never beside them; `parseCalendarTarget` treats a bad extra as *no
+door at all* rather than guessing at a page, the same honesty the Scope door already shows a bad
+`EXTRA_PAGE_ID`.
+
+**Calendar mode is a different screen shape, not a different flow.** `calendarMode` (`calendarTarget
+!= null`) gates every notebook-only piece off: **no `.soil` is opened** (this is the `ExportOpen`
+guard-2 rule's other side — there is no file to hold cold in the first place), no Scope row (the
+door's target *is* the scope, never the person's choice — see `ExportScope.Calendar` below), no
+Source row (a calendar page is ink, not text; nothing to choose between), no keying chrome (no file
+means no key). The header names the period instead of a notebook: `export_calendar_line`,
+*"Calendar · %1$s"*, filled from `CalendarRenderPlan.of(target, false).label` — the month, the week,
+or the day **without** the ` · AM`/` · PM` tail `CalendarDates.dayTitle` normally carries (an export
+of a day is the whole day, so the header naming one half of it would contradict the two files the
+run is about to write).
+
+**`ExportScope.Calendar(target)`** is the third `ExportScope` case, sealed beside `Whole` and
+`Page` — and the odd one out: its `pageIds` is null **and unused**, because nothing here reads a
+`.soil`'s rows at all. `ExportScope.lists(sourceKind, Calendar)` is `sourceKind ==
+ExporterContract.SOURCE_PAGES` only — a `.soil` exporter streams a notebook file and there is no
+notebook here, a document exporter assembles what was *written* and a calendar page is ink, so both
+are hidden, never disabled, exactly like Soil at page scope.
+
+**`CalendarRenderPlan`** (pure, JVM-tested) is the whole of the arithmetic on the host's side, built
+from the one `CalendarTarget` the door carried:
+
+- **A Day is two pages, AM then PM** (`CalendarRenderPlan.pages` = 2 for `KIND_DAY`, else 1) —
+  a day *page* on the calendar is one half, but a day *exported* is the day; nobody asks for half a
+  Tuesday, so both are drawn in reading order regardless of which half the door came through, and a
+  per-page exporter writes two files.
+- **The flags are settled, not asked** (the phase-start call, which overrode the planner's
+  ring-off default): ink, the today ring, and the day marks are **always** drawn on a file export;
+  only the grid rides the exporter's own page-template toggle — the same question the notebook's
+  pages answer with the same control, so the screen keeps one row and one label for both purposes.
+- **`stems`** names one file per page (`ExportNaming.calendarStem(target)` plus ` AM`/` PM` for a
+  Day's two) and **`singleStem`** names the one file a one-file exporter writes. `ExportNaming
+  .calendarStem`: `Calendar - September 2026` for a month, `Calendar - Week of 2026-09-06` for a
+  week (the target's own date, already that week's Sunday), `Calendar - 2026-09-08` for a day — a
+  plain ASCII hyphen and letters/digits/spaces throughout, so the string is legal by construction
+  rather than by the sanitize trimming it. There is no notebook and no user-typed word in a
+  calendar filename at all.
+
+**`export/CalendarRender`** (host) is the **fourth bundle producer**, beside `ExportRender`,
+`DocumentPdfRender` and `ExportText` — and the only one that does not draw pixels itself. It *asks*:
+`CalendarClient.render` binds per call (the store lent for the call, the tag manager's second call
+shape) and writes into a file in `ExportArtifact.freshDir` — the one export cache directory every
+producer shares and `runExport`'s `finally` wipes. Bytes back from an extension are **untrusted**
+regardless of the door they came through: the bundle is opened with `PageBundle.Reader` and read to
+its end before a byte is handed on, which is what bounds-checks the page count, every page's
+dimensions and its image length against the container's own caps; `CalendarRender.verify` adds the
+one thing the container cannot know on its own — the bundle must carry **exactly** the plan's own
+page count and, being version 1, **no** link trailer. A failure names nothing more than one sentence
+from the resources (`export_calendar_failed_body`, "The calendar could not draw the page.") — no
+path, no exception text; the class name goes to the log alone. `Outcome.Ready(file, bytes,
+pageTitles)` carries the plan's own stems as page titles, since a calendar page has no heading to
+fall back on the way a notebook page's `PageLabels.titleOf` does. `renderedCalendarPages` is
+`runExport`'s **first** branch — it answers before every other question, because in calendar mode
+it is the only question. `ExportDelivery.perPage` is widened to cover it: a Day (two pages) goes
+to a folder, a Month or a Week (one page) goes through the ordinary picker — "a Day is two files" is
+a fact about the day, not a scope the person had to choose, unlike `ExportScope.Whole`'s folder
+rule for a notebook.
+
+**On the seam.** `ICalendar` grows two appended methods (existing transaction codes unchanged):
+`render(store, targets[], widthPx, heightPx, flags, destination)` (`destination`, not `out` — an
+AIDL keyword) and `outgoingTarget()` (the parked whole-page-send's or export request's page; null
+after a selection send — see `docs/calendar.md` § Notebook → calendar for the send side).
+`ExtensionContract` gains `RENDER_GRID`/`RENDER_INK`/`RENDER_RING`/`RENDER_MARKS` + `RENDER_ALL`,
+`RENDER_MAX_TARGETS = 8`, and `CALENDAR_RENDER_TIMEOUT_MS` — see [Timeouts](#timeouts) below for
+the measured number. `:ext-calendar`'s manifest moved 7 → 9 for this; the render itself draws
+through g-paper's public `StrokeRasterizer.draw` (the same door `ExportRender.bakeEndnote` already
+uses — no separate stroke painter was needed) at **the screen's own bar insets**, not a full-page
+grid — see the inset trap below.
+
+**What a page export holds, and what it never opens.** A calendar file export never touches a
+`.soil`, never asks for a passphrase, and never appears in a notebook's own export history — it is
+purely the calendar extension's own pages, rendered fresh on every request. `PageFacts` is absent
+in calendar mode; `hasDocument` is false; the done dialog says **"The calendar was exported."**
+
+**Nomad walk (Sonnet over adb, 2026-09-09) passed 9/9**, plus a second pass after the inset fix:
+the library door's Export button opens calendar mode with PNG and PDF only, no Scope/Source rows,
+the template toggle present; a Month PDF via SAF produced one page with the grid, the ring on
+today, glyphs on the marked days, and the ink, then the calendar reopened at its bookmark; a Day
+as PNG produced a folder pick and two files (`Calendar - 2026-09-09 AM.png` / ` PM.png`); the
+template toggle off produced one PDF on a white ground; Back without exporting returned cleanly;
+the notebook door's sheet offered *Send page* / *Export…* and Export opened the same screen over
+the notebook. Not walked: the cloud leg for a calendar export (the Destination row is unchanged,
+and HV1 already walked the N-file upload). `:app` 1560, `:ext-calendar` 295, `:extension-api` 231,
+2941 tests total.
+
 ## Timeouts
 
 A Binder call cannot be cancelled, so both of `ExporterContract`'s timeouts are measured, not
@@ -804,6 +1022,15 @@ serves both source kinds. The `PageBundle` container's own size was sanity-check
 — the 13-page notebook's PDF went from ~204 KB (Skia's deflate over mostly-white ground) to
 ~1.2 MB (~92 KB/page) — the deliberate price of pages that stay compressed whatever the paper is;
 a photo-templated notebook pays roughly the same per page where a lossless pass would balloon.
+
+**`CALENDAR_RENDER_TIMEOUT_MS` (arc 31 / HV4) is its own value, not the export timeout reused.**
+`ICalendar.render` is a Binder call the seam's own `ACTION_CALENDAR` rules govern, not
+`ExporterContract`'s — sized against the Nomad's own measurements rather than assumed to fit inside
+`EXPORT_TIMEOUT_MS`: a Month with 46 strokes plus the ring and marks rendered in **1012 ms** (client
+side 1065 ms, a 41 KB bundle); a Day pair with no ink rendered in **1600 ms** (1724 ms, 60 KB). Set
+to **30 s** — under `RENDER_MAX_TARGETS` (8) at ten seconds even on a cold store, roughly triple the
+slowest measured case — well short of the soil/PDF timeout's 120 s, because a calendar render is one
+page's worth of ink and template, never a whole notebook's.
 
 ---
 
@@ -887,6 +1114,12 @@ describes itself honestly. Full model, the resolver, every open site and the fai
 | A live sticky note has no strokes (arc 28 / H6) | not an error — `SoilDao.stickyIdsWithContent` never names it, so `Endnotes.plan` never sees it and no page is spent on an empty note | `SoilDao.stickyIdsWithContent`, `ExportRender.endnoteSources` |
 | The endnote pages push the total past `PageBundle.MAX_PAGES` (arc 28 / H6) | same as any other over-long bundle: problem dialog, "more pages than this format can carry" | `ExportRender.Problem.TOO_LONG` → `export_too_long_body` |
 | A link in the trailer names a page outside the bundle's own declared count or height list (arc 28 / H6 — a foreign or damaged bundle) | refused rather than silently dropped: `IllegalArgumentException`/`IOException` naming the pages, surfacing as the ordinary assembly failure dialog | `PageBundle.Reader.readLinks`, `PdfLinks.annotations` → `export_failed_body` |
+| A per-page image export's cache split itself fails (nothing created anywhere) (HV1) | problem dialog, "didn't finish writing the file" | `exportPerPage` → `BundleSplit.split` failure |
+| A page in a per-page image run reports short, times out, or fails to verify (HV1) | problem dialog leading with *"N of M images were exported."*, then the page's own failure sentence; that one page's document is deleted (SHORT), everything before it stands | `exportPerPage` → `stopPerPage` → `ExportVerification.verdict` → `SHORT` |
+| The destination provider's own count disagrees after a per-page page streamed cleanly (HV1) | *check-the-file* dialog leading with the same *N of M* prefix, **no delete** | `exportPerPage` → `ExportVerification.verdict` → `UNCONFIRMED` → `export_verify_body` |
+| The cloud folder's once-always upload confirmation (HV1) is dismissed or Cancelled | nothing happens — the same as cancelling the SAF picker; nothing was created, nothing uploaded | `confirmFolderThenExport` → `cancelledAtThePicker` |
+| The calendar's `render()` call fails, times out, or the bundle it returns is the wrong page count or carries a link trailer (arc 31 / HV4) | problem dialog, "The calendar could not draw the page." | `CalendarRender.render`/`verify` → `export_calendar_failed_body` |
+| The calendar is no longer installed by the time the render runs (HV4) | problem dialog, "The calendar is no longer available on this device, so there is nothing to draw."; the screen closes | `renderedCalendarPages` → `export_calendar_gone_body` |
 | Export succeeded | confirm dialog, "Exported"; screen finishes on dismiss | `runExport` success path |
 
 The rule behind the column, family-wide: **a toast only confirms something that already happened;
@@ -944,24 +1177,54 @@ reported honestly, because the delete is best-effort.
   `pageCount` bounds check will not catch (the rect, not the page number, is wrong) — the trap
   surfaced while writing `Endnotes.plan`, which is why `contentSize` runs first and every `Link` in
   the plan is built from its already-clamped `w`/`h`.
+- **A calendar render's insets are the screen's own bar insets, not zero** (arc 31 / HV4). The
+  design's phase-start plan called for rendering at insets 0 — a full-page grid, ink drawn edge to
+  edge. The first Nomad walk showed the ink landing one bar-height low against that full-page grid:
+  the ink was written against the grid the calendar **screen** actually drew, which sits under the
+  top bar, not against a grid starting at the page's own top edge. The fix renders at **the screen's
+  bar insets** (`CalendarBars`: `toolbar_bar_thickness` plus the new `calendar_bar_rule` hairline
+  dimen, which the layout's own two hairlines now reference too, so the screen and the render can
+  never drift apart again) — the exported page carries blank bands where the bars were, matching
+  what a person actually wrote on. A render seam built from "the page is the whole bitmap" without
+  re-checking what coordinate space the ink itself was captured in will reproduce this the next time
+  a screen-owning extension grows a render call.
+- **A twelfth top-bar button does not fit the Nomad** (arc 31 / HV4, the arc-29 lesson re-applied).
+  With Send and the pad's own button both showing, the calendar bar was already at eleven 62 dp
+  buttons plus margins — 726 of the Nomad's 749 dp — so growing a Send/Export pair as two separate
+  buttons was never on the table. The fix folds them into **one out-door button** whose face depends
+  on what is installed: Send alone, Export alone, or an `ActionSheetDialog` offering both — the same
+  shape arc 29's eraser sub-bar chose for the same reason. Any future calendar-bar addition has to
+  clear this measurement before it is drawn, not after a walk finds it clipped.
 
 ---
 
 ## Related
 
 - [`docs/extensions.md`](extensions.md) — the seam: `INotebookExporter`, `ExporterContract`, the
-  two-fd handshake, the source-kind tail, the export secret, the boundary audit, `:ext-soil`'s,
-  `:ext-pdf`'s and `:ext-document`'s identities.
+  two-fd handshake, the source-kind tail, the delivery tail (arc 31 / HV1), the export secret, the
+  boundary audit, `ACTION_CALENDAR` and `ICalendar.render` (arc 31 / HV4), `:ext-soil`'s,
+  `:ext-pdf`'s, `:ext-document`'s and `:ext-image`'s identities.
 - [`docs/document.md`](document.md) — the feature the document exporter reads from: the data
   model, the notebook document's merge join `ExportText.markdownOf` reuses, the editor Preview
   metrics `DocumentPdfMetrics` mirrors, text documents.
 - [`docs/library.md`](library.md) — the notebook long-press sheet, where the library's **Export…** row sits.
 - [`docs/notebook.md`](notebook.md) § Export page / § Erase page — the second door (arc 30): the page sheet's **Export page** row, the close-export-reopen handoff, and the erase that shares the arc.
 - [`docs/cloud.md`](cloud.md) — the eighth extension point this arc's Destination row rides on:
-  `ACTION_CLOUD_STORAGE`, `:ext-cloud`, the provider's tree, the Connect door, `CloudTimeouts`.
+  `ACTION_CLOUD_STORAGE`, `:ext-cloud`, the provider's tree, the Connect door, `CloudTimeouts`; also
+  what the per-page image leg and the calendar's Destination row both ride unchanged (arc 31).
 - [`docs/objects.md`](objects.md) — the feature the PDF endnotes read from: sticky notes' data
   model, the transform mode, the sticky editor, and the `PageBundle` v2 / `bundleVersion` design
   in full (arc 28).
+- [`docs/templates.md`](templates.md) § Save as template (arc 31 / HV2) — the page-sheet neighbor
+  to this arc's Images and Presets sections: the same page-sized raster (`PageRaster`) this file's
+  `ExportRender` bake already produces, landed in the template library instead of an exported file.
+- [`docs/calendar.md`](calendar.md) — the feature this arc's calendar mode and per-page image
+  delivery read from: the three pages and their geometry, the store, both transfers (the
+  whole-page send this screen's Export button sits beside), the out-door button, and the calendar's
+  own Nomad numbers.
+- `apps/notesprout_ratta/HARVEST_PLAN.md` — arc 31 "Harvest"'s standalone plan and ledger: the D1/D4
+  design calls, the HV1/HV3/HV4 phase outcomes and every measured Nomad number in this section, in
+  full. (Not `RATTA_PLAN.md` — this arc is documented there instead.)
 - `apps/notesprout_ratta/RATTA_PLAN.md` §§ "Phases — Arc 15 \"Export\"," "Phases — Arc 18 \"PDF\","
   and "Phases — Arc 19 \"Document\"" (phase M9) — the wizard's locked decisions and each phase's
   outcome, in full.

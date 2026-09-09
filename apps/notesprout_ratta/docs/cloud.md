@@ -131,6 +131,16 @@ must never cost a bind — binding a service starts a process. `upload`/`downloa
 the client owns from the moment it is handed one: closed in `finally` on every path, including a
 refusal that never reached a bind.
 
+**`ExtensionStores.lease` (arc 31 / HV4).** The pre-open-then-store dance above was, until this
+arc, copied by hand into every store-taking client. HV4 factored it out as a shared suspend
+extension function on `ExtensionStores` (`data/extstore/ExtensionStoreLease.kt`) — open the store
+on IO, mint an `ExtensionStoreBinder` for the extension's uid, hand it back — and repointed three of
+the four existing `openStore` copies at it: `TagClient`, `CloudClient` and `CloudConnectClient`.
+`CalendarClient.render` (the calendar point's own new render call, bind-per-call over a lent store)
+uses it from the start rather than growing a fourth copy. The one copy left inlined is
+`HeldInkClient.open`'s — its log wording differs enough that it was not worth chasing down — so
+this is a de-duplication, not a new rule: nothing about what a lease *does* changed here.
+
 ### API version 8, floored per action
 
 `ExtensionContract.API_VERSION` moved 7 → 8 for this arc; `CloudContract.MIN_API_VERSION_FOR_CLOUD
@@ -421,6 +431,36 @@ Verification runs against that cache file's own length first, then `CloudClient.
 corroborates: agree → *Exported* naming the provider, `lastExporter` written; disagree → the
 arc-15 *check the file* dialog, **never a delete**, `lastExporter` **not** written. No remote
 delete anywhere in this consumer.
+
+**The N-file upload (arc 31 / HV1).** A `DELIVERY_PER_PAGE` exporter (`:ext-image`'s PNG) at more
+than a one-page scope uploads **one file per page** into the chosen cloud folder instead of one
+document — `ExportDelivery.perPage` reads the same tail here as it does for the SAF leg. The
+folder-replace question a single-file export asks by name (*Replace \<name>?*) cannot be asked
+that way here: a per-page bake does not know a single one of its file names until it has run, and
+asking after the bake would interrupt the progress dialog. It is asked **once, always, before any
+work**, about the folder rather than a name: `confirmFolderThenExport` — *"Each page will be
+uploaded as its own image. Files with the same names will be replaced."* / **Upload** — naming no
+count, because the count is not known yet either. Cancel and a back-dismiss are both the picker's
+cancel. `exportPerPage`'s loop then bakes once, splits (`BundleSplit`), and uploads page by page;
+one page's own failure stops the loop where it is — nothing already written is rolled back — and
+reports *"N of M images were exported."* rather than a silent partial success. Calendar exports
+that go per-page (a Day, two files AM/PM) use this exact same door, unchanged.
+
+**The cloud folder as Export-screen state (arc 31 / HV3).** `cloudPath` is a field on the screen,
+not asked fresh on every tap: once a folder is chosen — by hand through the browser, or applied
+from a saved preset's `ExportPreset.cloudPath` — a *Folder: …* value row sits under the cloud radio
+and reopens the same `browse(onFolder)` the picker uses, so a second export in the same session (or
+a preset) skips straight past the browser. `listThenExport` is what a remembered path costs before
+the upload: one `CloudClient.list` behind *"Checking the folder…"*, purely so the "is this name
+already there?" replace question can still be asked for a single-file export. **Not connected**
+routes to the Connect offer; a **network** refusal is the arc-15 problem dialog; anything else does
+**not** stop the export — the phase-start call — the folder may have moved or gone since the preset
+was saved, so the path is applied anyway and the upload's own replace-by-name failure, if any, is
+what explains it. A preset that names the cloud with no provider connected applies as Local with a
+toast rather than failing outright.
+
+Calendar exports use this same Destination row **unchanged** — not separately walked; HV1 already
+walked the N-file upload and the folder question is the same code path.
 
 ### Backup leg (V4)
 

@@ -38,6 +38,19 @@ paper** (after the scratch pad). The point was born at `ExtensionContract.API_VE
 host's floor is per-action: a calendar service is accepted only at
 `MIN_API_VERSION_FOR_CALENDAR` (7) and above — there is no older calendar shape to accept.
 
+**Arc 31 "Harvest"** (2026-09-09) grew the seam again, in place, with no ninth point and no other
+change to `ACTION_CALENDAR`'s shape: `ICalendar` gained **`render`** and **`outgoingTarget`**,
+compatible appended methods, so `:ext-calendar` now declares `API_VERSION` **9**
+(`MIN_API_VERSION_FOR_CALENDAR_RENDER` is a method floor pinned separately — a service still
+declaring 7 keeps binding). HV4 (`6a16017a`-era commit, `docs/calendar.md` § Export below) gave the
+calendar bar an **out-door** (Send · Export · a sheet for both) that opens the host's Export screen
+in calendar mode; HV5 (§ Both transfers → Calendar → notebook, "Send page with paper") made the
+whole-page Send land a **new page** in the notebook, papered with the sending view's own grid. Both
+phases are ridden entirely on the pad-shaped seam already here — no new point, no new module for the
+calendar itself (`:ext-image` is arc 31's other, unrelated new module). See § Export and the Send
+page with paper subsection below for what was built; `apps/notesprout_ratta/HARVEST_PLAN.md` for the
+wizard's decisions and the HV4/HV5 phase records.
+
 This is the pad's own reference restated for a second paper surface — read `docs/scratchpad.md`
 first if you have not; most of this doc is "the same, except." The seam in full (contracts, the
 extension store, the boundary audit) is `docs/extensions.md`; the notebook's and library's own
@@ -879,6 +892,49 @@ page are both this device's screen, so a cross-size page clips the ink exactly l
    **selected** with the lasso armed, the "Pasted" toast, and one `ObjectsPasted` undo step.
 5. Only then is the bind finished — `end()`, unbind, revoke.
 
+**Send page with paper (arc 31 / HV5).** A **whole-page** Send no longer pastes onto the displayed
+page — it lands a **new page after the displayed one**, papered with the sending view's own grid,
+ink on top 1:1, at the **calendar page's size** (the drained bundle's own width/height), never the
+displayed notebook page's. The paper is rendered **grid only** — `RENDER_GRID`, no ring, no marks —
+so its `IMG#` template token dedupes: sending the same month twice mints one template row, then
+reuses it (`paper mints template …` then `paper reuses template …` in the log). A **selection**
+(lasso-fragment) send is unchanged — ink-only, lands on the displayed page, no new page, same as
+before this arc.
+
+An **empty** whole-page send is no longer "Nothing to send": `InkScreenActivity
+.emptyPageSendCarriesPaper` (open, default `false`) lets a screen that carries paper park **zero**
+chunks with `wholePage = true` — the session's `outgoing(0)` still answers the page's size, which is
+all the render needs — while a selection send and the scratch pad keep the refusal.
+`CalendarActivity` overrides the flag `true`. On the sending side, `parkOutgoing`'s new `wholePage`
+overload also parks the page as `outgoingTarget()`'s answer (`CalendarSession.parkTarget`), so the
+host can tell a whole-page send from a selection send apart by whether a target comes back at all.
+
+Host side: after the drain, `ExtensionScreenEntry.paperOnPageSend` (the calendar passes `true`)
+gates `withPaperIfWholePage` on `ref.apiVersion ≥ MIN_API_VERSION_FOR_CALENDAR_RENDER` and a
+positive page size, reads `outgoingTarget()` (null after a selection send — the one thing that
+tells the two roads apart), then calls `HeldInkClient.renderPaper(target, w, h, RENDER_GRID)` **on
+the held bind, with the held store binder** — a render made during a showing is handed the store
+the bind already lent, never a second lease (`CalendarService.render` documents that it leaves the
+session untouched). `renderPaper` writes to `cacheDir/received/received.pages`, closes the fd right
+after the call, then re-reads the bundle **whole** through `PageBundle.Reader` (exactly one page, no
+links) before a byte is trusted, and deletes the file in `finally`. Either failure — the gate, the
+call, the bundle check — is logged and dropped: the ink still travels the ink-only road. The
+"nothing arrived" rule became `strokes.isNotEmpty() || paper != null`.
+
+Notebook side: `notebook/CalendarPaper.accept(byteCount, width, height, pageWidth, pageHeight)` is
+the pure bound check (≤ `TemplateImport.MAX_BLOB_BYTES`, decoded size exactly the page, zero
+refused — a refusal is never a repair, nothing is scaled or cropped). `NotebookSession.receivePage`
+inserts the new page row after the current one at the **sender's** size, resolves the paper
+**reuse-before-mint** through `resolvePaper` (split out of `mintOrReuse` so the minted template row
+is upserted **inside** the receive's one transaction together with the page and stroke rows), then
+pastes the ink — one `Action.PageReceived(snapshot)` undo entry, its own kind on `PagePasted`'s
+exact replay arm. `NotebookActivity.pasteFromCalendar` forks on whether paper came back: refused
+paper with ink falls back to the ink-only paste; refused with no ink is "Couldn't add the page."
+Either way lands through the shared `landTransferred` tail — lasso armed **before** `setSelection`,
+the truncated-transfer dialog, `navigateTo` the new page, the toast "A page from the calendar was
+added." — the tail `pasteTransferred` now uses too, rather than a copy of its own. See
+[`docs/notebook.md`](notebook.md) for the receive-side detail this doc does not duplicate.
+
 ### Notebook → calendar
 
 1. The selection toolbar's **Calendar** button — the second extension-gated button (after Pad, ink
@@ -936,6 +992,74 @@ restored by `restoreToolAfterTransferPaste`, the pad's own restore logic renamed
 duplicated. The paste lands appended after the destination page's current max order (writing order
 preserved, the arc-8 rebase rule), selected, with the lasso armed, as one `ObjectsPasted` step.
 
+## Export (arc 31 / HV4)
+
+The calendar's own out-door: a file export of the page on screen, through the exporters that
+already exist, by growing `ICalendar` one call rather than building a fifth extension point.
+
+**One button, not two.** The top bar's Send became the **out-door**: `CalendarToolbar` reads
+`EXTRA_CALENDAR_EXPORT_ENABLED` — the Intent's fourth boolean, set by the host's `CalendarEntry`
+only when the discovered calendar declares `API_VERSION` ≥ 9 **and** an exporter is installed (the
+arc-30 door's own rule: the screen, not the extension, decides "nothing takes pages") — and picks
+the button's face from `sendEnabled`/`exportEnabled`: Send alone (`ic_pencil_down`), Export alone
+(`ic_download`), or both behind one button whose tap raises an `ActionSheetDialog` — **Send page**
+/ **Export…**. Why one button rather than a fourth: the notebook door's bar already carries eleven
+— a twelfth 62 dp button is 11 × 62 + margins = 726 of the Nomad's 749 dp, and the icon alone
+already says which one or two things it opens.
+
+**Leaving through it.** `exportPage()` parks the showing page as `outgoingTarget()`'s answer —
+`CalendarSession.parkTarget(target)` — flushes first like every exit, and leaves with
+`ExtensionContract.RESULT_CALENDAR_EXPORT = 3`. The host reads `outgoingTarget()` on the **held**
+bind it still holds, before `finish()`, and opens `ExportActivity` in calendar mode
+(`EXTRA_CALENDAR_TARGET`, host-internal) — see [`docs/export.md`](export.md) § Calendar mode for the
+screen itself; this doc does not duplicate it. Nothing arriving back is "Export didn't start." The
+calendar reopens at its bookmark once the Export screen finishes, whatever the outcome
+(`reopenCalendarAfterExport`, consumed on `onResume`; process death loses the latch and the
+calendar simply stays closed).
+
+**`ICalendar.render`** (`RenderRequest`, `CalendarRender`, `:ext-calendar`) is bind-per-call, the
+store lent for the one call — never a held bind of its own — and writes one `PageBundle` v1 with
+one page per target, in order, up to `RENDER_MAX_TARGETS` (8). `RenderRequest` is the pure argument
+check: `targets` non-empty and within the cap, `widthPx`/`heightPx` in range, no unknown flag; its
+`pageSize(storedWidth, storedHeight)` is the one arithmetic the render owns — a minted page keeps
+its **stored** size, an unminted one takes the host's size, and a stored size over
+`PageBundle.MAX_DIMENSION_PX` is refused rather than rendered.
+
+`CalendarRender.render` is the pipeline, per target: `CalendarStore.open()` **on the lent binder**
+(the host's gate refuses a query before the schema is declared on that binder) → a white RGB_565
+ground → `CalendarTemplate` painted by flag (`today` made **nullable** — null draws no ring, which
+is what HV5's grid-only paper needs) → `EventStore.marksFor(GridMarks.rangeOf(target))` only when
+the marks flag is set → g-paper's own `StrokeRasterizer.draw` for the ink, over the ranges the store
+answers in — the same door the host's own export bakes endnotes through, so ink on a calendar file
+is pixel-identical to ink on a notebook file — → WEBP q100 → `PageBundle.Writer`. A store failure
+answers `"store unavailable"` (`InkTransferSession.STORE_UNAVAILABLE`); anything else that is not an
+argument fault — an allocation, an encode, a write to the host's fd — answers
+`IllegalStateException("render failed")`, because an `IOException` or an `OutOfMemoryError` does not
+cross Binder and a silent host would read the silence as success.
+
+**What a file export draws.** Unlike the grid-only paper HV5 sends into a notebook, a *file* export
+draws everything the user chose: grid (when the exporter's page-template toggle is on), ink, the
+ring on today, and the event marks — `CalendarRenderPlan.of` settles ink/ring/marks **always on**
+and leaves only the grid to the exporter's own toggle, because that is the same page-template
+question the notebook's own pages answer with the same control. **Day exports both halves** —
+`CalendarRenderPlan.pages` answers 2 for a Day target and 1 for anything else, in reading order (AM
+then PM), because nobody asks to export half a Tuesday; a per-page exporter (the image exporter)
+then writes two files, `… AM.png` / `… PM.png`.
+
+**The render draws at the SCREEN's bar insets, not a full page.** `CalendarBars.topInsetPx` /
+`bottomInsetPx` answer one `toolbar_bar_thickness` row plus the new `calendar_bar_rule` hairline
+dimen — the two layouts' own dividers now reference it too, so the screen and the export agree by
+construction. This exists because the ink on a calendar page was **written** against the grid the
+*screen* drew under its top bar, not against a full-bleed grid: rendering at inset 0 (the plan's
+original call) put the grid one bar-height higher than the ink expected it, and the HV4 walk caught
+it directly — a word in the 13th's cell landed inside the 20th's. The exported page therefore
+carries blank bands top and bottom where the bars were, the same shape the ink-only page (template
+off) already had.
+
+`CalendarSession.outboundTarget` / `parkTarget` are cleared by `end()` (`InkTransferSession.clear`
+was made `open` for this); `CalendarService.render` / `outgoingTarget` are read-only against the
+session — a file export or a whole-page send's render leaves the showing untouched.
+
 ## Nomad numbers
 
 | Measurement | Cold | Warm |
@@ -945,6 +1069,15 @@ preserved, the arc-8 rebase rule), selected, with the lasso armed, as one `Objec
 | `begin` — Y3 | 818 ms (cold-in-process) | 28 ms |
 | `receiveInk` (notebook → calendar, 19 strokes) — Y3 | 119 ms | — |
 | `drainOutgoing` (calendar → notebook, 19 strokes, 1 chunk) — Y3 | 106 ms | — |
+| `render`, Month, grid only, no ink (arc 31 / HV5 — the papered send) | 835–895 ms | — |
+| `render`, Month, 46 strokes + ring + marks (arc 31 / HV4 — a file export) | 1012 ms (client-side 1065 ms) | — |
+| `render`, Day pair (AM + PM), no ink (arc 31 / HV4) | 1600 ms (client-side 1724 ms) | — |
+
+The papered send's grid-only Month bundle is 24 360 B, decoding to a 24 166 B WEBP template row;
+the file-export Month bundle is 41 KB, the Day pair 60 KB. `CALENDAR_RENDER_TIMEOUT_MS` is set to
+**30 s** — 8 targets (`RENDER_MAX_TARGETS`) under 10 s even tripled for a cold store — down from the
+120 s an ordinary export budget carries, because a render's failure mode (a stuck extension) is
+worth finding out about sooner than a file copy's is.
 
 `PLACE_TIMEOUT_MS` (10 s, the pad's number) stays as-is — 119 ms for 19 strokes leaves it generous
 by two orders of magnitude, and it has never been tightened. The pad's own warm `begin` (23 ms,
@@ -982,6 +1115,17 @@ Mirrors the pad's, row for row. Arc 24's events rows follow below the arc-23 tra
 | A recurring delete's day maps to no occurrence (raced by another writer) | events list → store | `EventStore.delete` answers `false`, which `EventsActivity.delete` cannot tell apart from any other failure — same "Cannot delete" dialog | nothing removed; never a whole-series delete by accident |
 | An event row will not decode | store, on read | nothing — no dialog | that event is **dropped, never surfaced**; counted and logged once per read, the rest of the day still lists |
 
+Arc 31's export/render rows follow below the arc-24 events rows.
+
+| `render`'s argument checks refuse (bad target count, a stored size over `MAX_DIMENSION_PX`) | `RenderRequest`, unmarshal | crosses as an `IllegalArgumentException` — a host bug, not a user-facing one | nothing drawn |
+| The store is gone when `render` opens it | `:ext-calendar`, `CalendarRender` | `IllegalStateException("store unavailable")`, surfaced by the Export screen as "Nothing was exported" / "The calendar could not draw the page." | nothing drawn |
+| An allocation, an encode, or the write to the host's fd fails | `:ext-calendar`, `CalendarRender` | `IllegalStateException("render failed")`, same "Nothing was exported" dialog | nothing drawn — the extension never lets an `IOException`/OOM cross Binder as silence |
+| No calendar declares the export extra, or no exporter is installed | host, `CalendarEntry` | the out-door shows **plain Send** (or is GONE with neither) — never a disabled Export | nothing changes |
+| The Export door leaves with no target parked (a stray or racing result) | host, `ExtensionScreenEntry` | "Export didn't start" / "The calendar didn't say which page to export. Nothing was exported." | nothing exported |
+| The calendar extension is gone by the time the Export screen renders | host, `ExportActivity` calendar mode | "Nothing was exported" / "The calendar is no longer available on this device, so there is nothing to draw." | the screen shows the problem and closes on dismiss |
+| The papered whole-page send's render fails (gate, call, or bundle check) | host, `ExtensionScreenEntry.withPaperIfWholePage` | nothing — logged and dropped | the send travels the **ink-only** road instead; only truly empty ink **and** no paper reads as "nothing arrived" |
+| The received paper fails `CalendarPaper.accept` (oversize, wrong decoded size, zero bytes) | host, `NotebookActivity.pasteFromCalendar` | with ink: falls back to the ink-only paste, no dialog; with no ink: "Couldn't add the page" / "The calendar page couldn't be added to the notebook. Nothing was changed." | refused paper never papers a page; ink-only still lands when there is ink to land |
+
 ## Entry points
 
 | Where | Behaviour |
@@ -991,6 +1135,7 @@ Mirrors the pad's, row for row. Arc 24's events rows follow below the arc-23 tra
 | Notebook selection toolbar, 8th button (ink-only, second extension-gated slot, between Pad and Tag) | the outbound (notebook → calendar) transfer above |
 | Calendar top bar's own Scratch Pad button, last on the bar (Y4) | shown only when the host found a trusted pad; `exit(RESULT_CALENDAR_OPEN_SCRATCH_PAD)` hands the door to the host, which opens the pad and brings the calendar back at its bookmark on a plain close — see § The two doors + the held bind |
 | Calendar top bar's own Events button, between Send and Scratch Pad (arc 24 / Z2) | opens `EventsActivity` on the **first day of the showing period** — Month → the 1st, Week → its Sunday, Day → that day (`EventsLaunch.launchDay`, the anchor is ignored); the calendar follows the day the events screen ends on and force-rebakes on return, since events may have changed |
+| Calendar top bar's Send/Export button, the out-door (arc 31 / HV4) | GONE unless the host found a calendar declaring `API_VERSION` ≥ 9 with an exporter installed **or** a notebook behind it; the button's face and the button itself follow `sendEnabled`/`exportEnabled` — see § Export above |
 
 `CalendarEntry` serves both entry doors identically apart from `beforeLaunch` and `sendEnabled` —
 two near-identical classes would have been the sibling-copy trap in miniature. Both buttons are
@@ -1029,10 +1174,13 @@ same gate the pad's screen calls, rather than a copy each screen kept for itself
 
 | | |
 |---|---|
-| `:extension-api` `ICalendar.aidl` | `begin` · `receiveInk` · `takeOutgoing` · `end` |
+| `:extension-api` `ICalendar.aidl` | `begin` · `receiveInk` · `takeOutgoing` · `end`; since arc 31 / HV4 also `render` (bind-per-call, the lent store) and `outgoingTarget` |
 | `:extension-api` `CalendarTarget` / `.aidl` | the wire target: `kind` / `date` / `half`, `requireValid`, `of` |
 | `:extension-api` `CalendarDates` | week/month normalization, stepping, the hand-list titles |
-| `:extension-api` `ExtensionContract` | `ACTION_CALENDAR[_SCREEN]`, `API_VERSION` 7, the per-action `minApiVersion` map, the extras/result |
+| `:extension-api` `ExtensionContract` | `ACTION_CALENDAR[_SCREEN]`, `API_VERSION` 9 since arc 31 / HV4 (7 before), the per-action `minApiVersion` map, the extras/result; since HV4 also `RENDER_GRID`/`INK`/`RING`/`MARKS`/`RENDER_ALL`, `RENDER_MAX_TARGETS`, `MIN_API_VERSION_FOR_CALENDAR_RENDER`, `EXTRA_CALENDAR_EXPORT_ENABLED`, `RESULT_CALENDAR_EXPORT`, `CALENDAR_RENDER_TIMEOUT_MS` |
+| `:ext-calendar` `RenderRequest` | arc 31 / HV4 — pure `render` argument checks + `pageSize` (stored else the host's) |
+| `:ext-calendar` `CalendarRender` | arc 31 / HV4 — the extension-side render pipeline: store open on the lent binder, `CalendarTemplate` by flag, `EventStore.marksFor`, g-paper's `StrokeRasterizer`, WEBP q100, `PageBundle.Writer` |
+| `:ext-calendar` `CalendarBars` | arc 31 / HV4 — the screen's bar insets as dimens (`toolbar_bar_thickness` + `calendar_bar_rule`), so the render agrees with what the screen drew |
 | `:ext-ink` `InkWire` | wire ⇄ paper, the extension-side twin of the host's `TransferCaps` |
 | `:ext-ink` `StrokeRows` / `StrokeBlob` | row → stroke decode (dropped-not-lost), the format-B encoder |
 | `:ext-ink` `StoreBatches` | splitting a write into `exec` batches |
@@ -1045,15 +1193,15 @@ same gate the pad's screen calls, rather than a copy each screen kept for itself
 | `:ext-ink` `InkScreenActivity<A>` | arc 23 / Y4 — the shared tier-2 screen skeleton (page-op lock, undo/redo replay, `followReplay` hook, the save debounce, the EPD handoff); `CalendarActivity` is thin over it; since arc 29 / LE3 also owns the whole eraser sub-bar lifecycle (toggle/show/hide, outside-contact dismissal, `onLassoErased`), shared with the pad — see [`docs/scratchpad.md`](scratchpad.md) |
 | `:ext-ink` `InkDocument.pendingStatements()` | arc 24 / Z3 — the op log as statements **without clearing it**, for a consumer (the note) whose whole page rides one outer transaction rather than a flush of its own |
 | `:ext-calendar` `CalendarApplication` | registers `RattaEngine` — the extension's own process hosts paper |
-| `:ext-calendar` `CalendarService` / `CalendarSession` | thin on `:ext-ink`'s `InkTransferSession` since Y4 — `CalendarService` supplies the target's own null check and the log wording |
+| `:ext-calendar` `CalendarService` / `CalendarSession` | thin on `:ext-ink`'s `InkTransferSession` since Y4 — `CalendarService` supplies the target's own null check and the log wording; since arc 31 / HV4 `CalendarService.render`/`outgoingTarget` and `CalendarSession.outboundTarget`/`parkTarget` (cleared by `end`, read-only against the session) |
 | `:ext-calendar` `CalendarSchema` / `CalendarSql` | the calendar's own tables and SQL (pinned by `CalendarSqlTest`) — since Y4 the `stroke` table and its six statements are `:ext-ink`'s `InkSql` (`CalendarSql : InkDocument.StrokeSql by InkSql`) |
 | `:ext-calendar` `CalendarStore` | the store calls, on `:ext-ink`'s `InkStore` |
 | `:ext-calendar` `CalendarDocument` | the showing page in memory: target, mint/size bookkeeping, delegates ink to `InkDocument`; implements `:ext-ink`'s `InkPage` since Y4 |
 | `:ext-calendar` `CalendarGeometry` / `CalendarTemplate` | the three layouts' rects and hit-tests; the template painter |
 | `:ext-calendar` `CalendarNavigation` | the pure anchor rule and every `Move` |
 | `:ext-calendar` `DayPickerModel` / `DayPickerDialog` | the picker's grids (pure) and its views |
-| `:ext-calendar` `CalendarToolbar` | the chrome, the fixed tools, the pager, both Send buttons, and (Y4) the three Tabler view latches and the calendar's own Scratch Pad button; since arc 29 / LE3 forwards `onEraserReTap` + `onToolTapped` to `:sn-screen`'s `PaperToolbar` and exposes `arm(tool)` for the sub-bar's pick |
-| `:ext-calendar` `CalendarActivity` | thin on `:ext-ink`'s `InkScreenActivity` since Y4 — navigation, template bake, the picker, double-tap, `followReplay()`; (Z2) `openEvents()`/`eventsLauncher`, `btnEvents` |
+| `:ext-calendar` `CalendarToolbar` | the chrome, the fixed tools, the pager, both Send buttons, and (Y4) the three Tabler view latches and the calendar's own Scratch Pad button; since arc 29 / LE3 forwards `onEraserReTap` + `onToolTapped` to `:sn-screen`'s `PaperToolbar` and exposes `arm(tool)` for the sub-bar's pick; since arc 31 / HV4 the Send button is the **out-door** — picks Send / Export (`ic_download`) / a sheet for both by `sendEnabled`/`exportEnabled` |
+| `:ext-calendar` `CalendarActivity` | thin on `:ext-ink`'s `InkScreenActivity` since Y4 — navigation, template bake, the picker, double-tap, `followReplay()`; (Z2) `openEvents()`/`eventsLauncher`, `btnEvents`; (arc 31 / HV4) `exportPage()`/`sendOrExport()` — parks the target and `exit(RESULT_CALENDAR_EXPORT)`, or raises the Send page / Export… `ActionSheetDialog`; (HV5) `emptyPageSendCarriesPaper = true`, `parkOutgoing`'s `wholePage` overload |
 | `:ext-calendar` `Event` / `EventType` / `Freq` / `MonthlyMode` / `EndMode` / `ReminderUnit` / `Reminder` / `RecurrenceRule` / `UpcomingEvent` / `Scope` | arc 24 / Z1 — the event model and its small pure types |
 | `:ext-calendar` `EventRules` | arc 24 / Z1 — the caps, `normalize`, `problem` (`Problem.EMPTY_TITLE` / `UNTIL_BEFORE_START`) |
 | `:ext-calendar` `Recurrence` | arc 24 / Z1 — the recurrence engine: `occursOn` / `occurrenceStartCovering` / `nextOccurrenceStart` / `generateStarts`; the Sunday-weeks divergence is pinned here |
@@ -1084,15 +1232,25 @@ same gate the pad's screen calls, rather than a copy each screen kept for itself
 | `:ext-calendar` `CountPresets` / `CountLatches` | arc 24 / Z5b — the six-preset-plus-More row (pure model / the seven-button view over `view_count_latches.xml`) |
 | `:ext-calendar` `KeypadModel` / `KeypadDialog` | arc 24 / Z5b — the digit pad behind More (pure typing rule / the `1…9 · ⌫ 0 ✓` grid view) |
 | `:ext-calendar` `LatchGroup<T>` | arc 24 / Z5a — the one-armed-latch helper the Ends row and the count row share |
-| `:app` `HeldInkClient` | the held bind, `open` / `send` / `drainOutgoing` / `finish`, once, shared with the pad since Y4 — `HeldInkPoint` the per-point names/budgets interface, `DrainedInk` the one drained-result class |
-| `:app` `CalendarClient` | thin on `HeldInkClient` since Y4 — its companion `Point` is a `HeldInkPoint<ICalendar, CalendarTarget>` naming `ICalendar`'s two actions, two extras and three budgets |
-| `:app` `ExtensionScreenEntry` | both entry doors, the busy guard, the overlay, both transfers' host half, once, shared with the pad since Y4 — `InkSend` the one outbound-ink class (replacing `CalendarEntry.Send`), `EntryWording` the four strings, and (Y4) `decorateIntent`/`onClosed(resultCode)`, the two hooks the calendar's pad door rides |
-| `:app` `CalendarEntry` | thin on `ExtensionScreenEntry` since Y4 — its registry lookup, its `EntryWording`, `RESULT_CALENDAR_SEND`, and (Y4) `decorateIntent` (sets `EXTRA_CALENDAR_SCRATCH_PAD_AVAILABLE`) plus an `onClosed` passthrough |
+| `:app` `HeldInkClient` | the held bind, `open` / `send` / `drainOutgoing` / `finish`, once, shared with the pad since Y4 — `HeldInkPoint` the per-point names/budgets interface, `DrainedInk` the one drained-result class; since arc 31 / HV4–HV5 also `outgoingTarget()`, `renderPaper(target, w, h, flags)` (the held bind, the held store binder, `PageBundle.Reader` re-check, delete in `finally`), and `DrainedInk.paper`/`withPaper` |
+| `:app` `HeldInkPoint` | arc 31 / HV4–HV5 — `outgoingTarget(iface)` (null default) and `render(iface, store, target, w, h, flags, destination)` (throwing default) + `renderTimeoutMs`; `CalendarClient.Point` overrides all three |
+| `:app` `CalendarClient` | thin on `HeldInkClient` since Y4 — its companion `Point` is a `HeldInkPoint<ICalendar, CalendarTarget>` naming `ICalendar`'s two actions, two extras and three budgets; since arc 31 / HV4 also `Point.render`/`renderTimeoutMs` and the bind-per-call `render(...)` used by the Export screen, over the new `ExtensionStores.lease` |
+| `:app` `data/extstore/ExtensionStores.lease` | arc 31 / HV4 — the shared bind-per-call store lease `CalendarClient.render` uses, also repointed into `TagClient`/`CloudClient`/`CloudConnectClient` (`HeldInkClient.open`'s own inlined copy was left, its log wording differs) |
+| `:app` `ExtensionScreenEntry` | both entry doors, the busy guard, the overlay, both transfers' host half, once, shared with the pad since Y4 — `InkSend` the one outbound-ink class (replacing `CalendarEntry.Send`), `EntryWording` the four strings, and (Y4) `decorateIntent`/`onClosed(resultCode)`, the two hooks the calendar's pad door rides; since arc 31 / HV4 also `resultExport`/`onExport` (the target read on the held bind before `finish()`); since HV5 `paperOnPageSend`/`withPaperIfWholePage` (the calendar passes `true`) |
+| `:app` `CalendarEntry` | thin on `ExtensionScreenEntry` since Y4 — its registry lookup, its `EntryWording`, `RESULT_CALENDAR_SEND`, and (Y4) `decorateIntent` (sets `EXTRA_CALENDAR_SCRATCH_PAD_AVAILABLE`) plus an `onClosed` passthrough; since arc 31 / HV4 sets `EXTRA_CALENDAR_EXPORT_ENABLED` when the calendar declares ≥ 9 and any exporter is installed, and passes `paperOnPageSend = true` |
 | `:app` `CalendarTargets` | the four Send-to-Calendar rows, pure |
 | `:app` `TransferSelection` | the pure ink-only, writing-order rule both lasso sends obey (Y4) — `sendable(selection, live)` |
-| `:app` `NotebookActivity` | `btnCalendar`, `sendSelectionToExtension` (the one gate, Y4), `sendSelectionToCalendar`, `openCalendarWith`, `onCalendarSent`, `pasteFromCalendar`, the shared `pasteTransferred`, and (Y4) `onCalendarClosed`/`onPadClosed` — the door chain to and from the calendar's own pad door |
+| `:app` `export/CalendarRender` | arc 31 / HV4 — the fourth bundle producer (beside `ExportRender` / `DocumentPdfRender` / `ExportText`) for the Export screen's calendar mode: opens the store, binds, calls `render`, re-reads the bundle through `PageBundle.Reader` (page count, every page, no links) before a byte is trusted, answers `Outcome.Ready(file, pageTitles)` / `Outcome.Failed(message)` |
+| `:app` `export/CalendarRenderPlan` | arc 31 / HV4 — pure: `pages(target)` (a Day is 2, else 1), `of(target, includeGrid)` builds the target list/flags/stems/label; ink, ring and marks are always on, only the grid follows the exporter's page-template toggle |
+| `:app` `export/ExportNaming.calendarStem` | arc 31 / HV4 — `Calendar - September 2026` / `Calendar - Week of 2026-09-06` / `Calendar - 2026-09-08`; the ` AM`/` PM` suffix is `CalendarRenderPlan.stems`' job, not the stem's |
+| `:app` `export/ExportScope.Calendar` | arc 31 / HV4 — the host-side page-id filter for the calendar: `lists` = `SOURCE_PAGES` only, `offerable` only an exporter that takes a bundle of pages; a Day target still exports both halves (`CalendarRenderPlan`'s rule, not this one's) |
+| `:app` `export/ExportActivity` calendar mode | arc 31 / HV4 — `EXTRA_CALENDAR_TARGET` (host-internal); no `.soil` opened, no Scope/Source rows; header "Calendar · <period>"; `renderedCalendarPages` as `runExport`'s first branch; "The calendar was exported." |
+| `notebook/CalendarPaper` | arc 31 / HV5 — pure `accept(byteCount, width, height, pageWidth, pageHeight)`: the one bound check before an extension's pixels may paper a page |
+| `notebook/NotebookSession.receivePage` / `resolvePaper` | arc 31 / HV5 — the new page after the current one at the sender's size; `resolvePaper` (split out of `mintOrReuse`) upserts the minted/reused template row **inside** the receive's one transaction with the page and stroke rows |
+| `notebook/NotebookUndo.Action.PageReceived` | arc 31 / HV5 — its own undo kind (`snapshot`), replayed on `PagePasted`'s exact arm |
+| `:app` `NotebookActivity` | `btnCalendar`, `sendSelectionToExtension` (the one gate, Y4), `sendSelectionToCalendar`, `openCalendarWith`, `onCalendarSent`, `pasteFromCalendar`, the shared `pasteTransferred`, and (Y4) `onCalendarClosed`/`onPadClosed` — the door chain to and from the calendar's own pad door; since arc 31 / HV5 `pasteFromCalendar` forks on `paper` into `receiveCalendarPage` (bounded decode off Main, `CalendarPaper.accept`) or the ink-only road, and `onExport`/`reopenCalendarAfterExport` (HV4) |
 | `:app` `SelectionToolbar` | the Calendar button (STROKES-only, extension-gated) |
-| `:app` `LibraryActivity` | `btnCalendar`, the library door, and (Y4) `onCalendarClosed`/`onPadClosed` — the same door chain as the notebook's |
+| `:app` `LibraryActivity` | `btnCalendar`, the library door, and (Y4) `onCalendarClosed`/`onPadClosed` — the same door chain as the notebook's; since arc 31 / HV4 `onExport`/`reopenCalendarAfterExport`, the same pair the notebook door carries |
 | `:sn-screen` `FloatingSelectionBar` | the row-of-buttons primitive `InkSelectionBar` places |
 | `:sn-screen` `InkSelectionBar` | arc 23 / Y4 — the ONE Send-then-Delete floating bar, replacing `CalendarSelectionToolbar` and the pad's `ScratchSelectionToolbar`, built on `FloatingSelectionBar` |
 | `:sn-screen` `EraserBar` / `AnchoredBar` | arc 29 / LE2–LE3 — the Point · Lasso sub-bar and its placement primitive, one implementation shared by the notebook, the sticky editor, the pad and the calendar; see [`docs/sn-screen.md`](sn-screen.md) |
@@ -1109,7 +1267,9 @@ same gate the pad's screen calls, rather than a copy each screen kept for itself
 |---|---|
 | `extension-api/CalendarDatesTest` | Sunday-start weeks across year ends, month starts and `firstCell`, `periodDate`/`isNormalized`, stepping (month/week/day incl. Feb 29 and Dec → Jan), ISO round-trips, the hand-list titles |
 | `extension-api/CalendarTargetTest` | every kind, normalized dates accepted, unnormalized ones rejected (not corrected), `half` legal only for a day, bad kinds/dates rejected, `of` normalizes, value equality |
-| `extension-api/ExtensionContractTest` | the `minApiVersion` map and `accepts`, including the calendar's floor of 7 |
+| `extension-api/ExtensionContractTest` | the `minApiVersion` map and `accepts`, including the calendar's floor of 7 (unmoved by arc 31 / HV4 — `MIN_API_VERSION_FOR_CALENDAR_RENDER` is a method floor pinned separately; a 7-declaring service still binds) |
+| `ext-calendar/RenderRequestTest` | arc 31 / HV4 — every `require` (empty/oversized target lists, out-of-range `widthPx`/`heightPx`, an unknown flag), `pageSize` preferring a stored size and falling back to the host's, a stored size over `MAX_DIMENSION_PX` refused |
+| `ext-calendar/CalendarSessionTargetTest` | arc 31 / HV4 — `parkTarget`/`outboundTarget` round-trip, `end`/`clear` dropping it |
 | `ext-ink/InkWireTest` | wire ⇄ paper both directions, fresh ids minted inward, width clamped, unknown style → PEN, a point-less stroke skipped outward |
 | `ext-ink/StrokeRowsTest` | row → stroke decode, a bad row dropped and counted rather than failing the page |
 | `ext-ink/StoreBatchesTest` | splitting by byte budget and by statement count, a single oversized statement getting its own batch |
@@ -1124,6 +1284,12 @@ same gate the pad's screen calls, rather than a copy each screen kept for itself
 | `ext-calendar/CalendarDocumentTest` | showing an empty month writes only the bookmark; the first stroke mints period and page ahead of itself in one batch; an existing page is never re-minted and keeps its own size; the other half of a day joins the existing period; a zero-size page learns the surface once and only once; a stroke drawn and undone before the debounce mints nothing; leaving a page flushes it after reading the next; a replay on another page navigates there first; a replay for a page never shown this showing is skipped |
 | `ext-calendar/DayPickerModelTest` | a month starting Sunday has no leading blanks, one starting Saturday has six, a 28-day February from Sunday is exactly four rows, every row is seven slots with no trailing empty week, leading blanks match the first day's column, the month grid is 1–12 in four rows of three, titles from the hand lists and the year itself |
 | `app/CalendarTargetsTest` | the four rows in the wizard's order, a Wednesday's four targets, a Sunday and a Saturday's week target, a month's-first target, a year-end week crossing into the new year's month, every target satisfying `requireValid`; a choice resolves against the day it is asked on, not the day the sheet was built |
+| `app/export/CalendarRenderPlanTest` | arc 31 / HV4, 13 cases — Month/Week one page, Day two (AM then PM) in reading order, ink/ring/marks always on, the grid flag following `includeGrid`, `stems`/`singleStem`/`label` for each kind |
+| `app/export/ExportNamingTest` (calendar rows) | arc 31 / HV4 — the month/week/day stems, the `Calendar - ` prefix, ASCII hyphen |
+| `app/export/ExportScopeTest` (calendar rows) | arc 31 / HV4 — `Calendar.lists` is `SOURCE_PAGES` only, `offerable` only a bundle-of-pages exporter |
+| `app/export/ExportDeliveryTest` (calendar rows) | arc 31 / HV4 — `perPage` widened to a Calendar scope with more than one page |
+| `app/notebook/CalendarPaperTest` | arc 31 / HV5 — the bound check: byte-count ceiling, decoded-size-must-match, zero/negative refused, a match accepted |
+| `app/notebook/NotebookUndoTest` (`PageReceived`) | arc 31 / HV5 — the new kind replays on `PagePasted`'s exact arm |
 | `ext-calendar/RecurrenceTest` | every frequency (daily interval-N, weekly with a chosen weekday set and with none, monthly day-of-month across short months, monthly ordinal incl. "the 5th means last", yearly incl. Feb 29 only in leap years), the Sunday-weeks divergence pinned by name, COUNT enumeration and its stop, UNTIL inclusivity, an excluded start taking its whole span with it, a one-off answering its own span through the `Event` overloads, `nextOccurrenceStart`'s strict-after/bounded/exception-skipping rules, a non-positive horizon and an empty `generateStarts` |
 | `ext-calendar/UpcomingTest` | a lead that reaches the day surfaces and one that doesn't does not, the day-before/day-of boundary, a span already under way is not upcoming, no reminders never surfaces, a recurring event bounded by its largest lead, one row per event at its soonest occurrence, an excluded occurrence skipped, the nearest-first/all-day/title order, the year-long horizon |
 | `ext-calendar/EventRulesTest` | title trimmed/tab-and-newline-dropped/cut, the note text cut, reminders filtered/deduped/sorted/capped (a tie between a week and seven days breaks by unit), an inverted span straightened, all-day clearing both minutes, an end minute before the start cleared, the interval and weekday/mode/date/count field clearing per `endMode`, `normalize` idempotent, the two `Problem`s |
@@ -1159,6 +1325,12 @@ builder every events test constructs its fixtures from.
 **Arc 29 / LE3 added no new pure piece here** — the eraser sub-bar lifecycle is structural, living
 once in `:ext-ink`'s `InkScreenActivity` — so the suite stayed unchanged (`1472` `:app` / `2832`
 total across the modules).
+
+**Arc 31 "Harvest" grew this doc's tests across two phases.** HV4 (`:extension-api` +1 → 231,
+`:ext-calendar` +4 → 295, `:app` +22 → 1560): `RenderRequestTest`, `CalendarSessionTargetTest`,
+`CalendarRenderPlanTest` (13 cases), the naming/scope/delivery additions. HV5 (`:app` +4 → 1564):
+`CalendarPaperTest`, `NotebookUndoTest`'s `PageReceived` case. **2945 tests total after HV5**
+(2941 after HV4), version stays `0.1.0-ratta` throughout.
 
 ## Traps
 
@@ -1209,6 +1381,23 @@ total across the modules).
 - **The auto-mode permission classifier can refuse a plain `adb install`** — hit three times in one
   Z5b session (plain, via the device-build-install skill, and by absolute path); the fix was the
   user running the install themselves with `!`, not a change to the tree.
+- **The plan's "insets 0" was wrong (arc 31 / HV4)** — a full-bleed grid at `(0, 0)` sits one
+  bar-height higher than ink written against the *screen's* grid, which starts under the top bar. The
+  first walk caught it directly (a word in the 13th's cell landed inside the 20th's); the fix is
+  `CalendarBars`, the screen's own insets, not zero. Any future render-from-a-showing-screen work in
+  this family should assume the screen's chrome insets are part of the geometry, not start from zero
+  and "fix it if the walk finds it."
+- **A twelfth 62 dp button overflows the Nomad's calendar bar** (arc 31 / HV4) — 11 × 62 + margins
+  = 726 of 749 dp with every extension installed. Export rides the existing Send button rather than
+  adding one, the same math that kept the lasso eraser (arc 29) off a fourth button of its own.
+- **adb cannot drive the calendar's 2-/3-finger undo/redo, and it cannot draw a lasso** — HV5's
+  undo/redo and the lasso-fragment send were walked **by the user's hand**, not by the Sonnet
+  adb-driven walk that covered the rest of the phase; see the LOOP_PLAN.md-era trap above ("A
+  transfer paste lands *selected*") for the lasso half of the same limit.
+- **`InkChunks.chunk(emptyList())` is `emptyList()` — an empty whole-page send parks zero chunks,
+  not one** (arc 31 / HV5). `CalendarSession.outgoing(0)` still answers the page's own size even
+  though nothing is parked at index 0, which is what lets an empty Week's render still know how
+  big to draw. Code that assumes "at least one chunk if `parkOutgoing` ran" is wrong for this case.
 
 ## Related
 
@@ -1220,7 +1409,18 @@ total across the modules).
   generalization; also the icon count (arc 24 added `ic_calendar_event` and `ic_backspace`) and the
   pill toggle / count-latch widgets the editor's row 2 and its dialogs are built from.
 - `docs/notebook.md` / `docs/library.md` — `btnCalendar` and the selection toolbar's Calendar button
-  in their place among the rest of that screen's chrome.
+  in their place among the rest of that screen's chrome; `docs/notebook.md` also carries the
+  received-page detail (§ Erase page / § Export page's neighbors) this doc's § Export and its Send
+  page with paper subsection point to rather than duplicate.
+- `docs/export.md` § Calendar mode — the Export screen's own side of arc 31 / HV4: the Scope/Source
+  rows suppressed, the header, `renderedCalendarPages`, the page-template toggle as the one option
+  a calendar export offers.
+- `docs/extensions.md` — the `API_VERSION` 9 row and the render subsection for `ACTION_CALENDAR`
+  (arc 31 / HV4): the method floor `MIN_API_VERSION_FOR_CALENDAR_RENDER`, why it moved the
+  declared number rather than the accepted floor.
+- `apps/notesprout_ratta/HARVEST_PLAN.md` — arc 31 "Harvest"'s standalone plan and ledger; § D4/D5
+  and the HV4/HV5 Outcome records are where this doc's § Export and Send-page-with-paper facts
+  come from (not `RATTA_PLAN.md`).
 - `apps/notesprout_ratta/RATTA_PLAN.md` § "Phases — Arc 23 \"Calendar\"" — the wizard's locked
   decisions, the seam spec, and the Y1–Y4 Outcome records this doc draws its facts from.
 - `apps/notesprout_ratta/RATTA_PLAN.md` § "Phases — Arc 24 \"Events\"" — the events wizard's locked

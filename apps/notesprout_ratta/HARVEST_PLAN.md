@@ -7,7 +7,12 @@ cross-session memory for the arc: read it whole at every phase start, together w
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `PAGE_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 HV5 ✅ 2026-09-09.** HV1 ✅ · HV2 ✅ · HV3 ✅ · HV4 ✅ · HV5 ✅ · HV6 ⬜.
+**Status: ✅ ARC COMPLETE + FROZEN 2026-09-09.** HV1 ✅ · HV2 ✅ · HV3 ✅ · HV4 ✅ · HV5 ✅ · HV6 ✅.
+Final: 1564 `:app` / **2945** JVM tests, `API_VERSION` **9**, **fourteen** modules, g-paper 0.1.28,
+version `0.1.0-ratta`. The references are `docs/export.md` (§ Images, § Presets, § Calendar mode),
+`docs/calendar.md` (§ Export, § Calendar → notebook), `docs/templates.md` (§ Save as template),
+`docs/notebook.md` (§ The received page) and `docs/extensions.md` (the delivery tail, the calendar
+point's render). No next arc and no ninth point without another user decision.
 Baseline before the arc: 1487 `:app` / 2847 JVM tests, g-paper 0.1.28, `API_VERSION` 8, thirteen
 modules, version `0.1.0-ratta`.
 
@@ -365,7 +370,7 @@ calendar's — 1:1).
 
 - D5. Walk as under D5.
 
-### ⬜ HV6 — Docs, ledger, freeze (Fable docs directly or Sonnet fan-out · no code, no code review)
+### ✅ HV6 — Docs, ledger, freeze (Fable docs directly or Sonnet fan-out · no code, no code review)
 
 - `docs/export.md`: § Images (per-page delivery, the splitter, folder destinations, naming), §
   Presets, § Calendar mode, the `EXTRA_*` table, failure rows, Related. `docs/extensions.md`:
@@ -646,3 +651,34 @@ wore the saved page (heading, link, stars, line, scribble, sticky icon) as its p
 cover matched. Not walked: the reserved-name refusal and the > 6 MiB TooBig dialog (both are the
 import's own lines, shared verbatim).
 
+### HV6 — Docs, ledger, freeze (2026-09-09, Sonnet fan-out over four doc briefs · Fable the ledger, backlog, plans, CLAUDE.md, memory)
+
+**Outcome.** No code, no tests, no review. Four Sonnet agents in parallel, each briefed from this
+file's ledger and told to verify every identifier against source before writing it: `docs/export.md`
+(972 → 1235 lines: § Images (arc 31 / HV1), § Calendar mode (arc 31 / HV4), the `EXTRA_CALENDAR_TARGET`
+row + the seam's two constants pointed at `docs/extensions.md`, the `CALENDAR_RENDER_TIMEOUT_MS`
+paragraph under § Timeouts, five failure rows, the inset and twelfth-button traps, Related; the
+intro now counts four exporters and three scopes — one correction over this ledger's shorthand: the
+per-page/source refusal lives in `ExporterInfo`'s constructor, not `ExportOptions.isRenderable`) ·
+`docs/extensions.md` (2437 → 2643: fourteen modules + the `:ext-image` row, § The delivery tail
+(HV1) under the exporter point, § Render and the outgoing target (HV4–HV5) under the calendar
+point with "What HV4–HV5 proved on the Nomad", four boundary-audit rows 44–48, Privacy paragraphs
+for both, "nine extensions", `:ext-image`'s Identity block, the calendar's Identity row noting the
+method floor) · `docs/calendar.md` (1215 → 1428: the intro's arc-31 paragraph, "Send page with
+paper" under § Calendar → notebook, a new § Export (arc 31 / HV4) between § Both transfers and
+§ Nomad numbers, three measured rows, eight failure rows, the out-door entry point, § Where the code
+is and § Tests (JVM) grown, four traps, Related) · `docs/notebook.md` (§ The received page (arc 31 /
+HV5) under § Undo / redo, a `PageReceived` row in the undo table, the JVM-tests paragraph, a pointer
+at the end of § Send to Calendar; the sheet's eight rows were already right) · `docs/templates.md`
+(§ Save as template tightened + its not-walked line, § Paper from the calendar (arc 31 / HV5) under
+§ Paper on a page, a failure row, Related) · `docs/library.md` (the PNG note on Export…, the
+calendar's Export door with `reopenCalendarAfterExport`, `FolderPickerActivity.PickVerb` under
+§ Move) · `docs/cloud.md` (the N-file upload + the once-always confirmation, the cloud folder as
+Export-screen state and the preset's `cloudPath`, `ExtensionStores.lease` under § Store-taking).
+`PARITY_BACKLOG.md` item 6 → ✅ DONE with an Outcome paragraph, the status line and the "fourteen
+modules" aside; `RATTA_PLAN.md` header → arcs 1–31 frozen; app `CLAUDE.md` (fourteen modules, the
+`:ext-image` module entry, the arc-31 bullet rewritten as COMPLETE + FROZEN with all five phases,
+`API_VERSION` 9 + the ledger's entry 9); root `CLAUDE.md` branch paragraph; memory
+(`project_ratta_harvest`, `project_ratta_paper`, `MEMORY.md`). Every changed file NUL-scanned
+(zero) — note the trap: `grep -c $'\x00'` matches every line under zsh; count bytes with Python.
+**Arc 31 is complete and frozen.**

@@ -98,7 +98,7 @@ All root `CLAUDE.md` rules apply (Kotlin/17, kotlinx-serialization only, no new 
 deps without discussion, no Material Components, no `runBlocking` on main, `Slog.d` not
 `Log.d`, e-ink design system, Tabler icons only). Plus, for this app:
 
-- **Thirteen modules, own Gradle root**: `:app` (the
+- **Fourteen modules, own Gradle root**: `:app` (the
   host) · `:markdown` (arc 19 / M1 — the shared markdown engine: parser, renderer, formatter,
   reflow, search, draft, paginator; stdlib only, depends on **nothing** in this project and
   nothing beyond the android SDK its spans use — `:app` and `:ext-document` consume it, one
@@ -185,7 +185,16 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   the importer matched before any download, `download` into `cacheDir/import/cloud/` and the matched
   importer streams it into the unchanged pipeline; nothing remote deleted.** **V6 (2026-09-05):
   docs + freeze — arc 25 is complete and frozen; `docs/cloud.md` is the reference.**
-  **Read `DRIVE_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**)
+  **Read `DRIVE_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**) ·
+  `:ext-image` (**NSE · Image Export**, arc 31 / HV1 — the fourteenth module, `:extension-api`
+  only, manifest API **9**, `…ext.image`, the puzzle icon byte-identical; ONE service on the
+  existing exporter action — a new *package* on an old point, so discovery needs no `<queries>`
+  change: `ImageDescriptor` (PNG image · `png` · `image/png` · one template toggle · `SOURCE_PAGES`
+  · bundle v1 · **`DELIVERY_PER_PAGE`**), `ImageExportSpec` (unknown ids and any secret refused),
+  `ImageAssembly` (`requireOnePage` — a multi-page bundle is an `IllegalStateException`, never its
+  first page; RGB_565 decode, dimension check against the declaration, PNG 100 through a counting
+  stream + the `S_ISREG` fsync rule). It never sees a notebook, a `.soil`, or more than one page —
+  the host bakes once and splits (`BundleSplit`) and calls it once per page.)
   `gradle.properties` sets `android.nonTransitiveRClass=false` — undoing it breaks every
   `:sn-screen` resource reference from `:app`.
 - **Arc 26 "Keys" is COMPLETE + FROZEN (wizard locked 2026-09-05; U1–U7 landed 2026-09-05)** — og-parity
@@ -362,18 +371,64 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   re-raise); version stays `0.1.0-ratta`; 1487 `:app` / 2847 tests. **`docs/notebook.md` (§ Erase
   page, § Export page, § Undo) + `docs/export.md` (§ Scope) are the reference; read the standalone
   `PAGE_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**
-- **Arc 31 "Harvest" is IN PROGRESS (wizard locked 2026-09-08; HV1 ✅ HV2 ✅ 2026-09-08, HV3 ✅ HV4 ✅ HV5 ✅ 2026-09-09, HV6 ⬜)** — the export and
-  import extras (`PARITY_BACKLOG.md` item 6): `:ext-image` "NSE · Image Export" (PNG; one file per
-  page into a SAF tree / the cloud folder at whole scope, the host bakes once and splits, the
-  exporter is called once per page; `ExporterInfo.delivery` tail), a page-sheet **Save as template**
-  row (page-sized raster → name → folder picker, fit pinned), presets as an additive `export_preset`
-  index row behind the panel's first radio row (never the secret, never the scope), and
-  **`ICalendar.render`** — `API_VERSION` **8 → 9**, floors untouched, not a ninth point — writing a
-  `PageBundle` to a host-owned fd for the Export screen's calendar mode (an Export button on the
-  calendar bar, Day = both halves, the calendar reopens after) and for the whole-page send, which
-  now inserts a **new page papered with the grid** (ring and marks off so the `IMG#` token dedupes);
-  selection sends stay ink-only. Fourteen modules after HV1; HV2 landed the Save as template row (`SaveAsTemplateFlow` + the shared `PageRaster`, `docs/templates.md` § Save as template). HV3 landed presets (`ObjectType.EXPORT_PRESET`, `ExportPreset` / `ExportPresets` / `ExportPresetRow`, the cloud folder as Export-screen state, `docs/export.md` § Presets). HV4 landed the calendar seam + file export: `ICalendar.render` / `outgoingTarget` appended under API 9 (`:ext-calendar` now declares **9**; `MIN_API_VERSION_FOR_CALENDAR_RENDER` is a method floor), `:ext-calendar`'s `RenderRequest` + `CalendarRender` (the screen's bar insets — **not** a full-page grid — g-paper's `StrokeRasterizer` for the ink, `today` nullable for a ring-less paper), the calendar bar's **one out-door button** (Send · Export · a sheet for both — a twelfth button overflows the Nomad), the host's `CalendarClient.render` over the new `ExtensionStores.lease`, `ExportScope.Calendar` + `ExportActivity` calendar mode (no `.soil` opened; the caller reopens the calendar on `onResume`), `CalendarRenderPlan` / `ExportNaming.calendarStem`; render measured ≈ 1 s a Month on the Nomad, timeout 30 s. No code review (the user's call).
-  **Read the standalone `HARVEST_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**
+- **Arc 31 "Harvest" is COMPLETE + FROZEN (wizard locked 2026-09-08; HV1–HV2 landed 2026-09-08,
+  HV3–HV6 2026-09-09)** — the export and import extras (`PARITY_BACKLOG.md` item 6, now done).
+  **The references are `docs/export.md` (§ Images, § Presets, § Calendar mode), `docs/calendar.md`
+  (§ Export, § Calendar → notebook), `docs/templates.md` (§ Save as template), `docs/notebook.md`
+  (§ The received page) and `docs/extensions.md` (the delivery tail, the calendar point's render).
+  Read the standalone `HARVEST_PLAN.md`, not `RATTA_PLAN.md`, for any work on it** — six phases,
+  no code review (the user's call — do not re-raise), no ninth point. What landed: **HV1** —
+  `ExtensionContract.API_VERSION` **8 → 9** with `ExporterInfo.delivery` as the third compatible
+  tail (`DELIVERY_ONE_FILE` / `DELIVERY_PER_PAGE`, absent = one file, per-page refused at unmarshal
+  on any source but `SOURCE_PAGES`; `MIN_API_VERSION_FOR_DELIVERY` 9, **no floor moved**), the
+  `:ext-image` module above, and the host's per-page loop (`ExportDelivery` reads the tail only from
+  a service declaring ≥ 9; Whole scope → a folder, SAF tree or cloud, even for a one-page notebook;
+  `BundleSplit` bakes once and splits into v1 one-page parts; `exportPerPage` names each file by
+  heading else `page N`, SHORT deletes that one file and stops, every stop leads with *N of M images
+  were exported*; the cloud-folder confirmation is asked once, always, before any work, with no
+  count). **HV2** — the page sheet's eighth row **Save as template** (`SaveAsTemplateFlow`: drain →
+  the shared `notebook/PageRaster` pulled out of `ExportRender` so a template made from a page is
+  the picture the page exports as → `TemplateImport.overCap` → `NameDialog` seeded by pure
+  `TemplateSeedName` (topmost heading reduced to `NameRules.CHARSET`, else `page N`) →
+  `FolderPickerActivity.PickVerb.SAVE_TEMPLATE` ("Save to…" / "Templates" / "Save here") →
+  `createTemplate(KIND_IMAGE, FIT)`; bytes are flow fields, a rebuilt screen says "Saving was
+  interrupted"; no undo, no `.soil` write). **HV3** — presets: `ObjectType.EXPORT_PRESET` (additive
+  index row, identity hash untouched; kotlinx `ExportPreset` blob = exporter package · values ·
+  documentSource · destination · `cloudPath?`; rename is the only `updatedAt` bump; soft-delete),
+  pure `ExportPresets` (listable = installed AND scope in one question; capture; apply with
+  `cloudFallback`), `ExportPresetRow` (every view and dialog: None · one radio per preset · *Save
+  preset…* · long-press Rename/Delete), a Scope flip is NOT a hand change, **the cloud folder became
+  Export-screen state** (`cloudPath`, a *Folder:* value row, `listThenExport` skips the browser);
+  never the secret, never the scope. **HV4** — `ICalendar.render(store, targets[], w, h, flags,
+  destination)` + `outgoingTarget()` appended after `end()` (`:ext-calendar` declares **9**;
+  `MIN_API_VERSION_FOR_CALENDAR_RENDER` 9 is a **method** floor, `MIN_API_VERSIONS` untouched;
+  `RENDER_GRID/INK/RING/MARKS`, `RENDER_MAX_TARGETS` 8, `CALENDAR_RENDER_TIMEOUT_MS` **30 s**
+  measured — Month ≈ 1.0 s, Day pair ≈ 1.6 s); `:ext-calendar`'s pure `RenderRequest` +
+  `CalendarRender` (the lent store → white RGB_565 → `CalendarTemplate` by flag, `today` nullable →
+  marks → g-paper's `StrokeRasterizer` → WEBP → `PageBundle` v1) drawn at **the screen's bar insets**
+  (`CalendarBars` + the `calendar_bar_rule` dimen — the plan's "insets 0" put the ink one bar low);
+  the calendar bar's **one out-door button** (Send · Export `ic_download` · an `ActionSheetDialog`
+  Send page / Export… — an eleventh 62 dp button fills 726 of the Nomad's 749 dp, a twelfth
+  overflows) exiting `RESULT_CALENDAR_EXPORT` with `EXTRA_CALENDAR_EXPORT_ENABLED` the Intent's
+  fourth boolean (set only when the calendar declares ≥ 9 AND an exporter is installed); host
+  `CalendarClient.render` bind-per-call over the new shared `ExtensionStores.lease`, `export/
+  CalendarRender` the fourth producer (bundle re-read whole before trust), pure `CalendarRenderPlan`
+  (Day = AM then PM, marks AND ring drawn on a file export) + `ExportNaming.calendarStem`,
+  `ExportScope.Calendar` (pages exporters only; a Day as PNG is a folder), `ExportActivity` calendar
+  mode (`EXTRA_CALENDAR_TARGET` host-internal, **no `.soil` opened**, no Scope/Source rows), both
+  doors reopen the calendar via `reopenCalendarAfterExport` on `onResume`. **HV5** — a whole-page
+  Send lands a **NEW page after the displayed one** papered with the view's grid (`RENDER_GRID`
+  only — no ring, no marks, so the `IMG#` token dedupes and one template row is reused), ink 1:1 at
+  the calendar page's size, lasso armed, one undo entry (`Action.PageReceived`, its own kind on
+  `PagePasted`'s arm); `InkScreenActivity.emptyPageSendCarriesPaper` (calendar true — an empty
+  whole-page send parks zero chunks; selection sends and the pad keep "Nothing to send");
+  `HeldInkClient.renderPaper` on the HELD bind with the HELD store binder (never a second lease),
+  `ExtensionScreenEntry.paperOnPageSend` gated on API ≥ 9 + a page size + `outgoingTarget()` non-null
+  (null after a selection send), failures dropped to the ink-only road; pure `CalendarPaper.accept`,
+  `NotebookSession.receivePage` (reuse-before-mint through `resolvePaper` inside the receive's one
+  transaction), the shared `landTransferred` tail. Version stays `0.1.0-ratta`; g-paper 0.1.28;
+  1564 `:app` / **2945** tests. Every phase walked on the Nomad by Sonnet over adb (undo/redo and
+  the lasso-fragment send by the user's hand).
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by
@@ -493,7 +548,7 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   Action strings are
   SN-namespaced so Paper's extensions are never discovered; trust is same-signature both ways
   (discovery + bind-time re-check host-side, `HostCallerCheck` first thing in every stub method);
-  `ExtensionContract.API_VERSION` = **8** and the host accepts `minApiVersion(action)..8` — **the
+  `ExtensionContract.API_VERSION` = **9** and the host accepts `minApiVersion(action)..9` — **the
   floor is per action since arc 23 / Y1** (`minApiVersion` is a map, not a single set): 8 for
   `ACTION_CLOUD_STORAGE` (`CloudContract.MIN_API_VERSION_FOR_CLOUD`, arc 25 / V1), 7 for
   `ACTION_CALENDAR` (`MIN_API_VERSION_FOR_CALENDAR` — a point born at 7 has no older shape to
@@ -518,7 +573,13 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   floor**: `ACTION_CALENDAR` is listed only at `MIN_API_VERSION_FOR_CALENDAR`, every other point's
   declared floor is unchanged, so no consequence like X1's — a point born at 7 was never reachable
   at any lower number to begin with. · **8 = arc 25 / V1, the cloud point** — the calendar's shape again:
-  a compatible addition, floored at 8, no existing door moved.
+  a compatible addition, floored at 8, no existing door moved · **9 = arc 31 / HV1 + HV4, two
+  compatible tails and NO floor moved**: `ExporterInfo.delivery` (the exporter descriptor's third
+  tail — `MIN_API_VERSION_FOR_DELIVERY` 9 says which services the host *reads* it from) and two
+  `ICalendar` methods appended after `end()` (`render` + `outgoingTarget`, gated by the **method**
+  floor `MIN_API_VERSION_FOR_CALENDAR_RENDER` 9 — `MIN_API_VERSIONS` untouched, a calendar declaring
+  7 still binds; `CloudContractTest` had pinned the cloud floor to *the current* version and was
+  re-pinned to 8). Not a ninth point.
   Meta-data is **per service**.
 - **The Scratch Pad is not ours to change from here** (arc 11, `docs/scratchpad.md`). It is the
   `:ext-scratchpad` APK: its own process, its own g-paper surface, its own undo stack, and it

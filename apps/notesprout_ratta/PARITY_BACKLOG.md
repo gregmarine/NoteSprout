@@ -23,8 +23,11 @@ and ledger `RESTORE_PLAN.md`). Item 3 **DONE** (arc 28 "Objects", H1–H7 landed
 landed 2026-09-06/07, complete + frozen; the reference is `docs/notebook.md` § Toolbar + § Undo, the
 plan and ledger `LOOP_PLAN.md`). Item 5 **DONE** (arc 30 "Page", PE1–PE3 landed 2026-09-08, complete +
 frozen; the reference is `docs/notebook.md` § Erase page / § Export page + `docs/export.md` § Scope, the
-plan and ledger `PAGE_PLAN.md`). Item 6 **IN PROGRESS** (arc 31 "Harvest", wizard locked 2026-09-08; the
-plan and ledger is the standalone `HARVEST_PLAN.md` — read it, not `RATTA_PLAN.md`). Item 7 not started.
+plan and ledger `PAGE_PLAN.md`). Item 6 **DONE** (arc 31 "Harvest", HV1–HV6 landed 2026-09-08/09, complete +
+frozen; the references are `docs/export.md` § Images / § Presets / § Calendar mode, `docs/calendar.md`
+§ Export + § Calendar → notebook, `docs/templates.md` § Save as template, `docs/notebook.md` § The
+received page, `docs/extensions.md` (the delivery tail + the calendar point's render); the plan and
+ledger is the standalone `HARVEST_PLAN.md` — read it, not `RATTA_PLAN.md`). Item 7 not started.
 
 ---
 
@@ -242,7 +245,19 @@ its paper) and a per-page **Export** — both moved into og's canvas long-press 
 
 ---
 
-## 6. Export and import extras — 🔄 IN PROGRESS (arc 31 "Harvest", wizard locked 2026-09-08; plan and ledger `HARVEST_PLAN.md`)
+## 6. Export and import extras — ✅ DONE (arc 31 "Harvest", HV1–HV6 landed 2026-09-08/09; plan and ledger `HARVEST_PLAN.md`)
+
+**Outcome.** All four sub-efforts shipped as locked: `:ext-image` "NSE · Image Export" (the
+fourteenth module; PNG per page into a SAF tree or cloud folder at whole scope, one file at page
+scope — `ExporterInfo.delivery` tail under `API_VERSION` **8 → 9**, no floor moved) · the page
+sheet's eighth row **Save as template** (`SaveAsTemplateFlow` over the shared `PageRaster`) ·
+presets as `ObjectType.EXPORT_PRESET` index rows behind the Export panel's first radio row (the
+cloud folder became screen state along the way) · `ICalendar.render` + `outgoingTarget` (API 9,
+not a ninth point) feeding the Export screen's calendar mode (one out-door button on the calendar
+bar; Day = both halves; the calendar reopens after) and a **new papered page** on a whole-page
+send (grid only, so one template row is reused; `Action.PageReceived`). 1487 → 1564 `:app` /
+2847 → **2945** tests; version stays `0.1.0-ratta`; every phase walked on the Nomad. No code
+review (the user's call). The text below is the gap review as it stood before the arc.
 
 **Locked shape (the eight wizard answers, all in `HARVEST_PLAN.md`):** `:ext-image` "NSE · Image Export" (PNG, one file per page into a folder at whole scope) · page-sheet row **Save as template** (name → folder picker, fit pinned) · presets as an additive `export_preset` index row behind a radio row · `ICalendar.render` (`API_VERSION` 8 → 9, not a ninth point) feeding the Export screen's calendar mode and a **new papered page** on a whole-page send. Six phases HV1–HV6, no code review. The text below is the gap review as it stood before the arc.
 
@@ -329,7 +344,7 @@ oversights. Any of them needs a fresh user decision.
 | Smart shape recognition (dwell trigger) | Explicitly refused — "that never worked well." Disabled in og too. |
 
 **Where SN is ahead of og**, for the record, so no future effort "restores parity" by removing
-something: the extension architecture itself (eight points, thirteen modules, extension stores as
+something: the extension architecture itself (eight points, fourteen modules, extension stores as
 real SQLite tables), tags on notebooks and pages, fuzzy search over names **and** tags (og's search
 is names-only and unranked by comparison), the full paper/template library with SAF import/export
 and its Pinned/Recents/Search shelves, name schemes v2, and the per-page document plus the merged

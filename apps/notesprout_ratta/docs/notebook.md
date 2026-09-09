@@ -531,6 +531,12 @@ send is actually across does `onCalendarSent()` clear the notebook's own selecti
 to calendar" — the standing toast-confirms rule, since a send that failed partway has changed
 nothing here to confirm.
 
+This is the lasso's send — ink only, onto the page already displayed. Since arc 31 / HV5 a
+**whole-page** Send from the calendar's own bar is a different act and lands differently: a new
+page after the displayed one, papered with the grid that was sent, the ink on top — see
+[§ The received page](#the-received-page-arc-31--hv5) above and
+[`docs/calendar.md`](calendar.md) § Calendar → notebook for the calendar's own half.
+
 See [`docs/calendar.md`](calendar.md) for the calendar's own side of both transfers (Send to
 Notebook included) and the paste-back below for the reverse direction.
 
@@ -1259,6 +1265,7 @@ and survives it — [`docs/links.md`](links.md)).
 | `PageErased` (arc 30 / PE1) | **Erase page** — `pageId` + the `objectIds` `eraseCurrent()` soft-deleted, ids only: `StrokeStore` keeps **no in-memory mirror** (`revive` is a bare `dao.restore` queued on the writer, and `reconcile` already restores a page delete's content ids with the same bare call), so no per-type snapshot and no stroke split is needed — nothing moves and nothing is re-minted, the rows stay where they are, dated out. Recorded only when the list is non-empty | `session.restoreIds(ids)` (one `withTransaction` + `mirror(now)`), `store.drain()`, `refreshToPage(pageId)` | `session.eraseIds(ids)`, drain, refresh — one repaint each way |
 | `TemplateChanged` (arc 12) | a pick in the template library — the two template ids the page moved between (`""` = blank). No drain: it writes one page row and never touches the stroke writer | `applyTemplate(from)` | `applyTemplate(to)` |
 | `ObjectsPasted` (O1) | an object paste — `Deleted` run in reverse, its own kind for `PagePasted`'s reason (a link travels as a `PageLink` snapshot, so undo takes its wrapped children down with it); a transfer paste from the Scratch Pad or (arc 23 / Y3) the Calendar is a strokes-only object paste and records here too, through the one shared `pasteTransferred` body (below) rather than a fifteenth kind | `store.remove` + `headings.erase` + `links.remove` | `store.revive` + `headings.restore` + `links.restore` |
+| `PageReceived` (arc 31 / HV5) | a **whole-page send from the calendar** arriving with paper — `receivePage`'s `Structural`, `PagePasted`'s exact shape and replay, its own kind so a future undo label can say the page came from the calendar rather than the clipboard (see below) | `reconcile(before)`, **deleting** `objectIds` | `reconcile(after)`, restoring them |
 
 `Deleted` replays exactly like `Erased` (and its N2 heading half like `HeadingDeleted`) and is
 deliberately kept as its own kind: to the user a sweep of the eraser and "delete these" are
@@ -1359,6 +1366,48 @@ would be false (eye-check #2 finding, 2026-08-22). `showPageSheet` calls `paper.
 **ungated**, which is safe here only because the long-press fired through the gesture gate: it
 never arms while the pen is active and re-checks at fire, so we are outside the pen-active window
 the R3 rule protects.
+
+### The received page (arc 31 / HV5)
+
+A **whole-page send from the calendar** lands a *new* page rather than pasting onto the one
+displayed — the one road out of the transfer paste-back above that creates a page instead of
+appending to it. `NotebookActivity.pasteFromCalendar` is where the two roads fork: `drained.paper
+== null` (a selection send, or a whole-page send whose paper never rendered) keeps the ink-only
+road through `pasteTransferred` unchanged; a non-null `paper` goes to `receiveCalendarPage`.
+
+`receiveCalendarPage` bounded-decodes the paper bytes off Main and checks the decoded picture
+against the page it claims to be through pure `notebook/CalendarPaper.accept(byteCount, width,
+height, pageWidth, pageHeight)` — the encoded size under
+`TemplateImport.MAX_BLOB_BYTES` and the decoded dimensions exactly the sender's page, zero of
+either refused outright. A refusal with ink behind it falls back to the ink-only paste (`"the
+calendar's paper was refused"`, logged); a refusal with **no** ink lands nothing at all and says
+"Couldn't add the page".
+
+Paper that passes runs through `runPageOp`: `session.store.drain()` first (the delete/erase rule
+— a queued stroke commit must never land after the page list has already moved), mint the strokes
+through `TransferCaps.toStrokes`, then `NotebookSession.receivePage(width, height, paper, strokes,
+dpi): Structural` — a new page row after the current one, sized to the **sender's** page (the
+calendar's 1:1 rule, not this notebook's default), with the paper resolved **reuse before mint**
+through `resolvePaper` (split out of `mintOrReuse` precisely so the minted template row can be
+`upsert`ed **inside** the receive's own transaction, alongside the page row and its stroke rows —
+one send twice over lands one template row, filed under `PagePaper.token`'s digest, the same rule
+every other paper reuse in the file follows). `maxOrder`, `renumber`, `loadTemplateFor` and
+`mirror` all run exactly as they do for the notebook's own page inserts.
+
+The receive is recorded as its **own undo kind**, `Action.PageReceived(snapshot)` — not a fifth
+`Action.PagePasted`, even though the two replay identically (`session.reconcile` on the
+snapshot's `objectIds` in the paste direction, both ways), because a future undo *label* has to be
+able to say a page arrived from the calendar rather than from the clipboard, the same reasoning
+that keeps `Deleted` apart from `Erased`. What it undoes is the whole of what arrived: the new page
+after the displayed one, its paper and its ink together, in one step.
+
+`Action.PageReceived` then feeds `navigateTo(session.currentIndex)` and the same shared
+`landTransferred` tail the ink-only paste uses (arc 11 / J5, unified arc 23 / Y3, above) — the
+lasso armed **before** `setSelection` (the O2 rule), the truncated-drain dialog if the send was
+cut short, the toast "A page from the calendar was added." on success, and nothing selected when
+the page arrived with no ink at all. `pasteTransferred` (the ink-only road) now calls that same
+`landTransferred` too, rather than the copy it used to end on — one tail for both roads, the same
+call the arc-23 unification made for the rest of the transfer.
 
 ### Erase page (arc 30 / PE1)
 
@@ -1767,6 +1816,18 @@ query and one existing soft-delete, walked on the Nomad instead (incl. `am crash
 persists the erased state). The export half's pure pieces (`ExportScopeTest`, `ExportNamingTest`)
 are [`docs/export.md`](export.md)'s. `:app` **1472 → 1487**; **2832 → 2847** across every module;
 `./gradlew test` exit 0.
+
+**Arc 31 "Harvest" (HV2/HV5), the notebook's own half:** `TemplateSeedNameTest` (11 — the topmost
+heading reduced to `NameRules.CHARSET`, spaces collapsed, capped, else `page N`, never a seed
+`NameRules.validate` would refuse) covers **Save as template**'s name seed; `PageRaster` is
+Android-bound and has no JVM test of its own (said in its KDoc — the bake it moved out of
+`ExportRender` is exercised by the export suite instead). `CalendarPaperTest` covers **the
+received page**'s bound check (`CalendarPaper.accept`: the byte-count ceiling, the decoded size
+matching the page exactly, every non-positive argument refused) and `NotebookUndoTest` gains the
+`PageReceived` case both replay directions, on `PagePasted`'s fixture shape — its own kind kept
+apart from `Page` / `PagePasted` / `PageErased` the same way every other transfer-shaped kind is.
+No `NotebookSession.receivePage` test, for `PageErased`'s reason above: it opens a real Room DB.
+`:app` **1487 → 1564** over the arc's six phases; **2847 → 2945** across every module.
 
 ## Deliberate differences from Paper v0
 
