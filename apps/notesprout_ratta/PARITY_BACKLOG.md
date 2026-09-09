@@ -27,7 +27,7 @@ plan and ledger `PAGE_PLAN.md`). Item 6 **DONE** (arc 31 "Harvest", HV1–HV6 la
 frozen; the references are `docs/export.md` § Images / § Presets / § Calendar mode, `docs/calendar.md`
 § Export + § Calendar → notebook, `docs/templates.md` § Save as template, `docs/notebook.md` § The
 received page, `docs/extensions.md` (the delivery tail + the calendar point's render); the plan and
-ledger is the standalone `HARVEST_PLAN.md` — read it, not `RATTA_PLAN.md`). Item 7 not started.
+ledger is the standalone `HARVEST_PLAN.md` — read it, not `RATTA_PLAN.md`). Item 7 **PLANNED** (arc 32 "Resume", wizard locked 2026-09-09; the plan and ledger is the standalone `RESUME_PLAN.md` — read it, not `RATTA_PLAN.md`; RS1–RS3 not started).
 
 ---
 
@@ -301,7 +301,7 @@ Four sub-efforts:
 
 ---
 
-## 7. Launch restore — return to the last screen
+## 7. Launch restore — return to the last screen — 🔄 PLANNED (arc 32 "Resume", `RESUME_PLAN.md`, wizard locked 2026-09-09)
 
 **User's call:** "Launch restore should go back to whatever screen/view the user last had open."
 
