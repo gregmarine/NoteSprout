@@ -453,7 +453,9 @@ touches its box, exactly what the lasso already selects — so select-then-Delet
 always agree about what one loop holds. It is reported by the engine as one `onLassoErased(strokeIds,
 contentIds)` and recorded as `NotebookUndo.Action.LassoErased` (`ScribbleErased`'s exact shape, its
 own kind for the same label reason: drawing a loop around something is a different act to the user
-than crossing it out or tapping Delete) — see [`docs/notebook.md`](notebook.md) § Undo for the row.
+than crossing it out or tapping Delete) — see [`docs/notebook.md`](notebook.md) § Undo for the row. **Erase page** (arc 30 / PE1) takes every kind too — texts, shapes, sticky notes and
+their children, through the one `liveDescendantIds` query — and puts them all back on undo
+(`Action.PageErased`, ids only); see [`docs/notebook.md`](notebook.md) § Erase page.
 
 ## Export — PDF endnotes
 

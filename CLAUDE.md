@@ -170,9 +170,14 @@ skill (`.claude/skills/device-build-install/SKILL.md`) — invoked automatically
   (not `RATTA_PLAN.md`) — a g-paper `Tool.LASSO_ERASER` (0.1.28, SN re-pinned from 0.1.27) armed
   from an eraser re-tap Point · Lasso sub-bar on all four paper surfaces; no ninth point, no API
   bump, no new row, no code review. **Arcs 1–29 are all complete and frozen.**
-  **Arc 30 "Page" (page erase + page export, PARITY_BACKLOG item 5) is IN PROGRESS (wizard locked
-  2026-09-08; PE1 ✅ · PE2 ✅ 2026-09-08 · PE3 ⬜ docs/freeze)**: read the standalone `apps/notesprout_ratta/PAGE_PLAN.md` (not
-  `RATTA_PLAN.md`) — host-only, no point, no API bump, no code review.
+  **Arc 30 "Page" (page erase + page export, PARITY_BACKLOG item 5) is COMPLETE + FROZEN (PE1–PE3
+  landed 2026-09-08)**: the reference is `apps/notesprout_ratta/docs/notebook.md` (§ Erase page,
+  § Export page, § Undo) + `apps/notesprout_ratta/docs/export.md` (§ Scope); for any work on it
+  read the standalone `apps/notesprout_ratta/PAGE_PLAN.md` (not `RATTA_PLAN.md`) — two page-sheet
+  rows (Erase page = one soft-delete transaction + `Action.PageErased` by id; Export page = close →
+  `ExportActivity` at page scope → reopen, a host-side page filter with `ExportSpec` and every
+  exporter untouched); host-only, no point, no API bump, no code review. **Arcs 1–30 are all
+  complete and frozen.**
   **No NINTH extension point
   and no other arc without another user decision. Read `apps/notesprout_ratta/RATTA_PLAN.md`
   first for ANY other work there** — it holds the working protocol, model recipe, standing

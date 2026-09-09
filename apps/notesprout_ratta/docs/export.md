@@ -44,14 +44,18 @@ pass. **Arc 19 "Document" M9 complete** — the document exporter (`SOURCE_DOCUM
 Document`) + the host-side Source row + Document-mode PDF-of-preview, all end to end on the Nomad
 (commit `62964e6`). **Arc 25 "Drive" V3 complete** — the Destination row + the host-drawn cloud
 browser + the upload leg, all three exporters unaware, walked on the Nomad (2302 JVM tests, user
-checklist passed 2026-09-04).
+checklist passed 2026-09-04). **Arc 30 "Page" PE2 complete** — page scope: the notebook's page-sheet
+door (`EXTRA_PAGE_ID` + `EXTRA_RETURN_TO_NOTEBOOK`), the host-owned Scope row, `ExportScope`'s
+host-side page filter ahead of every render, all three exporters unaware, walked on the Nomad
+(1487 `:app` / 2847 JVM tests, 2026-09-08). See [Scope](#scope-arc-30--pe2) below.
 
 ---
 
 ## The screen
 
 `ExportActivity` (`IndexGuard`, portrait, e-ink chrome, `TopGuard` 0) receives `EXTRA_NOTEBOOK_ID`
-/ `EXTRA_NOTEBOOK_NAME` only — never a `File`. Chrome follows F2: the action button lives at the
+/ `EXTRA_NOTEBOOK_NAME` — never a `File` — and, from the notebook's page-sheet door only (arc 30 /
+PE2), `EXTRA_PAGE_ID` + `EXTRA_RETURN_TO_NOTEBOOK`; see [Scope](#scope-arc-30--pe2) below. Chrome follows F2: the action button lives at the
 top bar's right edge, the bottom of the screen holds nothing.
 
 - **The chooser.** Every trusted exporter is asked to `describe()` itself, and with `NSE · Soil
@@ -113,6 +117,11 @@ top bar's right edge, the bottom of the screen holds nothing.
   no trusted cloud provider is installed, and its own standing answer is forced back to *local* the
   moment the row leaves, exactly as the Source row's is. See
   [Cloud destination](#cloud-destination-arc-25--v3) below.
+- **The Scope row (arc 30 / PE2).** The **first** row of the options panel, above Format — *This
+  page* / *Whole notebook* — because it decides which formats are listed at all. Present only when
+  the screen was entered from the notebook's page sheet **and** some installed exporter serves page
+  scope (`ExportScope.offerable`); `GONE` from the library door, which stays whole-notebook with no
+  control, as it always was. See [Scope](#scope-arc-30--pe2) below.
 
 Discovery re-runs on every `onResume` while not busy (a package can be disabled or replaced under a
 standing screen) and again, from scratch, if the flow finds itself running with no descriptors in
@@ -621,6 +630,84 @@ install.
 
 ---
 
+## Scope (arc 30 / PE2)
+
+og's canvas "Page" menu exports one page; SN's Export was whole-notebook only, and its one door was
+the library's long-press sheet. Arc 30 opened a second door and gave the screen a scope — and did
+it **without touching the seam**: `ExportSpec` has no scope field and gains none, no exporter
+descriptor changed, no `API_VERSION` bump. Scope is a **host-side page-id filter and nothing more**,
+so every exporter — the three installed today and item 6's future image exporter alike — inherits
+page scope without knowing it exists.
+
+**The door.** The notebook's page sheet gained an **Export page** row (last, `ic_download`, present
+only while a trusted exporter is installed — [`docs/notebook.md`](notebook.md) § Export page). It
+is **close, export, reopen** (decision 5): the Export screen reads a *cold* `.soil` (`ExportOpen`
+guard 2 refuses a held file — the cold-file invariant is untouched), so the notebook closes exactly
+as for a Recents switch — drain, cover, bookmark, seal — and launches this screen from
+`close(andThen)` with `EXTRA_PAGE_ID` (the displayed page) and `EXTRA_RETURN_TO_NOTEBOOK = true`.
+The screen's leave paths were scattered (Back, the done dialog's dismiss, `problemAndClose`, the
+cancelled passphrase prompt), so **`finish()` is overridden once**: with the return extra set and
+not yet relaunched it starts `NotebookActivity.intent(id, name)` first, whatever the outcome —
+exported, cancelled, refused, Back — and the notebook opens at its bookmark, which the close wrote
+for the page the sheet was on (no `EXTRA_PAGE` on the notebook intent). A guard bounce finishes
+before the flag is read. The library's intent carries neither extra and behaves exactly as before.
+
+| Extra | Set by | Meaning |
+|---|---|---|
+| `EXTRA_NOTEBOOK_ID` / `EXTRA_NOTEBOOK_NAME` | both doors | the notebook — never a `File` |
+| `EXTRA_PAGE_ID` | the page-sheet door only | seeds `ExportScope.Page(pageId)`; absent or empty = `Whole` |
+| `EXTRA_RETURN_TO_NOTEBOOK` | the page-sheet door only | `finish()` relaunches the notebook first |
+
+**`ExportScope`** (`export/ExportScope.kt`, pure, sealed `Whole` · `Page(pageId)`) owns the rules;
+the screen owns the value (saved / restored, `KEY_SCOPE_WHOLE` — Whole is restorable only where the
+row that offers it is, Page is the seed):
+
+- `pageIds` — null at `Whole` (every render reads "no filter" as "all rows"), the one id at `Page`.
+- `pagesInScope(rows, pageIds)` — the filter, applied to the DAO's already-ordered `TYPE_PAGE` rows
+  so display order is untouched. `ExportRender.render`, `DocumentPdfRender.render` and
+  `ExportText.assemble` (+ `markdownOf`) each take `pageIds: Set<String>? = null` and run it
+  **before** their existing plan; the pure `plan()` seams are untouched. A page id the rows no
+  longer carry (the page vanished between the sheet and the run) yields an empty list, which each
+  render already refuses as its own `Problem.EMPTY`.
+- `lists(sourceKind, scope)` — the one exporter rule scope adds: a `SOURCE_SOIL` exporter streams
+  the whole `.soil`, and a one-page `.soil` would be a new copy-with-filter engine og does not offer
+  either (decision 4), so at page scope **Soil is hidden, never disabled**. Page-bundle and document
+  exporters serve both scopes. Flipping back to Whole notebook re-lists it.
+- `offerable(sourceKinds)` — page scope is offered only when at least one installed exporter lists
+  at it; a page door over a Soil-only install falls back to Whole with **no row** (a door with
+  nothing behind it is GONE, not a latch to an empty chooser).
+
+**On the screen.** The Scope control is the panel's own captioned radio row (`ExportPanel.choice`,
+the Source / Destination idiom — not an `Editor.Latch`: one screen, one vocabulary, no XML button).
+`described` (every renderable exporter) is kept apart from `candidates` (`listedNow()` = the
+document gate against the **scope's** document answer + the Soil rule) so a flip re-cuts the list
+without re-describing; `reselect()` = standing ?: remembered ?: first, so a remembered Soil at page
+scope falls to the first shown. `hasDocument` is **derived from scope** — at `Page` it is that
+page's own `document` row, so the Source row and the document exporter's gate answer for the page,
+not the notebook. The one `readOnce` also answers `PageFacts(number, title, hasDocument)` for the
+door's page. `exportPrefs.lastExporter` is still written on a page export (a format choice is a
+format choice). The done dialog says "This page was exported." at page scope.
+
+**What a page export holds.** A page-bundle PDF carries that page and **its endnotes only** —
+`Endnotes`' sources are collected from the *baked* pages (`endnoteSources(dao, pages)`), so the
+filter covers them with nothing more to do. A Document export at page scope is **that page's
+document or nothing** — the notebook document (the merged draft, [`docs/document.md`](document.md))
+is not read at page scope; the page-template toggle, password protection and the destination all
+work as at whole scope.
+
+**The filename** (`ExportNaming.pageStem` / `fileName` / `specNameOf` — one stem feeds both the
+file on disk and `ExportSpec.notebookName`, so the two always agree): `<notebook> - <heading>.<ext>`
+when the page has a heading by the Contents / link-picker rule (`PageLabels.titleOf` — topmost by
+`(y, x)`, prefix stripped, loose or link-wrapped), sanitized by the same rule as the notebook name
+and capped at 80 characters (`MAX_TITLE_CHARS`); else `<notebook> - page N.<ext>` with the page's
+1-based position; a page that cannot be placed names the notebook alone (a filename must never say
+"page 0"). A plain ASCII hyphen throughout, because the sanitize strips every other dash. At Whole
+the name is the notebook's, suffix-free, as before. Pure, tested (`ExportScopeTest` 8,
+`ExportNamingTest` +6).
+
+**What did not change.** `ExportVerification` (bytes are bytes), every exporter, `ExportSpec`, the
+seam, the keying flow, the cloud leg. The library door: no Scope row, Soil listed, whole notebook.
+
 ## Timeouts
 
 A Binder call cannot be cancelled, so both of `ExporterContract`'s timeouts are measured, not
@@ -702,6 +789,7 @@ describes itself honestly. Full model, the resolver, every open site and the fai
 | The `.soil` won't open or won't read | problem dialog, "could not be read just now" | `Problem.UNREADABLE` (both prepare paths) |
 | The cache copy failed, or came out short (`SOURCE_SOIL`) | problem dialog, "device may be out of space" | `Problem.COPY_FAILED` |
 | The notebook has no pages to render (`SOURCE_PAGES`, arc 18) | problem dialog, "This notebook has no pages" — an honest refusal, never a zero-page PDF | `ExportRender.Problem.EMPTY` → `export_empty_body` |
+| The page-sheet door's page is gone by the time the export runs (arc 30 / PE2) | the same "no pages" refusal — the scope filter yields nothing; the notebook still reopens after | `ExportScope.pagesInScope` → `Problem.EMPTY` |
 | A page row carries no usable size — a damaged or foreign-written file (`SOURCE_PAGES`, D3; also `DocumentPdfRender.Problem.DAMAGED` in Document mode, arc 19) | problem dialog, "could not be read at its own size" — its own sentence, **never** the memory-or-space one: a data problem blamed on storage would be retried forever | `ExportRender.Problem.DAMAGED` → `export_damaged_body` |
 | More pages than the bundle carries (> 4096, `SOURCE_PAGES`, D3; also `DocumentPdfRender.Problem.TOO_LONG` in Document mode, arc 19) | problem dialog, "more pages than this format can carry" | `ExportRender.Problem.TOO_LONG` → `export_too_long_body` |
 | A page will not allocate, draw or encode — low memory or space (`SOURCE_PAGES`, arc 18; also `DocumentPdfRender.Problem.RENDER_FAILED` in Document mode, arc 19) | problem dialog, "could not be prepared for this format"; the notebook itself is untouched | `ExportRender.Problem.RENDER_FAILED` → `export_render_failed_body` |
@@ -787,7 +875,8 @@ reported honestly, because the delete is best-effort.
 - [`docs/document.md`](document.md) — the feature the document exporter reads from: the data
   model, the notebook document's merge join `ExportText.markdownOf` reuses, the editor Preview
   metrics `DocumentPdfMetrics` mirrors, text documents.
-- [`docs/library.md`](library.md) — the notebook long-press sheet, where the **Export…** row sits.
+- [`docs/library.md`](library.md) — the notebook long-press sheet, where the library's **Export…** row sits.
+- [`docs/notebook.md`](notebook.md) § Export page / § Erase page — the second door (arc 30): the page sheet's **Export page** row, the close-export-reopen handoff, and the erase that shares the arc.
 - [`docs/cloud.md`](cloud.md) — the eighth extension point this arc's Destination row rides on:
   `ACTION_CLOUD_STORAGE`, `:ext-cloud`, the provider's tree, the Connect door, `CloudTimeouts`.
 - [`docs/objects.md`](objects.md) — the feature the PDF endnotes read from: sticky notes' data

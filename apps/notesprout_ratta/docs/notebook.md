@@ -1164,7 +1164,7 @@ paper is full-bleed and the chrome is two thin bars.
 | 2-finger vertical swipe ↓ | open the **Recents** (T1 — its upward twin is unassigned) |
 | 2-finger stationary double-tap | undo |
 | 3-finger stationary double-tap | redo |
-| 1-finger long-press | the **page sheet** — Copy / Cut / Paste / Page template (arc 12, the whole library since arc 13; [`docs/templates.md`](templates.md)) / Delete (B1; [`docs/clipboard.md`](clipboard.md)) |
+| 1-finger long-press | the **page sheet** — Copy / Cut / Paste / Page template (arc 12, the whole library since arc 13; [`docs/templates.md`](templates.md)) / Erase page (arc 30 / PE1) / Delete (B1; [`docs/clipboard.md`](clipboard.md)) / Export page (arc 30 / PE2, only while an exporter is installed; [`docs/export.md`](export.md) § Scope) |
 
 Thresholds (Paper-v0 parity — the numbers are the feel):
 
@@ -1256,6 +1256,7 @@ and survives it — [`docs/links.md`](links.md)).
 | `StickyContentEdited` (arc 28 / H5) | one **showing** of the sticky editor that changed the note, recorded once from the result callback | `StickyStore.setContent(stickyId, before)` | `StickyStore.setContent(stickyId, after)` |
 | `Page` | insert / delete (`Structural` snapshot, whose `objectIds` are type-agnostic — strokes, headings, links and, since arc 28, texts/shapes/stickies too) | `reconcile(before)`, **restoring** `objectIds` | `reconcile(after)`, deleting them |
 | `PagePasted` (B1) | a paste — the same `Structural` shape, its own kind because `objectIds` runs the **opposite direction** (rows the paste *created*) | `reconcile(before)`, **deleting** `objectIds` | `reconcile(after)`, restoring them |
+| `PageErased` (arc 30 / PE1) | **Erase page** — `pageId` + the `objectIds` `eraseCurrent()` soft-deleted, ids only: `StrokeStore` keeps **no in-memory mirror** (`revive` is a bare `dao.restore` queued on the writer, and `reconcile` already restores a page delete's content ids with the same bare call), so no per-type snapshot and no stroke split is needed — nothing moves and nothing is re-minted, the rows stay where they are, dated out. Recorded only when the list is non-empty | `session.restoreIds(ids)` (one `withTransaction` + `mirror(now)`), `store.drain()`, `refreshToPage(pageId)` | `session.eraseIds(ids)`, drain, refresh — one repaint each way |
 | `TemplateChanged` (arc 12) | a pick in the template library — the two template ids the page moved between (`""` = blank). No drain: it writes one page row and never touches the stroke writer | `applyTemplate(from)` | `applyTemplate(to)` |
 | `ObjectsPasted` (O1) | an object paste — `Deleted` run in reverse, its own kind for `PagePasted`'s reason (a link travels as a `PageLink` snapshot, so undo takes its wrapped children down with it); a transfer paste from the Scratch Pad or (arc 23 / Y3) the Calendar is a strokes-only object paste and records here too, through the one shared `pasteTransferred` body (below) rather than a fifteenth kind | `store.remove` + `headings.erase` + `links.remove` | `store.revive` + `headings.restore` + `links.restore` |
 
@@ -1340,11 +1341,13 @@ See [`docs/scratchpad.md`](scratchpad.md) § The transfers and [`docs/calendar.m
 each sender's own half.
 
 The long-press **asks**; it never acts. `showPageSheet` opens an `ActionSheetDialog` with
-**Copy page · Cut page · Paste page · Page template · Delete page** — Paste present only when the
-clipboard holds a page (**absent, never disabled**: a greyed control is invisible on e-ink). Copy
-and Cut confirm with a toast; Paste opens a second sheet for the placement (before/after); Page
-template opens the template library (below); Delete goes to its confirm dialog. The whole clipboard
-side is [`docs/clipboard.md`](clipboard.md).
+**Copy page · Cut page · Paste page · Page template · Erase page · Delete page · Export page** (seven
+rows since arc 30) — Paste present only when the clipboard holds a page, Export page only while a
+trusted exporter is installed (**absent, never disabled**: a greyed control is invisible on e-ink).
+Copy and Cut confirm with a toast; Paste opens a second sheet for the placement (before/after); Page
+template opens the template library (below); Erase page and Delete go to their confirm dialogs;
+Export page closes the notebook into the Export screen (below). The whole clipboard side is
+[`docs/clipboard.md`](clipboard.md).
 
 The delete confirm is the bare question "Delete this page?" with **no warning body** — a deleted
 page and its ink come straight back via undo (soft delete + `reconcile`), so "cannot be recovered"
@@ -1352,6 +1355,52 @@ would be false (eye-check #2 finding, 2026-08-22). `showPageSheet` calls `paper.
 **ungated**, which is safe here only because the long-press fired through the gesture gate: it
 never arms while the pen is active and re-checks at fire, so we are outside the pen-active window
 the R3 rule protects.
+
+### Erase page (arc 30 / PE1)
+
+**Erase page** is the content-only wipe og's canvas "Page" menu offers: every live object on the
+page goes, the page stays. The confirm is the delete's shape — "Erase this page?", Cancel · Erase,
+a plain `AlertDialog` through `Dialogs.style`, no warning body for the delete's reason (everything
+comes straight back via undo). Erase runs `doErase()` under `runPageOp`: `session.store.drain()`
+**first** (the delete's rule — a stroke commit still queued on the writer would otherwise land after
+the id snapshot and survive as a live orphan), then `NotebookSession.eraseCurrent()`, then one
+`Action.PageErased` if anything went, then **one** `refreshToPage(pageId)` — the scribble / eraser
+rule: the host repaints once after the transaction, never per object.
+
+`eraseCurrent()` is `deleteCurrent()`'s content half alone: `dao().liveDescendantIds(page.id)` —
+the one type-agnostic query that already serves the delete (strokes, headings, links and their
+wrapped children, the page's `document` row, texts, shapes, sticky notes and their children) — and
+one `withTransaction { softDelete(ids, now) }`. The page row, its `order`, its size, its template
+and `currentIndex` are untouched; the page count does not change. **An empty page's Erase is
+silent** — the dialog is still shown (the row is always present while the page exists), but the
+query comes back empty, no transaction runs, nothing is recorded and nothing repaints. The page's
+document row **is** part of the erase (the user's PE1 call): the page document is content of the
+page and goes with the rest, and comes back on undo like everything else.
+
+The row sits between Page template and Delete, icon `ic_erase_page` in `:sn-screen` — og's
+`ic_erase_all` byte-for-byte (Tabler `file-x`, 24 dp / stroke 2 / round; og's `drawable/` was
+checked before drawing a "fresh" one, the standing rule).
+
+### Export page (arc 30 / PE2)
+
+**Export page** is the notebook's Export reachable at page scope — the last row, `ic_download`,
+present only while `exportAvailable`, which is `ExtensionRegistry.exporters(this).isNotEmpty()`
+re-asked on every resume and cached (the sheet is built synchronously on the long-press, and a
+package rarely changes under an open notebook; a stale true costs one dialog on the Export screen,
+never a crash — the cheaper of the two idioms, against the library's per-long-press IO beat).
+
+The door is **close, export, reopen** (decision 5): `exportPage()` takes `displayedPageId` (what
+is on the glass — the R6 rule, never `session.currentIndex` mid-flip), shows the "Opening…" overlay
+and runs `close { startActivity(ExportActivity.intent(…, pageId, returnToNotebook = true)) }`. The
+Export screen reads a **cold** `.soil` (`ExportOpen` guard 2 refuses a held file), so the notebook
+closes exactly as it does for a Recents switch — drain, cover, bookmark, seal — and the launch runs
+after the seal by `close(andThen)`'s ordering. **Not** through `runPageOp`: `close()` takes the
+page-op lock itself, so a page op in flight finishes first anyway, and `closing` refuses everything
+after. `ExportActivity` relaunches this notebook when it finishes, whatever the outcome (exported,
+cancelled, refused, Back), and the reopen lands on the bookmark the close just wrote — this page.
+Undo history dies with the close, as on every close. Seal-in-place was declined (a new state
+machine on a ~3900-line screen). The Export screen's own half — the Scope row, the Soil rule, the
+filename, the reopen — is [`docs/export.md`](export.md) § Scope.
 
 ### Page template (arc 12; the whole library since arc 13)
 
@@ -1582,6 +1631,13 @@ frame), extended from the lasso popup to this bar. A lasso-erase's own repaint i
 frame at the outline's completion, the same boundary exception 2 already covers for a selection;
 the host never repaints from `onLassoErased` beyond what `removeContent` already asks for.
 
+**Arc 30 added no new exception**: the Erase page confirm and the Export page row are rows of the
+page sheet — exception 1's act exactly (a dialog raised from a dialog that is already up, the pen
+demonstrably idle), and the Export door's "Opening…" overlay is exception 3's boundary on the way
+*out* of the screen. The erase's own repaint is **one** `refreshToPage` frame after the
+transaction, the same single frame a page delete or a template pick already presents at a deliberate
+chrome act.
+
 Any new exception needs the same written justification.
 
 ## JVM tests
@@ -1699,6 +1755,14 @@ g-paper's own `LassoHitTest`, already covered there. `:app` **1470 → 1472**; *
 every module; `./gradlew test` exit 0. The engine side (`Tool.LASSO_ERASER`, `onLassoErased`, the
 Ratta trail, the Onyx capture widening — untested this arc, SN is Ratta-only) is
 `~/git/g-paper`'s own suite, not this repo's.
+
+**Arc 30 (page), the notebook's own half:** `NotebookUndoTest` gains the `PageErased` case (ids ride
+the stack; its own kind against `Page` / `Deleted` / `LassoErased`). No `NotebookSession` test:
+the session opens a real Room DB and `FakeSoilDao` cannot drive it — the erase is one existing
+query and one existing soft-delete, walked on the Nomad instead (incl. `am crash` → reopen
+persists the erased state). The export half's pure pieces (`ExportScopeTest`, `ExportNamingTest`)
+are [`docs/export.md`](export.md)'s. `:app` **1472 → 1487**; **2832 → 2847** across every module;
+`./gradlew test` exit 0.
 
 ## Deliberate differences from Paper v0
 

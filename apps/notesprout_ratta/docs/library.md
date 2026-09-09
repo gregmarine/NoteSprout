@@ -310,7 +310,10 @@ library — and the row is **GONE**, never disabled, when none is installed: a c
 work is invisible on e-ink, and a sheet that grew a row after it was already up would move the
 user's finger. A tap hands off to `ExportActivity` with `EXTRA_NOTEBOOK_ID` / `EXTRA_NOTEBOOK_NAME`
 only — never a `File` — latched against a double-tap the same way every other door out of the
-library is. See [`docs/export.md`](export.md) for the screen itself.
+library is. See [`docs/export.md`](export.md) for the screen itself. Since arc 30 / PE2 this is no
+longer the only door: the notebook's page sheet has an **Export page** row that enters the same
+screen at page scope (with a Scope row this door never shows — [`docs/export.md`](export.md) §
+Scope); the library's export is whole-notebook with no control, exactly as before.
 
 **Tags…** (arc 21 / W1) is notebooks-only too, for the same reason Export… is — a folder's sheet
 never even offers it. It sits between Export… and Exclude from backup, and it shows on the same

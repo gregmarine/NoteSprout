@@ -342,15 +342,26 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   user's call — do not re-raise); version stays `0.1.0-ratta`; 1472 `:app` / 2832 tests. Onyx's
   side of the engine change is mechanical and **untested** (SN is Ratta-only). **`docs/notebook.md`
   is the reference; read the standalone `LOOP_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**
-- **Arc 30 "Page" is IN PROGRESS (wizard locked 2026-09-08; PE1 ✅ 2026-09-08 · PE2 ✅ 2026-09-08 · PE3 ⬜)** — page erase +
-  page export (`PARITY_BACKLOG.md` item 5): an **Erase page** row on the page sheet (confirm →
-  one soft-delete transaction over `liveDescendantIds`, page row / order / size / template kept,
-  `Action.PageErased` replayed by id) and an **Export page** row that closes the notebook, runs
-  `ExportActivity` seeded to that page (a This page · Whole notebook latch, present only from that
-  door; Soil hidden at page scope; the host filters the `TYPE_PAGE` rows before every bake —
-  `ExportSpec` and every exporter untouched) and relaunches the notebook on finish. Host-only, no
-  point, no API bump, no new row, no code review. **Read the standalone `PAGE_PLAN.md`, not
-  `RATTA_PLAN.md`, for any work on it.**
+- **Arc 30 "Page" is COMPLETE + FROZEN (PE1–PE3 landed 2026-09-08; wizard locked 2026-09-08)** —
+  page erase + page export (`PARITY_BACKLOG.md` item 5, now DONE): an **Erase page** row on the
+  page sheet (confirm → `store.drain()` → one soft-delete transaction over `liveDescendantIds`,
+  every kind incl. the page's document row, page row / order / size / template kept, an empty page
+  erases silently, `Action.PageErased(pageId, ids)` replayed by id — `StrokeStore` keeps no
+  mirror, so a bare DAO restore is the road; one `refreshToPage` repaint) and an **Export page**
+  row (last, only while an exporter is installed) that is **close, export, reopen**: the notebook
+  closes as for a Recents switch, `ExportActivity` opens with `EXTRA_PAGE_ID` +
+  `EXTRA_RETURN_TO_NOTEBOOK`, and its `finish()` (overridden once) relaunches the notebook
+  whatever the outcome, landing on the bookmark = that page. On the screen a host-owned **Scope**
+  radio row (This page · Whole notebook — first row, above Format; GONE from the library door and
+  when nothing serves page scope), Soil **hidden** at page scope, `hasDocument` derived from scope,
+  filename `<notebook> - <heading>.<ext>` by the Contents rule else `<notebook> - page N.<ext>`
+  (ASCII hyphen; `ExportNaming.pageStem`). Scope is `export/ExportScope`'s **host-side page-id
+  filter** run ahead of `ExportRender` / `DocumentPdfRender` / `ExportText`'s existing plans —
+  `ExportSpec`, every exporter and the seam untouched, so item 6's image exporter inherits it.
+  Host-only, no point, no API bump, no new row, no code review (the user's call — do not
+  re-raise); version stays `0.1.0-ratta`; 1487 `:app` / 2847 tests. **`docs/notebook.md` (§ Erase
+  page, § Export page, § Undo) + `docs/export.md` (§ Scope) are the reference; read the standalone
+  `PAGE_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by

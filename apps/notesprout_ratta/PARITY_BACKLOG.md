@@ -211,7 +211,19 @@ as a bug (`apps/notesprout_ratta/CLAUDE.md`, `docs/scratchpad.md`). Shared ink h
 
 ---
 
-## 5. Page erase and page export — 🔄 IN PROGRESS (arc 30 "Page", `PAGE_PLAN.md`, wizard locked 2026-09-08)
+## 5. Page erase and page export — ✅ DONE (arc 30 "Page", PE1–PE3 landed 2026-09-08; reference `docs/notebook.md` § Erase page / § Export page + `docs/export.md` § Scope; ledger `PAGE_PLAN.md`)
+
+**As shipped:** two page-sheet rows. **Erase page** (between Page template and Delete) — confirm →
+one soft-delete transaction over `liveDescendantIds` (every kind, the page's document row
+included), page row / order / size / template kept, `Action.PageErased(pageId, ids)` replayed by
+id, an empty page erases silently. **Export page** (last, only while an exporter is installed) —
+close, export, reopen: the notebook closes as for a Recents switch, `ExportActivity` opens seeded to
+that page with a host-owned Scope row (This page · Whole notebook — first row, above Format; GONE
+from the library door), Soil hidden at page scope, `ExportScope`'s page-id filter ahead of every
+render (`ExportSpec` and every exporter untouched), filename `<notebook> - <heading>.<ext>` by the
+Contents rule else `<notebook> - page N.<ext>`, and `finish()` relaunches the notebook whatever the
+outcome. Host-only, no point, no API bump, no new row, no code review. 1472 → 1487 `:app` / 2832 →
+2847 tests. Item 6's page-scope half now rides this seam.
 
 **User's call:** "Page erase and page export are needed."
 

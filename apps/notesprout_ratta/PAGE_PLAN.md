@@ -6,9 +6,11 @@ the cross-session memory for the arc: read it whole at every phase start, togeth
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this file
 is enough. `LOOP_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — wizard locked 2026-09-08.** PE1 ✅ (2026-09-08) · PE2 ✅ (2026-09-08) · PE3 ⬜. When frozen the
-references will be `docs/notebook.md` (the page sheet, the erase, the undo row) and `docs/export.md`
-(the scope seam, the notebook door).
+**Status: ✅ ARC COMPLETE + FROZEN 2026-09-08.** PE1 ✅ · PE2 ✅ · PE3 ✅ (all 2026-09-08; wizard
+locked 2026-09-08). The references are `docs/notebook.md` (§ Erase page, § Export page, the undo
+row, frame-silence, tests) and `docs/export.md` (§ Scope — the door, the `EXTRA_*` table, the
+filter, the Soil rule, the filename, the reopen). This file is the ledger; nothing here is
+re-opened without a user decision.
 
 **Phase code:** **PE** — two letters, the arc-29 precedent (every single letter is spoken for).
 
@@ -226,7 +228,7 @@ builds the scope seam they will ride on and nothing more.
   export (cloud offline) → problem dialog → the notebook reopens; the library door unchanged (no
   latch, Soil present); with no exporter installed the sheet has no Export row.
 
-### ⬜ PE3 — Docs, ledger, freeze (Sonnet docs in parallel · Fable read-back · no code review, no code)
+### ✅ PE3 — Docs, ledger, freeze (landed 2026-09-08) (Fable docs directly · no code review, no code)
 
 - `docs/notebook.md`: the page sheet's seven rows, the erase under § Page operations, the undo
   table's `PageErased` row, the frame-silence ledger entry, the JVM test list.
@@ -364,3 +366,20 @@ ask.
   filename, Document at page scope, a failed cloud export → problem dialog → the notebook reopens,
   and the no-exporter sheet (no Export row). PE2 walk complete.
 
+### PE3 — Docs, ledger, freeze · Outcome (2026-09-08)
+
+- **Phase-start answer:** version stays `0.1.0-ratta`. No code, no test change (1487 `:app` / 2847).
+- `docs/notebook.md`: the gesture row and the page-sheet paragraph now list all seven rows; new
+  § Erase page (the confirm, the drain-first rule, `eraseCurrent()`, the silent empty page, the
+  document row, the icon) and § Export page (the door, `exportAvailable`, close-export-reopen, why
+  not `runPageOp`); the undo table's `PageErased` row (ids only — the no-mirror finding); "Arc 30
+  added no new exception" in the frame-silence ledger; the arc's test paragraph.
+- `docs/export.md`: status line; `EXTRA_*` in the screen intro; the Scope row bullet beside Source
+  and Destination; new § Scope (the door, the extras table, `ExportScope`'s four rules, the screen's
+  described-vs-candidates cut, endnotes / page-document behaviour, the filename rule, what did not
+  change); a failure-table row for a vanished page; Related.
+- `docs/objects.md`: one sentence — Erase page takes every kind. `docs/library.md`: the library
+  door is no longer the only one (the `ExportActivity` comment was already corrected at PE2).
+- `PARITY_BACKLOG.md` item 5 → ✅ DONE with the as-shipped summary; `RATTA_PLAN.md` header ("Arcs
+  1–30 are all frozen"); app + root `CLAUDE.md`; memory. Docs written by Fable directly (five files,
+  all well-scoped — no Sonnet fan-out needed). **Frozen.**
