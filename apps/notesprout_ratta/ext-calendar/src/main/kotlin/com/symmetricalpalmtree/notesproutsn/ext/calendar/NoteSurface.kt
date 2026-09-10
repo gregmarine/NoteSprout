@@ -237,7 +237,7 @@ class NoteSurface(
         if (!shown) return NoteWrite.NONE
         if (landedUnder == document.pageId) {
             val minted = document.strokes.map { it.id }.filter { it !in loadedIds }
-            return NoteWrite(document.pendingStatements(), minted)
+            return NoteWrite.inPlace(document.pendingStatements(), minted)
         }
         return NoteWrite.copy(document.entries(), landedUnder, CalendarStore::newId)
     }

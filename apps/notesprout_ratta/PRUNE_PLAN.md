@@ -7,7 +7,7 @@ the cross-session memory for the arc: read it whole at every phase start, togeth
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `FOCUS_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 🔄 (M1 ✅ + M2 ✅ + M3 ✅ + M4 ✅ 2026-09-09, all by Fable at the user's call; M5–M9 ⬜) · P3 ⬜ · P4 ⬜.**
+**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 🔄 (M1 ✅ + M2 ✅ + M3 ✅ + M4 ✅ + M5 ✅ 2026-09-09, all by Fable at the user's call; M6–M9 ⬜) · P3 ⬜ · P4 ⬜.**
 Baseline before the arc: 1626 `:app` / 3033 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump, no schema change, no g-paper change, no new
 module, no new dependency. **The notebook's bottom-strip pager (`NotebookActivity.kt` /
@@ -475,3 +475,27 @@ explanation and an `AskUserQuestion` never share one turn — explain, wait, the
   `docs/calendar.md` § og's three recurring scopes (the FOLLOWING bullet), the test table. Gates:
   314 `:ext-calendar` tests (312 + 2), all green; `:ext-calendar` release compiles; NUL scan
   clean. No walk (JVM-pinned). Next: M5 (`EventStore` statement order — mutating statements last).
+- **2026-09-09 — P2 / M5 ✅ (Fable — again at the user's call).** Failing tests first: four
+  `EventStoreTest` cases (a THIS override, a FOLLOWING split and an existing event's save that fail
+  in batch 2 each leave the original byte-identical; the rewrite is always the whole last batch)
+  plus two `EventWritesTest` cases (`EventWrite.batches`, `NoteWrite.inPlace`) and the flipped
+  order assertions — compile-red before the fix. **As built:** `EventWrites` answers an
+  `EventWrite(additions, noteMutations, rewrites)` — the `INSERT OR IGNORE` row + the note's
+  additions first (the FK needs the row; a no-op on an existing event), the note's mutations next,
+  the row's update + child rewrites last, and at THIS / FOLLOWING the original's exception /
+  truncation appended **last of all** (`rewriting`). `EventWrite.batches` splits the additions on
+  their own and keeps the rewrites whole in the last batch (riding the note mutations' last batch
+  when they fit, else their own — an over-cap rewrite set is refused whole by the host, never
+  torn). `NoteWrite` is now `(additions, mutations, mintedStrokeIds)`: `inPlace` partitions the
+  op log by the minted set via `NoteSql.isPutOfAny` (a re-put of a moved loaded stroke is a
+  mutation, as a drop is), `copy` is all additions. `InkStore.compensatedBatches` takes pre-split
+  batches (the flat `compensated` delegates to it); `EventStore.write` uses it. **One judgment
+  beyond the plan's words:** the note's own mutations are best-effort past the cap (a landed batch
+  of drops stays landed; the op log is still pending so the next Save converges) — pinning them
+  behind the rewrite would put a lasso-move of a 4 MiB note into the "must be one batch" set and
+  make the save unsaveable, which is worse than the finding. No `check` on the rewrite width (the
+  host's refusal of an over-cap payload is the honest failure). Docs: `docs/calendar.md` § The
+  events half (the statement-order paragraph), the failure table (two rows), the test table.
+  Gates: 320 `:ext-calendar` (314 + 6), 52 `:ext-ink`, 54 `:ext-scratchpad`, all green;
+  `:ext-calendar` + `:ext-ink` release compile; NUL scan clean. No walk (JVM-pinned). Next: M6
+  (`NotebookActivity` — sticky / link soft-deletes enqueued synchronously).

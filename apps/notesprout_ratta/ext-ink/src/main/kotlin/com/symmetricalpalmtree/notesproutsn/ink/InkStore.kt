@@ -54,8 +54,12 @@ abstract class InkStore(
 
     /** [run], but a failure after at least one batch has landed runs [compensation] first, so a
      *  multi-batch placement keeps the "nothing was placed" promise a single transaction gives for free. */
-    protected fun compensated(statements: List<Statement>, compensation: () -> List<Statement>) {
-        val batches = StoreBatches.split(statements, maxPayloadBytes, maxBatchStatements)
+    protected fun compensated(statements: List<Statement>, compensation: () -> List<Statement>) =
+        compensatedBatches(StoreBatches.split(statements, maxPayloadBytes, maxBatchStatements), compensation)
+
+    /** [compensated] over batches the caller split itself — for a write whose last batch must hold
+     *  a particular tail whole (the calendar's event rewrite, arc 34 / M5). */
+    protected fun compensatedBatches(batches: List<List<Statement>>, compensation: () -> List<Statement>) {
         var landed = 0
         try {
             for (batch in batches) {

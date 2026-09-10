@@ -15,12 +15,33 @@ import com.symmetricalpalmtree.notesproutsn.extension.Statement
  * *this occurrence* override or a new *following* series — the whole note is **copied** with fresh
  * stroke ids ([copy]), because `note_stroke.id` is the primary key and a re-parented row would
  * steal the original series' note rather than copy it.
+ *
+ * **Two halves (arc 34 / M5).** [additions] are the statements that only add rows this save
+ * minted — a put of a minted stroke, or the whole copy under a new id — and [mutations] are the
+ * op log's statements over rows that existed before the save: a drop of a loaded stroke, or a
+ * re-put of one the lasso moved. [EventWrites.save] sends every addition ahead of every mutation,
+ * and the event row's own rewrite behind both, so a multi-batch write that fails part-way leaves
+ * what existed as it was (the additions are what the compensation gives back).
  */
-class NoteWrite(val statements: List<Statement>, val mintedStrokeIds: List<String>) {
+class NoteWrite(val additions: List<Statement>, val mutations: List<Statement>, val mintedStrokeIds: List<String>) {
+
+    /** Both halves in the order they are sent: additions first. */
+    val statements: List<Statement> get() = additions + mutations
 
     companion object {
         /** No note at all — a fields-only save. */
-        val NONE = NoteWrite(emptyList(), emptyList())
+        val NONE = NoteWrite(emptyList(), emptyList(), emptyList())
+
+        /**
+         * The note's pending op log, written **in place** under the id it was loaded for: a
+         * statement naming a stroke in [minted] is an addition, every other one — a drop, or a
+         * re-put of a loaded stroke — a mutation. Order within each half is the log's own.
+         */
+        fun inPlace(statements: List<Statement>, minted: List<String>): NoteWrite {
+            val mintedSet = minted.toHashSet()
+            val (additions, mutations) = statements.partition { NoteSql.isPutOfAny(it, mintedSet) }
+            return NoteWrite(additions, mutations, minted)
+        }
 
         /**
          * The whole note — [entries], `(order, stroke)` in writing order — put under [eventId] with
@@ -28,6 +49,6 @@ class NoteWrite(val statements: List<Statement>, val mintedStrokeIds: List<Strin
          * under an id this save created, whose compensation is the row's own delete.
          */
         fun copy(entries: List<Pair<Long, Stroke>>, eventId: String, mintId: () -> String): NoteWrite =
-            NoteWrite(entries.map { (order, s) -> NoteSql.putStroke(eventId, order, s.copy(id = mintId())) }, emptyList())
+            NoteWrite(entries.map { (order, s) -> NoteSql.putStroke(eventId, order, s.copy(id = mintId())) }, emptyList(), emptyList())
     }
 }

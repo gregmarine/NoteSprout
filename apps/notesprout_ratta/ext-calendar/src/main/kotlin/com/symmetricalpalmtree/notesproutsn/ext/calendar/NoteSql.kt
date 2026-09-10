@@ -1,6 +1,7 @@
 package com.symmetricalpalmtree.notesproutsn.ext.calendar
 
 import com.symmetricalpalmtree.gpaper.core.model.Stroke
+import com.symmetricalpalmtree.notesproutsn.extension.Cell
 import com.symmetricalpalmtree.notesproutsn.extension.Statement
 import com.symmetricalpalmtree.notesproutsn.ink.InkDocument
 import com.symmetricalpalmtree.notesproutsn.ink.StrokeBlob
@@ -20,16 +21,23 @@ import com.symmetricalpalmtree.notesproutsn.ink.StrokeBlob
  */
 object NoteSql : InkDocument.StrokeSql {
 
+    private const val PUT_STROKE_HEAD = "INSERT OR REPLACE INTO note_stroke (id, eventId, \"order\", color, width, style, blob)"
+
     // ── Writes ───────────────────────────────────────────────────────────────
 
     override fun putStroke(pageId: String, order: Long, stroke: Stroke): Statement =
         Statement(
-            "INSERT OR REPLACE INTO note_stroke (id, eventId, \"order\", color, width, style, blob) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "$PUT_STROKE_HEAD VALUES (?, ?, ?, ?, ?, ?, ?)",
             stroke.id, pageId, order, stroke.color.toLong(), stroke.width.toDouble(), stroke.style.name, StrokeBlob.encode(stroke),
         )
 
     override fun dropStroke(id: String): Statement =
         Statement("DELETE FROM note_stroke WHERE id = ?", id)
+
+    /** Whether [s] is a [putStroke] of a stroke in [ids] — the one shape that only adds a row
+     *  (arc 34 / M5, [NoteWrite.inPlace]). The id is the put's first bind. */
+    fun isPutOfAny(s: Statement, ids: Set<String>): Boolean =
+        s.sql.startsWith(PUT_STROKE_HEAD) && (s.args.firstOrNull() as? Cell.Text)?.value in ids
 
     /** Empty an event's note, keeping the event — what erasing the whole note comes to. */
     fun clearStrokes(eventId: String): Statement =

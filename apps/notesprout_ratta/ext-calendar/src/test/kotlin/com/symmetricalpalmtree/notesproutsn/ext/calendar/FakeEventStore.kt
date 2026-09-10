@@ -213,7 +213,7 @@ class FakeEventStore : IExtensionStore {
 
     /** Put [e] in as the store would — the same statements [EventStore.save] sends. */
     fun seed(e: Event, now: Long = e.updatedAt, noteStatements: List<Statement> = emptyList()) {
-        for (s in EventWrites.save(e, now, noteStatements)) apply(s)
+        for (s in EventWrites.save(e, now, NoteWrite.inPlace(noteStatements, emptyList())).statements) apply(s)
     }
 
     /** A note stroke row, written as the note's own statement would. */

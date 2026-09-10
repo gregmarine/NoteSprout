@@ -1,17 +1,65 @@
 package com.symmetricalpalmtree.notesproutsn.ext.calendar
 
 import com.symmetricalpalmtree.notesproutsn.extension.Statement
+import com.symmetricalpalmtree.notesproutsn.ink.StoreBatches
 import java.time.LocalDate
+
+/**
+ * One event write in three parts, in the order they are sent (arc 34 / M5):
+ *
+ * - [additions] — statements that only **add rows this write minted**: the event row's
+ *   `INSERT OR IGNORE` (a no-op on an existing event; the children's foreign key needs it first),
+ *   then the note's additions ([NoteWrite.additions]). These are exactly what a failed
+ *   multi-batch write's compensation gives back — the minted row by id, or the minted strokes;
+ * - [noteMutations] — the note's op-log statements over strokes that existed before (drops,
+ *   re-puts of moved strokes);
+ * - [rewrites] — everything that changes a **pre-existing event row**: the row's field update
+ *   and its three child sets, and at THIS / FOLLOWING scope the original's exception or truncation.
+ *
+ * [batches] keeps [rewrites] **whole in the last batch**, so a failure in any batch ahead of it
+ * leaves the original as it was, and a failure inside it lands nothing — the promise the editor's
+ * "Nothing was changed" makes. The note's mutations are best-effort past the cap (a batch of them
+ * that landed before a later one failed stays landed; the op log is still pending, so the next
+ * Save converges).
+ */
+class EventWrite(val additions: List<Statement>, val noteMutations: List<Statement>, val rewrites: List<Statement>) {
+
+    /** Every statement in send order. */
+    val statements: List<Statement> get() = additions + noteMutations + rewrites
+
+    /**
+     * The `exec` batches: the additions packed on their own, then the note's mutations and the
+     * rewrites packed together — unless that packing would split the rewrites, in which case the
+     * rewrites get a batch to themselves. Realistically the rewrites are a dozen statements; a set
+     * wider than one batch (tens of thousands of exception rows) is sent as one over-cap payload the
+     * host refuses whole, never as a torn pair.
+     */
+    fun batches(maxBytes: Int, maxStatements: Int): List<List<Statement>> {
+        val head = StoreBatches.split(additions, maxBytes, maxStatements)
+        val packed = StoreBatches.split(noteMutations + rewrites, maxBytes, maxStatements)
+        val tail =
+            if (rewrites.isEmpty() || packed.last().size >= rewrites.size) packed
+            else StoreBatches.split(noteMutations, maxBytes, maxStatements) + listOf(rewrites)
+        return head + tail
+    }
+
+    /** The same write with [more] appended to the rewrites — an original's exception or truncation. */
+    fun rewriting(more: List<Statement>): EventWrite = EventWrite(additions, noteMutations, rewrites + more)
+}
 
 /**
  * What a save, a delete and the three recurring **scopes** come to, as statement lists (arc 24 /
  * Z1) — pure, so the shape of every write is pinned by `EventWritesTest` without a store.
  *
- * **Order inside a list is load-bearing.** The event row's upsert leads (the children's foreign key
- * needs its parent), then each child set is emptied and rewritten, then the note's own statements
- * last. Under the batch cap that whole list is ONE transaction, which is what makes "Cancel wrote
+ * **Order inside a write is load-bearing** ([EventWrite]): the event row's `INSERT OR IGNORE`
+ * leads (the children's foreign key needs its parent) with the note's additions behind it, then
+ * the note's mutations, then the row's own rewrite — its fields and each child set emptied and
+ * rewritten — and, at THIS / FOLLOWING scope, the original's exception or truncation **last of
+ * all**. Under the batch cap the whole write is ONE transaction, which is what makes "Cancel wrote
  * nothing" and "Save wrote everything" both true; past the cap the store's `compensated` write
- * keeps the promise by hand.
+ * keeps the promise by hand, and that order is what keeps the original untouched while it does
+ * (arc 34 / M5 — before it the original's exception / truncation / field rewrite led the list, so a
+ * failure in a later batch left it mutated under a dialog that said nothing had changed).
  *
  * **Every occurrence is computed on the ORIGINAL event's rule** (og's rule, and the only one that
  * makes sense): the person tapped an occurrence of the series as it *is*, and an edit that moved
@@ -22,22 +70,20 @@ import java.time.LocalDate
 object EventWrites {
 
     /**
-     * A whole event as it should now read: the upsert, its three child sets rewritten, then
-     * [noteStatements] — the note's stroke ops, which the caller has already built against
-     * [NoteSql]. Idempotent end to end, so a retried batch converges on the same rows.
+     * A whole event as it should now read, as an [EventWrite]: the insert and [note]'s additions,
+     * [note]'s mutations, then the row's update and its three child sets rewritten. Idempotent end
+     * to end, so a retried batch converges on the same rows.
      */
-    fun save(e: Event, now: Long, noteStatements: List<Statement> = emptyList()): List<Statement> {
-        val out = ArrayList<Statement>(8 + noteStatements.size)
-        out += EventSql.insertEvent(e, now)
-        out += EventSql.updateEvent(e, now)
-        out += EventSql.clearWeekdays(e.id)
-        for (d in e.recurrence?.weekdays.orEmpty().sorted()) out += EventSql.insertWeekday(e.id, d)
-        out += EventSql.clearExceptions(e.id)
-        for (d in e.exceptions.sorted()) out += EventSql.insertException(e.id, d)
-        out += EventSql.clearReminders(e.id)
-        for (r in e.reminders) out += EventSql.insertReminder(e.id, r.amount, r.unit)
-        out += noteStatements
-        return out
+    fun save(e: Event, now: Long, note: NoteWrite = NoteWrite.NONE): EventWrite {
+        val rewrites = ArrayList<Statement>(8)
+        rewrites += EventSql.updateEvent(e, now)
+        rewrites += EventSql.clearWeekdays(e.id)
+        for (d in e.recurrence?.weekdays.orEmpty().sorted()) rewrites += EventSql.insertWeekday(e.id, d)
+        rewrites += EventSql.clearExceptions(e.id)
+        for (d in e.exceptions.sorted()) rewrites += EventSql.insertException(e.id, d)
+        rewrites += EventSql.clearReminders(e.id)
+        for (r in e.reminders) rewrites += EventSql.insertReminder(e.id, r.amount, r.unit)
+        return EventWrite(listOf(EventSql.insertEvent(e, now)) + note.additions, note.mutations, rewrites)
     }
 
     /** The whole event, cascade and all. */
@@ -64,11 +110,11 @@ object EventWrites {
     /**
      * Editing as seen on [viewedDay], at [scope]. Null means nothing to do, as in [deleteWithScope].
      *
-     * - **[Scope.THIS]** — the occurrence leaves the series (an exception at its *original* start)
-     *   and comes back as a standalone one-off under [newId], carrying the edited fields, the
-     *   reminders **and the note**. Changing the date in the editor therefore *moves* just that
-     *   occurrence;
-     * - **[Scope.FOLLOWING]** — the original ends the day before the occurrence and a fresh series
+     * - **[Scope.THIS]** — the occurrence leaves the series (an exception at its *original* start,
+     *   written last) and comes back as a standalone one-off under [newId], carrying the edited
+     *   fields, the reminders **and the note**. Changing the date in the editor therefore *moves*
+     *   just that occurrence;
+     * - **[Scope.FOLLOWING]** — the original ends the day before the occurrence (written last) and a fresh series
      *   starts under [newId] carrying the exceptions dated **at or after** the split (the truncated
      *   part is the head; an occurrence removed with THIS from the tail stays removed — a re-anchored
      *   tail carries them too, where they simply match nothing). A COUNT rule the editor handed back **unchanged** carries the *remaining* count (the original's
@@ -83,30 +129,30 @@ object EventWrites {
         viewedDay: LocalDate,
         newId: String,
         now: Long,
-        noteStatements: List<Statement> = emptyList(),
-    ): List<Statement>? {
+        note: NoteWrite = NoteWrite.NONE,
+    ): EventWrite? {
         if (original == null || !original.recurring || scope == Scope.ALL) {
-            return editSeries(original, edited, viewedDay, now, noteStatements)
+            return editSeries(original, edited, viewedDay, now, note)
         }
         val occurrence = Recurrence.occurrenceStartCovering(original, viewedDay) ?: return null
         return when (scope) {
-            Scope.THIS -> exceptionOn(original.id, occurrence, now) +
-                save(edited.copy(id = newId, recurrence = null, exceptions = emptySet(), createdAt = now), now, noteStatements)
+            Scope.THIS ->
+                save(edited.copy(id = newId, recurrence = null, exceptions = emptySet(), createdAt = now), now, note)
+                    .rewriting(exceptionOn(original.id, occurrence, now))
 
             Scope.FOLLOWING ->
-                if (!occurrence.isAfter(original.startDate)) editSeries(original, edited, viewedDay, now, noteStatements)
-                else listOf(EventSql.truncateEvent(original.id, occurrence.minusDays(1), now)) +
-                    save(
-                        edited.copy(
-                            id = newId,
-                            recurrence = remainingRule(original, edited, occurrence),
-                            exceptions = original.exceptions.filterTo(HashSet()) { !it.isBefore(occurrence) },
-                            createdAt = now,
-                        ),
-                        now, noteStatements,
-                    )
+                if (!occurrence.isAfter(original.startDate)) editSeries(original, edited, viewedDay, now, note)
+                else save(
+                    edited.copy(
+                        id = newId,
+                        recurrence = remainingRule(original, edited, occurrence),
+                        exceptions = original.exceptions.filterTo(HashSet()) { !it.isBefore(occurrence) },
+                        createdAt = now,
+                    ),
+                    now, note,
+                ).rewriting(listOf(EventSql.truncateEvent(original.id, occurrence.minusDays(1), now)))
 
-            Scope.ALL -> editSeries(original, edited, viewedDay, now, noteStatements)   // unreachable
+            Scope.ALL -> editSeries(original, edited, viewedDay, now, note)   // unreachable
         }
     }
 
@@ -138,15 +184,15 @@ object EventWrites {
         edited: Event,
         viewedDay: LocalDate,
         now: Long,
-        noteStatements: List<Statement> = emptyList(),
-    ): List<Statement> {
+        note: NoteWrite = NoteWrite.NONE,
+    ): EventWrite {
         val exceptions = if (edited.recurrence != null) original?.exceptions.orEmpty() else emptySet()
         val prefillStart = original?.takeIf { it.recurring }?.let { Recurrence.occurrenceStartCovering(it, viewedDay) }
         val untouched = original != null && prefillStart != null &&
             edited.startDate == prefillStart && edited.endDate == prefillStart.plusDays(original.spanDays)
         val anchored =
             if (untouched) edited.copy(startDate = original.startDate, endDate = original.endDate) else edited
-        return save(anchored.copy(exceptions = exceptions), now, noteStatements)
+        return save(anchored.copy(exceptions = exceptions), now, note)
     }
 
     /**

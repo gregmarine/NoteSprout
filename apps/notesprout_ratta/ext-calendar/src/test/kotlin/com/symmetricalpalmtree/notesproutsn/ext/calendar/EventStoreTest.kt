@@ -249,7 +249,7 @@ class EventStoreTest {
     /** A note that records which id it was asked for and writes one stroke under it. */
     private fun noteAsking(asked: MutableList<String>, strokeId: String = "s1"): (String) -> NoteWrite = { id ->
         asked += id
-        NoteWrite(listOf(NoteSql.putStroke(id, 0L, stroke(strokeId))), listOf(strokeId))
+        NoteWrite.inPlace(listOf(NoteSql.putStroke(id, 0L, stroke(strokeId))), listOf(strokeId))
     }
 
     @Test
@@ -321,7 +321,7 @@ class EventStoreTest {
         val minted = listOf("s1", "s2")
         val thrown = runCatching {
             store(fake, batchCap = 3).edit(Scope.ALL, series(), series().copy(title = "Moved"), sep1.plusDays(7), "new1") { id ->
-                NoteWrite(minted.mapIndexed { i, s -> NoteSql.putStroke(id, (i + 1).toLong(), stroke(s, i + 1)) }, minted)
+                NoteWrite.inPlace(minted.mapIndexed { i, s -> NoteSql.putStroke(id, (i + 1).toLong(), stroke(s, i + 1)) }, minted)
             }
         }.exceptionOrNull()
         assertTrue("was $thrown", thrown is StoreUnavailable)
@@ -358,7 +358,7 @@ class EventStoreTest {
         val minted = listOf("s1", "s2")
         val notes = minted.mapIndexed { i, id -> NoteSql.putStroke("e1", (i + 1).toLong(), stroke(id, i + 1)) }
         val thrown = runCatching {
-            store(fake, batchCap = 3).save(e, isNew = false, note = NoteWrite(notes, minted))
+            store(fake, batchCap = 3).save(e, isNew = false, note = NoteWrite.inPlace(notes, minted))
         }.exceptionOrNull()
         assertTrue("was $thrown", thrown is StoreUnavailable)
 
@@ -366,6 +366,108 @@ class EventStoreTest {
         assertEquals(List(2) { "DELETE FROM note_stroke WHERE id = ?" }, compensation.map { it.sql })
         assertEquals(minted, compensation.map { text(it.args[0]) })
         assertTrue("the event itself stays", fake.events.containsKey("e1"))
+        assertEquals(listOf("old"), fake.noteStrokes.keys.toList())
+    }
+
+    // ── The original is never mutated by a write that fails (arc 34 / M5) ───
+
+    /** The original series as seeded, so a test can assert it byte-for-byte after a failed write. */
+    private fun originalRow(fake: FakeEventStore) = fake.events["e1"]!!.toList()
+
+    @Test
+    fun aThisOverrideThatFailsPartWayLeavesTheSeriesUntouched() {
+        val fake = FakeEventStore()
+        fake.seed(series())
+        val before = originalRow(fake)
+        // Batch 1 (the new row + two copied strokes) lands, batch 2 fails: the original's
+        // exception + stamp must not have gone ahead of them.
+        fake.failExecAt = 1
+
+        var n = 0
+        val note: (String) -> NoteWrite = { id ->
+            NoteWrite.copy(listOf(0L to stroke("a"), 1L to stroke("b", 1), 2L to stroke("c", 2)), id) { "m-${n++}" }
+        }
+        val thrown = runCatching {
+            store(fake, batchCap = 3).edit(Scope.THIS, series(), series().copy(title = "Moved"), sep1.plusDays(7), "new1", note)
+        }.exceptionOrNull()
+        assertTrue("was $thrown", thrown is StoreUnavailable)
+
+        assertEquals("no exception was written on the series", null, fake.exceptions["e1"])
+        assertEquals("the series row is byte-identical", before, originalRow(fake))
+        assertFalse("the half-landed override is gone", fake.events.containsKey("new1"))
+        assertTrue("and its copied strokes with it", fake.noteStrokes.isEmpty())
+    }
+
+    @Test
+    fun aFollowingSplitThatFailsPartWayLeavesTheSeriesUntouched() {
+        val fake = FakeEventStore()
+        fake.seed(series())
+        val before = originalRow(fake)
+        fake.failExecAt = 1
+
+        var n = 0
+        val note: (String) -> NoteWrite = { id ->
+            NoteWrite.copy(listOf(0L to stroke("a"), 1L to stroke("b", 1), 2L to stroke("c", 2)), id) { "m-${n++}" }
+        }
+        val thrown = runCatching {
+            store(fake, batchCap = 3).edit(Scope.FOLLOWING, series(), series().copy(title = "Moved"), sep1.plusDays(7), "new1", note)
+        }.exceptionOrNull()
+        assertTrue("was $thrown", thrown is StoreUnavailable)
+
+        assertEquals("the series was not truncated", before, originalRow(fake))
+        assertFalse(fake.events.containsKey("new1"))
+    }
+
+    @Test
+    fun anExistingEventsFailedSaveLeavesItsFieldsAndChildrenUntouched() {
+        val fake = FakeEventStore()
+        val e = testEvent(
+            id = "e1", title = "Dentist", start = sep1,
+            recurrence = RecurrenceRule(Freq.WEEKLY, weekdays = setOf(1, 3)),
+            reminders = listOf(Reminder(1, ReminderUnit.DAYS)),
+        )
+        fake.seed(e)
+        fake.seedNote("e1", 0L, stroke("old"))
+        val before = originalRow(fake)
+        fake.failExecAt = 1
+
+        val minted = listOf("s1", "s2", "s3")
+        val notes = minted.mapIndexed { i, id -> NoteSql.putStroke("e1", (i + 1).toLong(), stroke(id, i + 1)) }
+        val thrown = runCatching {
+            store(fake, batchCap = 3).save(
+                e.copy(title = "Moved", recurrence = RecurrenceRule(Freq.WEEKLY, weekdays = setOf(5)), reminders = emptyList()),
+                isNew = false,
+                note = NoteWrite.inPlace(notes, minted),
+            )
+        }.exceptionOrNull()
+        assertTrue("was $thrown", thrown is StoreUnavailable)
+
+        assertEquals("the row still reads as it did", before, originalRow(fake))
+        assertEquals("its weekdays too", setOf(1L, 3L), fake.weekdays["e1"])
+        assertEquals("and its reminders", setOf(1L to "DAYS"), fake.reminders["e1"])
+        assertEquals("only the minted strokes were given back", listOf("old"), fake.noteStrokes.keys.toList())
+    }
+
+    @Test
+    fun theRowRewriteIsAlwaysTheWholeLastBatch() {
+        val fake = FakeEventStore()
+        fake.seed(series())
+        fake.seedNote("e1", 0L, stroke("old"))
+
+        // Seven note mutations (drops of loaded strokes) + a four-statement row rewrite under a cap
+        // of 5: packed greedily the rewrite would straddle two batches; it must not.
+        val dropped = List(7) { "old$it" }
+        dropped.forEachIndexed { i, id -> fake.seedNote("e1", (i + 1).toLong(), stroke(id)) }
+        val note = NoteWrite.inPlace(dropped.map { NoteSql.dropStroke(it) }, emptyList())
+        store(fake, batchCap = 5).save(series().copy(title = "Renamed"), isNew = false, note = note)
+
+        val last = fake.execs.last().map { it.sql }
+        assertTrue("was $last", last.first().startsWith("UPDATE event SET type = "))
+        assertEquals(
+            listOf("DELETE FROM event_weekday WHERE eventId = ?", "DELETE FROM event_exception WHERE eventId = ?", "DELETE FROM event_reminder WHERE eventId = ?"),
+            last.drop(1).take(3),
+        )
+        assertTrue("every drop went ahead of it", fake.execs.dropLast(1).flatten().all { it.sql.startsWith("DELETE FROM note_stroke") || it.sql.startsWith("INSERT OR IGNORE INTO event (") })
         assertEquals(listOf("old"), fake.noteStrokes.keys.toList())
     }
 

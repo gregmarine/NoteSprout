@@ -163,13 +163,16 @@ class EventStore(
      * the compensation is depends on what this save was: a **new** event that only half landed is
      * not an event, so it is deleted by id and the cascade takes whatever children did land; an
      * **existing** event keeps its row and gives back only the strokes this save minted, one
-     * `DELETE` each (never an `IN (…)` list — the calendar's placement rule).
+     * `DELETE` each (never an `IN (…)` list — the calendar's placement rule). The batches go in
+     * [EventWrite]'s order — additions, the note's mutations, the row's rewrite whole and last — so
+     * whatever batch fails, the event as it was before the write is what the compensation leaves
+     * (arc 34 / M5).
      */
     fun save(e: Event, isNew: Boolean, note: NoteWrite = NoteWrite.NONE) {
         val event = refuseProblems(e)
         val now = clock()
         guard {
-            compensated(EventWrites.save(event, now, note.statements)) { compensation(event.id, isNew, note.mintedStrokeIds) }
+            write(EventWrites.save(event, now, note)) { compensation(event.id, isNew, note.mintedStrokeIds) }
         }
         Slog.d(TAG) { "save ${event.id}: ${if (isNew) "new" else "existing"}, ${note.statements.size} note statement(s)" }
     }
@@ -208,11 +211,11 @@ class EventStore(
         val landedUnder = EventWrites.editLandsUnder(scope, original, event, viewedDay, newId) ?: return null
         val now = clock()
         val write = note(landedUnder)
-        val statements = EventWrites.editWithScope(scope, original, event, viewedDay, newId, now, write.statements) ?: return null
+        val statements = EventWrites.editWithScope(scope, original, event, viewedDay, newId, now, write) ?: return null
         guard {
-            compensated(statements) { compensation(landedUnder, landedUnder == newId, write.mintedStrokeIds) }
+            write(statements) { compensation(landedUnder, landedUnder == newId, write.mintedStrokeIds) }
         }
-        Slog.d(TAG) { "edit ${event.id} at $scope → $landedUnder: ${statements.size} statement(s)" }
+        Slog.d(TAG) { "edit ${event.id} at $scope → $landedUnder: ${statements.statements.size} statement(s)" }
         return landedUnder
     }
 
@@ -228,6 +231,10 @@ class EventStore(
         EventRules.problem(event)?.let { throw IllegalArgumentException("event refused: $it") }
         return event
     }
+
+    /** [compensated] over [EventWrite.batches] — the rewrite whole and last (arc 34 / M5). */
+    private fun write(w: EventWrite, compensation: () -> List<Statement>) =
+        compensatedBatches(w.batches(maxPayloadBytes, maxBatchStatements), compensation)
 
     /** What a failed multi-batch write gives back — see [save]. */
     private fun compensation(id: String, isNew: Boolean, mintedStrokeIds: List<String>): List<Statement> =
