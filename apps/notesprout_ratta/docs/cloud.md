@@ -228,9 +228,25 @@ shapes differ because this seam speaks paths-of-names under a provider-owned roo
 `CloudEntry`, not bare ids).
 
 - **Root resolution** — `rootId()` find-or-creates a folder named `BuildConfig.ROOT_FOLDER_NAME`
-  directly under My Drive, caches its id in the store, and **re-resolves once** if the cached id no
-  longer exists (deleted or trashed from another device — the difference between the feature
+  directly under My Drive and caches its id in the store, and **re-resolves once** if the cached id
+  no longer exists (deleted or trashed from another device — the difference between the feature
   healing itself and every call failing forever after a web-UI tidy-up).
+- **Every folder id is cached, and the root's rule is every folder's (arc 34 / M9b).** A
+  `DriveApi` is built per Binder call, so the ids live in the process-wide `FolderCache`
+  (`DriveFolders.cache`, `DriveTokens.cache`'s shape), keyed by the segment list under the root
+  (the root is the empty path). `ensurePath` / `findPath` / `list` / `upload` walk the cache and
+  list Drive **once per new segment per process life** — a backup run's second upload into the
+  same folder costs no folder listing at all, where it cost four metadata round-trips before
+  (root probe, two segment finds, and the name find that stays). **Nothing is probed up front**:
+  the root's per-call `exists` read is gone. An id is trusted until Drive answers a **404** to a
+  call under it; then `underPath` evicts the whole path — every prefix, the root's store row
+  included (which segment went stale is not knowable from the 404), and every descendant — and
+  re-runs the metadata walk **once**; a second 404 is the failure it is. The byte-streaming leg of
+  an upload is outside that retry (an fd cannot be rewound): the stale parent answers its 404 to
+  the name find that precedes the bytes. A stale *sibling* subtree keeps its ids and earns its own
+  404. A cache-hit `ensurePath` answers an entry by id and name with size / time 0 — no caller
+  reads them (the backup leg's fail-fast `ensureFolder` is therefore free on a warm cache; the
+  listing right after it is where a dead network is found).
 - **Find-or-ensure folder** — `ensureFolder` always **finds first**: nothing is ever created beside
   an existing name. Drive allows same-named siblings, so `findChild` takes the **first** match in
   Drive's own order.

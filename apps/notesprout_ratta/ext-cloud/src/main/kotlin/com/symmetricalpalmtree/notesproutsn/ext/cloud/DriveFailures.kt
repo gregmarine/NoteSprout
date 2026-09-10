@@ -42,6 +42,12 @@ object DriveFailures {
     fun forHttp(code: Int): IllegalStateException =
         if (isRetryable(code)) network() else IllegalStateException("http $code")
 
+    /** Whether [e] is [forHttp]'s 404 — the provider no longer knows an id the caller named
+     *  (arc 34 / M9b: what evicts a cached folder id). */
+    fun isNotFound(e: Throwable): Boolean = e is IllegalStateException && e.message == NOT_FOUND
+
+    private const val NOT_FOUND = "http 404"
+
     /** Whether [e] is the network failing rather than the provider refusing. `IOException` covers
      *  `UnknownHostException`, `SocketTimeoutException` and every `SSLException`;
      *  `GeneralSecurityException` catches the handful of TLS failures that are not. */

@@ -41,6 +41,8 @@ class DriveApi(
     private val tokens: TokenSource,
     private val store: DriveStore,
     private val rootFolderName: String,
+    /** Folder ids by path, process-wide by default (arc 34 / M9b) — see [FolderCache]. */
+    private val folders: FolderCache = DriveFolders.cache,
 ) {
 
     // ── The account ──────────────────────────────────────────────────────────
@@ -96,44 +98,79 @@ class DriveApi(
     // ── The provider's root, and paths under it ──────────────────────────────
 
     /**
-     * The id of this build's root folder, find-or-create, cached in the store.
-     *
-     * A cached id that Drive no longer knows — the folder was deleted or trashed from another
-     * device — is **dropped and re-resolved once**, which is the difference between the feature
-     * healing itself and every call failing forever after a tidy-up in the web UI.
+     * The id of this build's root folder, find-or-create: the process cache, then the store, then
+     * Drive. **Never probed** (arc 34 / M9b — the old `exists` read per call was one metadata
+     * round-trip per upload): a cached id Drive no longer knows — the folder deleted or trashed
+     * from another device — answers a 404 to the first call under it, and [underPath] drops it
+     * (memory and store) and re-resolves once, which is the difference between the feature healing
+     * itself and every call failing forever after a tidy-up in the web UI.
      */
     fun rootId(): String {
+        folders.get(emptyList())?.let { return it }
         val cached = store.value(DriveSql.Keys.ROOT_FOLDER_ID)?.takeIf { CloudContract.isEntryId(it) }
         if (cached != null) {
-            if (exists(cached)) return cached
-            Slog.d(TAG) { "cached root is gone — re-resolving" }
-            store.remove(DriveSql.Keys.ROOT_FOLDER_ID)
+            folders.put(emptyList(), cached)
+            return cached
         }
         val entry = ensureFolder(DriveRest.MY_DRIVE, rootFolderName)
         store.put(DriveSql.Keys.ROOT_FOLDER_ID, entry.id)
+        folders.put(emptyList(), entry.id)
         return entry.id
     }
 
     /** The folder id at [path] (the root when empty), or null when a segment is not there. */
-    fun findPath(path: Array<String>): String? {
+    fun findPath(path: Array<String>): String? = underPath(path) { walkPath(path, create = false) }
+
+    /**
+     * Find-or-create every segment and answer the last (the root when [path] is empty). A segment
+     * answered from the cache is an entry by id and name only — its size and time are 0, which no
+     * caller of this reads (the backup leg and the browser want the folder to exist; the uploads
+     * want its id).
+     */
+    fun ensurePath(path: Array<String>): CloudEntry = underPath(path) {
+        val id = walkPath(path, create = true)!!
+        CloudEntry(id, path.lastOrNull() ?: rootFolderName, true, 0L, 0L)
+    }
+
+    /** The walk itself: cached ids where the cache has them, one find (or find-or-create) per
+     *  segment it does not, each answer cached as it lands. Null when a segment is not there and
+     *  [create] is false. */
+    private fun walkPath(path: Array<String>, create: Boolean): String? {
         var id = rootId()
+        val walked = ArrayList<String>(path.size)
         for (segment in path) {
-            id = (findChild(id, segment, foldersOnly = true) ?: return null).id
+            walked += segment
+            val hit = folders.get(walked)
+            if (hit != null) { id = hit; continue }
+            val entry = if (create) ensureFolder(id, segment) else findChild(id, segment, foldersOnly = true) ?: return null
+            id = entry.id
+            folders.put(walked, id)
         }
         return id
     }
 
-    /** Find-or-create every segment and answer the last (the root when [path] is empty). */
-    fun ensurePath(path: Array<String>): CloudEntry {
-        var current = CloudEntry(rootId(), rootFolderName, true, 0L, 0L)
-        for (segment in path) current = ensureFolder(current.id, segment)
-        return current
-    }
+    /**
+     * Run [block] over the cached ids of [path]; on Drive's 404 — an id under that path is gone —
+     * evict the path (every prefix, the root's store row included, and every descendant) and run
+     * it **once** more. Everything under this is metadata-only and replayable; the byte-streaming
+     * leg of an upload is outside it, since an fd cannot be rewound. Never nested — a wrapped call
+     * runs the raw [walkPath], not [findPath] / [ensurePath], or one 404 would cost four attempts.
+     */
+    private inline fun <T> underPath(path: Array<String>, block: () -> T): T =
+        try {
+            block()
+        } catch (e: IllegalStateException) {
+            if (!DriveFailures.isNotFound(e)) throw e
+            Slog.d(TAG) { "a cached folder id is gone (${path.size} segment(s) deep) — re-resolving once" }
+            folders.evict(path.toList())
+            store.remove(DriveSql.Keys.ROOT_FOLDER_ID)
+            block()
+        }
 
     /** The seam's `list`: a path whose folder is not there answers **empty**, never a failure. */
-    fun list(path: Array<String>): List<CloudEntry> {
-        val parentId = findPath(path) ?: return emptyList()
-        return listChildren(parentId)
+    fun list(path: Array<String>): List<CloudEntry> = underPath(path) {
+        val parentId = walkPath(path, create = false) ?: return@underPath emptyList()
+        listChildren(parentId)
     }
 
     // ── Bytes ────────────────────────────────────────────────────────────────
@@ -150,8 +187,12 @@ class DriveApi(
         source: InputStream,
         expectedBytes: Long,
     ): CloudEntry {
-        val parentId = ensurePath(path).id
-        val existing = findChild(parentId, name, foldersOnly = false)
+        // The folder walk and the name find are metadata-only and ride the 404 re-resolve together
+        // (arc 34 / M9b): a stale cached parent answers its 404 to the find, not to the bytes.
+        val (parentId, existing) = underPath(path) {
+            val id = walkPath(path, create = true)!!
+            id to findChild(id, name, foldersOnly = false)
+        }
         if (existing != null && existing.isFolder) {
             // A folder already owns this name. Replacing it is not what the host meant, and Drive
             // would happily create a file beside it — the one thing this seam promises not to do.
@@ -303,13 +344,6 @@ class DriveApi(
             throw DriveFailures.notConnected()
         }
         return reply
-    }
-
-    private fun exists(fileId: String): Boolean {
-        val reply = call { HttpRequest("GET", DriveRest.metadataUrl(fileId), bearer(it)) }
-        if (reply.code == 404) return false
-        if (!reply.ok) throw DriveFailures.forHttp(reply.code)
-        return true
     }
 
     companion object {

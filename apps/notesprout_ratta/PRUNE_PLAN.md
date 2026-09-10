@@ -7,7 +7,7 @@ the cross-session memory for the arc: read it whole at every phase start, togeth
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `FOCUS_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 🔄 (M1 ✅ + M2 ✅ + M3 ✅ + M4 ✅ + M5 ✅ + M6 ✅ + M7 ✅ + M8 ✅ 2026-09-09, all by Fable at the user's call; M9 ⬜) · P3 ⬜ · P4 ⬜.**
+**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 ✅ (M1–M9 landed 2026-09-09, all by Fable at the user's call — 3069 JVM tests, 1646 in `:app`) · P3 ⬜ · P4 ⬜.**
 Baseline before the arc: 1626 `:app` / 3033 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump, no schema change, no g-paper change, no new
 module, no new dependency. **The notebook's bottom-strip pager (`NotebookActivity.kt` /
@@ -552,3 +552,27 @@ explanation and an `AskUserQuestion` never share one turn — explain, wait, the
   (1642 + 4), all green; `:app` release compiles; NUL scan clean. No walk (a refusal needs a
   package swapped between bind and launch). Next: M9a (`:ext-image` held bind) + M9b (Drive
   folder-id cache).
+- **2026-09-09 — P2 / M9a ✅ + M9b ✅ (Fable — again at the user's call). P2 is complete.**
+  **M9a:** `ExporterClient.hold(): Held` (one `ExtensionBinder.hold` on the exporter action;
+  `Held.export` = the same `EXPORT_TIMEOUT_MS` per call and the same both-fds-closed-in-`finally`
+  rule as the one-file `export`; `Held.close` = unbind). `ExportActivity.exportPerPage` holds once
+  after the split (a failed bind = the export failing before any page, nothing created), runs the
+  loop as `exportPerPageHeld` and closes in `finally`. No JVM seam (a Binder) — **the pin is the
+  existing per-page PNG walk at P4** (the plan's own fallback). **M9b:** `ext-cloud/FolderCache`
+  (segment-list keys, `get` / `put` / `evict` = the path, every prefix incl. the root and every
+  descendant; `DriveFolders.cache` process-wide — `DriveTokens.cache`'s shape, because a `DriveApi`
+  is built per Binder call, which the plan's "per-`DriveApi` map" had not accounted for). `DriveApi
+  (…, folders = DriveFolders.cache)`: `rootId` = cache → store → Drive, **no `exists` probe**;
+  `walkPath` (cached ids, one find / find-or-create per new segment, each cached); `underPath`
+  wraps `findPath` / `ensurePath` / `list` / `upload`'s metadata half (walk + name find, never the
+  streamed bytes) — on `DriveFailures.isNotFound` (`forHttp(404)`) evict the path + drop the root's
+  store row, retry once, never nested. A cache-hit `ensurePath` entry carries size / time 0 (no
+  caller reads them — verified: `CloudBackupLeg` and `CloudBrowserDialog` want existence only).
+  `DriveApiTest`: the two root tests re-pinned (a cached root costs nothing; a stale root is found by
+  the 404 and re-resolved once; a root that stays gone fails as the 404 after exactly two finds) +
+  three cache tests (one listing per new segment and none for a repeated upload; a stale id evicted
+  with its descendants and re-resolved once; the eviction shape). Docs: `docs/export.md` (the
+  Images intro + the per-page flow), `docs/cloud.md` § Paths (the cache bullet). Gates: full JVM
+  suite 3069 (3033 baseline + 36 across the arc so far: 1646 `:app`, 320 `:ext-calendar`, 147
+  `:ext-cloud`), all green; `:app` + `:ext-cloud` release compile; NUL scan clean. Next: P3
+  (Sonnet, L1–L22) — a fresh session; L17 may now proceed (M1/M2 landed).

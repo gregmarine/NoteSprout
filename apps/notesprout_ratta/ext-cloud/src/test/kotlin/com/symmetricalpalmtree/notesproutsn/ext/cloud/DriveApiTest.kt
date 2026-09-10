@@ -23,7 +23,15 @@ class DriveApiTest {
     private val transport = FakeTransport()
     private val cache = TokenCache().apply { put("ACCESS", Long.MAX_VALUE) }
     private val tokens = TokenSource(store, cache, transport, "CLIENT", "SECRET") { 0L }
-    private val api = DriveApi(transport, tokens, store, ROOT_NAME)
+    /** Every test gets its own folder cache — the process-wide one would leak ids between tests. */
+    private val folders = FolderCache()
+    private val api = DriveApi(transport, tokens, store, ROOT_NAME, folders)
+
+    private fun upload(path: Array<String>, name: String) =
+        api.upload(path, name, "application/octet-stream", ByteArrayInputStream(ByteArray(5)), 5L)
+
+    /** The requests so far, URLs decoded — the way the handler sees them. */
+    private fun urls(): List<String> = transport.calls.map { URLDecoder.decode(it.url, "UTF-8") }
 
     private fun handle(block: (method: String, url: String) -> HttpReply?) {
         transport.handler = { request ->
@@ -75,32 +83,53 @@ class DriveApiTest {
     }
 
     @Test
-    fun aCachedRoot_costsOneMetadataReadAndNoSearch() {
+    fun aCachedRoot_costsNothing() {
+        // Arc 34 / M9b: no metadata probe per call — a stale root is found out by the 404 it
+        // causes and re-resolved then, the same rule every cached folder id follows.
         store.put(DriveSql.Keys.ROOT_FOLDER_ID, "ROOT")
-        handle { method, url ->
-            if (method == "GET" && url.contains("/files/ROOT?fields=")) {
-                FakeTransport.ok(FakeTransport.file("ROOT", ROOT_NAME, folder = true))
-            } else {
-                null
-            }
-        }
+        handle { _, _ -> null }
         assertEquals("ROOT", api.rootId())
-        assertEquals(1, transport.calls.size)
+        assertEquals("ROOT", api.rootId())
+        assertEquals(0, transport.calls.size)
     }
 
     @Test
-    fun aCachedRootThatIsGone_isDroppedAndReResolvedOnce() {
+    fun aCachedRootThatIsGone_isDroppedOnThe404AndReResolvedOnce() {
         store.put(DriveSql.Keys.ROOT_FOLDER_ID, "STALE")
         handle { method, url ->
             when {
-                method == "GET" && url.contains("/files/STALE?fields=") -> HttpReply(404, "{}", emptyMap())
+                method == "GET" && url.contains("'STALE' in parents") -> HttpReply(404, "{}", emptyMap())
                 method == "GET" && url.contains("name = '$ROOT_NAME' and 'root' in parents") ->
                     FakeTransport.ok(FakeTransport.fileList(FakeTransport.file("FRESH", ROOT_NAME, folder = true)))
+                method == "GET" && url.contains("name = 'Exports' and 'FRESH' in parents") ->
+                    FakeTransport.ok(FakeTransport.fileList(FakeTransport.file("EXPORTS", "Exports", folder = true)))
+                method == "GET" && url.contains("'EXPORTS' in parents") && !url.contains("name = ") ->
+                    FakeTransport.ok(FakeTransport.fileList(FakeTransport.file("F1", "a.soil", size = "3")))
                 else -> null
             }
         }
-        assertEquals("FRESH", api.rootId())
+        assertEquals(listOf("a.soil"), api.list(arrayOf("Exports")).map { it.name })
         assertEquals("FRESH", store.value(DriveSql.Keys.ROOT_FOLDER_ID))
+        assertEquals("EXPORTS", folders.get(listOf("Exports")))
+        // One 404, one root search, one find, one listing — and never a second 404.
+        assertEquals(1, urls().count { it.contains("STALE") })
+        assertEquals(4, transport.calls.size)
+    }
+
+    @Test
+    fun aCachedRootThatStaysGone_failsAsA404_neverLoops() {
+        store.put(DriveSql.Keys.ROOT_FOLDER_ID, "STALE")
+        handle { method, url ->
+            when {
+                method == "GET" && url.contains("name = '$ROOT_NAME' and 'root' in parents") ->
+                    FakeTransport.ok(FakeTransport.fileList(FakeTransport.file("ALSO", ROOT_NAME, folder = true)))
+                method == "GET" && url.contains("in parents") -> HttpReply(404, "{}", emptyMap())
+                else -> null
+            }
+        }
+        val thrown = runCatching { api.list(arrayOf("Exports")) }.exceptionOrNull()
+        assertTrue("was $thrown", thrown is IllegalStateException && DriveFailures.isNotFound(thrown))
+        assertEquals(2, urls().count { it.contains("in parents") && !it.contains("'root'") })
     }
 
     // ── Folders by name ──────────────────────────────────────────────────────
@@ -226,6 +255,86 @@ class DriveApiTest {
         }
         assertEquals(CloudContract.MAX_LIST_ENTRIES, api.list(emptyArray()).size)
         assertEquals(1, pages)
+    }
+
+    // ── The folder-id cache (arc 34 / M9b) ──────────────────────────────────
+
+    @Test
+    fun folderIds_areResolvedOncePerSegmentAndNeverAgainForARepeatedUpload() {
+        withRoot { method, url ->
+            when {
+                method == "GET" && url.contains("name = 'Backups' and 'ROOT' in parents") ->
+                    FakeTransport.ok(FakeTransport.fileList(FakeTransport.file("B", "Backups", folder = true)))
+                method == "GET" && url.contains("name = 'Dev' and 'B' in parents") ->
+                    FakeTransport.ok(FakeTransport.fileList(FakeTransport.file("D", "Dev", folder = true)))
+                method == "GET" && url.contains("and 'D' in parents") && url.contains(".soil'") ->
+                    FakeTransport.ok(FakeTransport.fileList())
+                method == "POST" && url.contains("uploadType=multipart") ->
+                    FakeTransport.ok(FakeTransport.file("NEW", "x", size = "5"))
+                else -> null
+            }
+        }
+        upload(arrayOf("Backups", "Dev"), "a.soil")
+        upload(arrayOf("Backups", "Dev"), "b.soil")
+        upload(arrayOf("Backups", "Dev"), "c.soil")
+        val folderFinds = urls().filter { it.contains("name = 'Backups'") || it.contains("name = 'Dev'") }
+        assertEquals("one listing per new segment, per run", 2, folderFinds.size)
+        assertEquals("each upload still finds its own name", 3, urls().count { it.contains(".soil'") })
+        assertEquals("D", folders.get(listOf("Backups", "Dev")))
+        assertEquals("B", folders.get(listOf("Backups")))
+    }
+
+    @Test
+    fun aStaleFolderId_isEvictedWithItsDescendantsOnA404AndReResolvedOnce() {
+        var backupsId = "B1"
+        var devId = "D1"
+        var stale = false
+        withRoot { method, url ->
+            when {
+                // The re-resolve starts from the root again (which segment went stale is unknowable).
+                method == "GET" && url.contains("name = '$ROOT_NAME' and 'root' in parents") ->
+                    FakeTransport.ok(FakeTransport.fileList(FakeTransport.file("ROOT", ROOT_NAME, folder = true)))
+                stale && method == "GET" && url.contains("'B1' in parents") -> HttpReply(404, "{}", emptyMap())
+                stale && method == "GET" && url.contains("'D1' in parents") -> HttpReply(404, "{}", emptyMap())
+                method == "GET" && url.contains("name = 'Backups' and 'ROOT' in parents") ->
+                    FakeTransport.ok(FakeTransport.fileList(FakeTransport.file(backupsId, "Backups", folder = true)))
+                method == "GET" && url.contains("name = 'Dev' and '$backupsId' in parents") ->
+                    FakeTransport.ok(FakeTransport.fileList(FakeTransport.file(devId, "Dev", folder = true)))
+                method == "GET" && url.contains(".soil'") -> FakeTransport.ok(FakeTransport.fileList())
+                method == "POST" && url.contains("uploadType=multipart") ->
+                    FakeTransport.ok(FakeTransport.file("NEW", "x", size = "5"))
+                else -> null
+            }
+        }
+        // Not yet stale: the first run caches B1 / D1 …
+        upload(arrayOf("Backups", "Dev"), "a.soil")
+        assertEquals("D1", folders.get(listOf("Backups", "Dev")))
+        // … then the tree is moved on the web; the next upload's name-find under D1 answers 404.
+        backupsId = "B2"; devId = "D2"; stale = true
+        transport.calls.clear()
+        upload(arrayOf("Backups", "Dev"), "b.soil")
+        assertEquals("B2", folders.get(listOf("Backups")))
+        assertEquals("D2", folders.get(listOf("Backups", "Dev")))
+        assertEquals(1, urls().count { it.contains("'D1' in parents") })
+        assertEquals(1, urls().count { it.contains("name = 'Backups'") })
+        assertEquals(1, urls().count { it.contains("uploadType=multipart") })
+        // A stale sibling path keeps its own cached id — it gets its own 404 when it is used.
+    }
+
+    @Test
+    fun theFolderCache_evictsAPathWithItsPrefixesAndDescendants() {
+        val c = FolderCache()
+        c.put(emptyList(), "ROOT")
+        c.put(listOf("Backups"), "B")
+        c.put(listOf("Backups", "Dev"), "D")
+        c.put(listOf("Backups", "Dev", "Old"), "O")
+        c.put(listOf("Exports"), "E")
+        c.evict(listOf("Backups", "Dev"))
+        assertNull(c.get(emptyList()))
+        assertNull(c.get(listOf("Backups")))
+        assertNull(c.get(listOf("Backups", "Dev")))
+        assertNull(c.get(listOf("Backups", "Dev", "Old")))
+        assertEquals("E", c.get(listOf("Exports")))
     }
 
     // ── Uploads ──────────────────────────────────────────────────────────────

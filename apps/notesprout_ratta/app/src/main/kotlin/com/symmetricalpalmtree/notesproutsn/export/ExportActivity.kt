@@ -1971,6 +1971,40 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
             return
         }
         var written = 0
+        // One bind for the whole loop, one call per page (arc 34 / M9a): a bind that fails here is
+        // the export call failing before any page — nothing has been created.
+        val exporter = try {
+            ExporterClient(this@ExportActivity, c.ref).hold()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Slog.d(TAG) { "exporter bind failed: ${e.message}" }
+            stopPerPage(destination, null, written, total, getString(R.string.export_failed_body))
+            return
+        }
+        try {
+            exportPerPageHeld(exporter, c, destination, parts, pageTitles, specValues, secret, extension, mime, treeRoot)
+        } finally {
+            exporter.close()
+        }
+    }
+
+    /** [exportPerPage]'s loop and its ending, over the one held bind (arc 34 / M9a). */
+    private suspend fun exportPerPageHeld(
+        exporter: ExporterClient.Held,
+        c: Candidate,
+        destination: Destination,
+        parts: List<File>,
+        pageTitles: List<String?>,
+        specValues: Map<String, String>,
+        secret: String?,
+        extension: String,
+        mime: String,
+        treeRoot: Uri?,
+    ) {
+        val dir = File(cacheDir, ExportArtifact.DIR)
+        val total = parts.size
+        var written = 0
         for (index in parts.indices) {
             val part = parts[index]
             val stem = stemFor(index, pageTitles)
@@ -2016,7 +2050,7 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
             }
             // Both descriptors are the client's from here — it closes them in `finally`.
             val result = try {
-                ExporterClient(this@ExportActivity, c.ref).export(source, sink, spec)
+                exporter.export(source, sink, spec)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

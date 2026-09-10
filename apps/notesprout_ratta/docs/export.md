@@ -21,7 +21,8 @@ that renders the editor's own preview instead of the page canvas, with no change
 at all. See [The document exporter](#the-document-exporter-arc-19) below. Arc 31 / HV1 grew a
 fourth: **`NSE · Image Export`** produces one PNG per page — a page-bundle exporter exactly like
 PDF, but declaring **per-page delivery** rather than one file, so a whole-notebook export becomes
-one call per page into a folder instead of one call into a single document. See
+one bind per export and one call per page into a folder instead of one call into a single
+document (`ExporterClient.hold` — arc 34 / M9a; before it the loop bound and unbound per page). See
 [Images](#images-arc-31--hv1) below. The four exporters
 split into two behavioral shapes — a verbatim byte stream (`.soil`, and now the document text) or
 a host-rendered page bundle the extension only assembles (PDF, in either of its two modes, and
@@ -774,10 +775,13 @@ back from.
 **On the screen.** `Destination` grows two cases beside the SAF document: `SafTree(uri)` (a second
 `treeLauncher` over `ACTION_OPEN_DOCUMENT_TREE`, **no persistable grant** — the tree is used once,
 for this export, and never held past it) and `CloudFolder(path)` (the same folder pick the ordinary
-cloud export uses). `exportPerPage` is the per-page flow: split the bake into parts, then for each
-page — build the stem (`ExportNaming.pageStem`, per-page delivery's own filename per file) and
-spec, `DocumentsContract.createDocument` on the tree or a cache file for the cloud leg, call
-`export()`, verify the result, upload if cloud, move to the next. `SHORT` on any page deletes that
+cloud export uses). `exportPerPage` is the per-page flow: split the bake into parts, **hold one
+bind** to the exporter (`ExporterClient.hold`, arc 34 / M9a — a bind that fails is the export
+failing before any page, nothing created; the bind is closed in `finally` whatever the loop did),
+then for each page (`exportPerPageHeld`) — build the stem (`ExportNaming.pageStem`, per-page
+delivery's own filename per file) and spec, `DocumentsContract.createDocument` on the tree or a
+cache file for the cloud leg, call `Held.export()` (the same per-call `EXPORT_TIMEOUT_MS` and the
+same fd rule as the one-file `export()`), verify the result, upload if cloud, move to the next. `SHORT` on any page deletes that
 one document and stops the whole run; `UNCONFIRMED` stops with the check-the-file dialog; every
 early stop's dialog leads with **"N of M images were exported."** (`export_done_images_partial`,
 a plural). `exportPrefs.lastExporter` is written only after **every** file finished — a run that
