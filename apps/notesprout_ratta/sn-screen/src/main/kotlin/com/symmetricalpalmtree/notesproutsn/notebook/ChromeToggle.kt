@@ -10,7 +10,8 @@ import com.symmetricalpalmtree.notesproutsn.core.Slog
  * the four screens (notebook, sticky editor, scratch pad, calendar) so the flip order never drifts.
  *
  * **The flip order, once:**
- * 1. `paper.releaseRender()` — unless [apply]'s `initial`, when nothing is on the glass yet;
+ * 1. `paper.releaseRender()` — unless [apply]'s `releaseRender` is false, when nothing is on
+ *    the glass yet;
  * 2. hiding → [beforeHide]: the consumer takes down its button-anchored popups (lasso, tags,
  *    insert, eraser) whose button is about to go;
  * 3. every bar `GONE` / `VISIBLE` — **never `INVISIBLE`**: an attached Ratta paper view keeps the
@@ -30,26 +31,46 @@ class ChromeToggle(
     private val bars: List<View>,
     private val beforeHide: () -> Unit,
     private val afterLayout: () -> Unit,
+    /**
+     * Told the new state every time it actually changes — the host screens persist it
+     * (`ChromePrefs`), the extension screens ignore it (an extension writes nothing to disk, and
+     * the host reads the state off the result Intent). Here rather than after each `toggle()` call
+     * because three screens had grown the same "flip, then write the flag" pair.
+     */
+    private val onChanged: (Boolean) -> Unit = {},
 ) {
     /** The current state; `false` (shown) until the first [apply]. */
     var hidden: Boolean = false
         private set
 
     /**
-     * Put the chrome into [hidden]. A no-op when already there — so an `onResume` re-sync against
-     * the persisted flag costs nothing when nothing changed. [initial] skips the render release
-     * (an `onCreate` call: nothing is on the glass).
+     * Put the chrome into [hidden]. Pass `releaseRender = false` when nothing is on the glass yet
+     * — the `onCreate` first application, and [sync]'s re-read before the paper comes back.
+     *
+     * Unconditional: the first application must set every bar's visibility even when [hidden] is
+     * already the state it holds. "Nothing changed" is [sync]'s question, not this one's.
      */
-    fun apply(hidden: Boolean, initial: Boolean = false) {
-        if (this.hidden == hidden && !initial) return
+    fun apply(hidden: Boolean, releaseRender: Boolean = true) {
+        val changed = this.hidden != hidden
         this.hidden = hidden
-        if (!initial) paper.releaseRender()
+        if (releaseRender) paper.releaseRender()
         if (hidden) beforeHide()
         val visibility = if (hidden) View.GONE else View.VISIBLE
         bars.forEach { it.visibility = visibility }
         Slog.d(TAG) { "chrome hidden=$hidden" }
         root.doOnNextLayout { afterLayout() }
         root.requestLayout()
+        if (changed) onChanged(hidden)
+    }
+
+    /**
+     * The resume rule, once: another paper screen may have flipped the one global flag while this
+     * one was away, so re-read it before the paper comes back. A no-op when nothing changed, and
+     * never a render release — this runs before `resumeDrawing()`, with nothing on the glass.
+     */
+    fun sync(persisted: Boolean) {
+        if (hidden == persisted) return
+        apply(persisted, releaseRender = false)
     }
 
     fun toggle() = apply(!hidden)

@@ -407,32 +407,39 @@ class BackupActivity : AppCompatActivity() {
     /** The local leg's block. A folder that has gone replaces the counts — there are none to give. */
     private fun localBlock(r: BackupEngine.Result): String {
         if (r.problem == BackupEngine.Problem.FOLDER_GONE) return getString(R.string.backup_local_folder_gone)
-        val clean = CloudBackupRules.legClean(r)
-        val skipped = r.upToDate + r.excluded + r.held + r.missing
-        return buildString {
-            append(
-                if (clean) getString(R.string.backup_done_body, r.copied, skipped)
-                else getString(R.string.backup_counts_failed, r.copied, skipped, r.failed)
-            )
-            append(storesLine(r))
-            if (!clean) { append('\n'); append(getString(indexSentence(r))) }
-        }
+        return legBlock(r, R.string.backup_done_body, R.string.backup_counts_failed)
     }
 
     /** The cloud leg's block: the same shape, headed by the provider's name, and closed by the one
      *  sentence saying why the leg stopped where it did. */
     private fun cloudBlock(r: BackupEngine.Result): String {
         val name = providerName()
+        return legBlock(r, R.string.cloud_counts, R.string.cloud_counts_failed, name) +
+            (cloudProblem(r.problem)?.let { "\n" + getString(it, name) } ?: "")
+    }
+
+    /**
+     * One leg's counts, in the one shape both legs read in (arc 34 / L13): the copied/skipped line
+     * ([countsRes], or [countsFailedRes] with the failure count when the leg was not clean), the
+     * stores line, and — only when it was not clean — the sentence about the index. [prefixArgs] is
+     * whatever the leg's own strings put in front of the numbers; the cloud's is the provider's
+     * name, the local's is nothing.
+     */
+    private fun legBlock(
+        r: BackupEngine.Result,
+        countsRes: Int,
+        countsFailedRes: Int,
+        vararg prefixArgs: Any,
+    ): String {
         val clean = CloudBackupRules.legClean(r)
         val skipped = r.upToDate + r.excluded + r.held + r.missing
         return buildString {
             append(
-                if (clean) getString(R.string.cloud_counts, name, r.copied, skipped)
-                else getString(R.string.cloud_counts_failed, name, r.copied, skipped, r.failed)
+                if (clean) getString(countsRes, *prefixArgs, r.copied, skipped)
+                else getString(countsFailedRes, *prefixArgs, r.copied, skipped, r.failed)
             )
             append(storesLine(r))
             if (!clean) { append('\n'); append(getString(indexSentence(r))) }
-            cloudProblem(r.problem)?.let { append('\n'); append(getString(it, name)) }
         }
     }
 

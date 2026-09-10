@@ -114,8 +114,9 @@ class CloudBrowserDialog(
          */
         class Folder(val path: List<String>, val listing: List<CloudEntry>) : Pick()
 
-        /** One file, and the folder it was found in (V5's answer — see the class doc). */
-        class File(val entry: CloudEntry, val path: List<String>) : Pick()
+        /** One file (V5's answer — see the class doc). The entry names it well enough for every
+         *  caller: the import downloads it by entry, and the export never accepts one. */
+        class File(val entry: CloudEntry) : Pick()
     }
 
     private val listSwipe = ListSwipe(
@@ -311,13 +312,13 @@ class CloudBrowserDialog(
 
     /**
      * A file row under [Mode.PICK_FILE] — the browser's other answer (arc 25 / V5), the mirror of
-     * [onSaveHere]. The entry travels with the folder it was found in; nothing is read here, and
-     * nothing about the file is logged but whether it had a size.
+     * [onSaveHere]. Nothing is read here, and nothing about the file is logged but whether it had
+     * a size.
      */
     private fun onFilePicked(entry: CloudEntry) {
         if (loading) { Slog.d(TAG) { "file tap ignored: a listing is running" }; return }
         Slog.d(TAG) { "picked a file at depth ${path.size} (${entry.sizeBytes} B listed)" }
-        answer { onPicked(Pick.File(entry, path)) }
+        answer { onPicked(Pick.File(entry)) }
         dismiss()
     }
 

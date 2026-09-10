@@ -156,7 +156,7 @@ object ExportText {
         val pageDocs = ExportScope.pagesInScope(dao.childrenOfType(notebookId, SoilSchema.TYPE_PAGE), pageIds)
             // Blank means absent — the repository's read rule, kept by hand because the batch read
             // goes round it (and [ExportDocumentRules.assemble] would drop the blanks regardless).
-            .map { page -> byPage[page.id]?.text?.takeIf { it.isNotBlank() } }
+            .map { page -> byPage[page.row.id]?.text?.takeIf { it.isNotBlank() } }
         // The notebook document is still the repository's own read: one row, one parent, and the
         // blank rule applied where it is written down. Not read at page scope (the class doc).
         val notebookDoc = if (pageIds == null) DocumentRepository(documentDao, dao).get(notebookId)?.text else null

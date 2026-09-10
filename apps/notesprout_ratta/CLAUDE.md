@@ -98,6 +98,15 @@ All root `CLAUDE.md` rules apply (Kotlin/17, kotlinx-serialization only, no new 
 deps without discussion, no Material Components, no `runBlocking` on main, `Slog.d` not
 `Log.d`, e-ink design system, Tabler icons only). Plus, for this app:
 
+- **The one `Slog` exception, written down (arc 34 / L20):** `Slog` lives in `:sn-screen`, so it is
+  on the classpath of `:app`, `:sn-screen`, `:ext-ink` and every extension that depends on
+  `:sn-screen` — and those must use it. A module that depends on **`:extension-api` only**
+  (`:ext-image`, `:ext-pdf`, `:ext-mlkit`, `:ext-soil`) has no `Slog` to call and writes
+  `if (BuildConfig.DEBUG) Log.d(tag, …)` by hand instead — its own module's `BuildConfig`, the same
+  gate `Slog.d` compiles to, and the same zero cost in release. It is not a `Slog`-rule violation
+  and does not want "fixing": pulling `:sn-screen` into an exporter for a log line would put a
+  paper-screen library inside a module that draws no paper.
+
 - **Fourteen modules, own Gradle root**: `:app` (the
   host) · `:markdown` (arc 19 / M1 — the shared markdown engine: parser, renderer, formatter,
   reflow, search, draft, paginator; stdlib only, depends on **nothing** in this project and
@@ -681,7 +690,10 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   extension store's `Garden/<pkg>.db`) **and `extensionStoreFiles` too** (arc 21 / W5: the one
   path authority also owns the one listing of that directory — the library's structure is still
   index-only, but a store has no index row to be listed from, so the backup run reads the
-  file system, and only there).
+  file system, and only there) **and `rekeyLeftovers` since arc 34 / L18** (the re-key recovery's
+  `Garden/` walk moved out of `SoilRekey` for the same reason: one `listFiles()` of that directory,
+  or the beginning of a second answer to what is in it; the naming rule stays pure in
+  `RekeyNames.leftoverOriginals`).
 - **Every SQLCipher open routes through `crypto/SoilCrypto`.** Passphrases never logged,
   never in Intent extras, never in the index. Never delete a DB on corruption.
 - **Encryption standing rules (arc 26, `docs/encryption.md`):** every `.soil` open resolves through

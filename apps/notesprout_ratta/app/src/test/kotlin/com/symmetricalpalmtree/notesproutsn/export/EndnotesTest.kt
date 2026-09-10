@@ -11,16 +11,31 @@ class EndnotesTest {
     private fun source(
         id: String = "s",
         fromPage: Int = 1,
+        fromPageLabel: Int = fromPage,
         icon: FloatArray = floatArrayOf(100f, 200f, 172f, 272f),
         contentW: Int = 800,
         contentH: Int = 600,
         pageW: Int = 1404,
         pageH: Int = 1872,
-    ) = Endnotes.Source(id, fromPage, icon[0], icon[1], icon[2], icon[3], contentW, contentH, pageW, pageH)
+    ) = Endnotes.Source(id, fromPage, fromPageLabel, icon[0], icon[1], icon[2], icon[3], contentW, contentH, pageW, pageH)
 
     @Test
     fun captionIsOgsWordingVerbatim() {
         assertEquals("Note 3 — from page 7", Endnotes.caption(3, 7))
+    }
+
+    /** Arc 34 / L15: a page-scoped bake has ONE page in it, so its endnote links address page 1 —
+     *  but the caption must still say the page the notebook calls it. */
+    @Test
+    fun aNarrowedBakeCaptionsTheNotebooksPageNumberAndLinksTheBundles() {
+        val plan = Endnotes.plan(listOf(source("s", fromPage = 1, fromPageLabel = 7)), pageCount = 1)
+        val note = plan.notes.single()
+        assertEquals(1, note.fromPage)
+        assertEquals(7, note.fromPageLabel)
+        assertEquals("Note 1 — from page 7", Endnotes.caption(note.number, note.fromPageLabel))
+        // Both links stay bundle-relative: the icon on page 1 jumps to the note, the caption home.
+        assertEquals(listOf(1, 2), plan.links.map { it.fromPage })
+        assertEquals(listOf(2, 1), plan.links.map { it.toPage })
     }
 
     @Test

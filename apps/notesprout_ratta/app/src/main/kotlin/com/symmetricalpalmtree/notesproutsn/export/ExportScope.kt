@@ -56,16 +56,29 @@ sealed class ExportScope {
             is Calendar -> null
         }
 
+    /** One page kept by [pagesInScope], with the number the **notebook** knows it by. */
+    class ScopedPage(val row: SoilObjectEntity, val number: Int)
+
     companion object {
 
         /** The screen's seed: a page id from the Intent means [Page], none means [Whole]. */
         fun seeded(pageId: String?): ExportScope =
             if (pageId.isNullOrEmpty()) Whole else Page(pageId)
 
-        /** The rows the renders bake — [rows] in the order the DAO gave them, kept whole when
-         *  [pageIds] is null and narrowed to the named pages otherwise. */
-        fun pagesInScope(rows: List<SoilObjectEntity>, pageIds: Set<String>?): List<SoilObjectEntity> =
-            if (pageIds == null) rows else rows.filter { it.id in pageIds }
+        /**
+         * The rows the renders bake — [rows] in the order the DAO gave them, kept whole when
+         * [pageIds] is null and narrowed to the named pages otherwise.
+         *
+         * Each kept row carries its **notebook-relative** 1-based number (arc 34 / L15): a
+         * narrowed bake renumbers its own pages from 1, which is right for anything addressing the
+         * bundle (an endnote's link) and wrong for anything a person reads (an endnote's caption
+         * saying "from page 1" about the notebook's page 7). The number is what the notebook calls
+         * the page; the position in the returned list is what the bundle calls it.
+         */
+        fun pagesInScope(rows: List<SoilObjectEntity>, pageIds: Set<String>?): List<ScopedPage> =
+            rows.mapIndexedNotNull { index, row ->
+                if (pageIds != null && row.id !in pageIds) null else ScopedPage(row, index + 1)
+            }
 
         /**
          * Whether an exporter of [sourceKind] is listed at [scope] — Soil only at [Whole], and at

@@ -208,7 +208,7 @@ class ScratchPadActivity : InkScreenActivity<ScratchAction>() {
         binding.root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> binding.root.post { pushExclusions() } }
         // Arc 33: both bars hide and show together on a finger double-tap, opening in the state the
         // host handed over and echoing the final one on the way out (the skeleton's).
-        initChrome()
+        initChrome(savedInstanceState)
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() { exit() }
         })

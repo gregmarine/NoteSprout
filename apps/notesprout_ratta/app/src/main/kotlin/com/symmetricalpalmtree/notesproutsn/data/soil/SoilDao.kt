@@ -24,6 +24,13 @@ interface SoilDao {
     @Query("SELECT * FROM notebook WHERE type = :type AND parentId = :parentId AND deletedAt IS NULL ORDER BY `order`")
     suspend fun childrenOfType(parentId: String, type: String): List<SoilObjectEntity>
 
+    /** Every live child of [parentId] in `order`, whatever its type (arc 34 / L16) — for a reader
+     *  that wants most of the kinds anyway and would otherwise ask the same index once per type.
+     *  Filtering the answer in Kotlin keeps each kind's own order: one `ORDER BY` over the whole
+     *  set, and a filter never reorders what it keeps. */
+    @Query("SELECT * FROM notebook WHERE parentId = :parentId AND deletedAt IS NULL ORDER BY `order`")
+    suspend fun childrenOf(parentId: String): List<SoilObjectEntity>
+
     @Query("SELECT * FROM notebook WHERE type = 'notebook' AND parentId = '' LIMIT 1")
     suspend fun notebookRow(): SoilObjectEntity?
 

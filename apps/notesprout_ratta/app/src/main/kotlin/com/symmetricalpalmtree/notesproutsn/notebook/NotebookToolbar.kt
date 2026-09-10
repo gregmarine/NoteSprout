@@ -154,15 +154,8 @@ class NotebookToolbar(
         btnLasso.isSelected = tool == Tool.LASSO
     }
 
-    /**
-     * The API contract for [PaperView.releaseRender]: guard with [PaperView.isPenActive] so a
-     * resting palm (or a tap landing inside the pen-up tail) can never cost a live stroke. While
-     * the pen is active the user is not looking at chrome pressed-states anyway — skipping the
-     * release costs nothing.
-     */
-    private fun releaseRenderIfIdle() {
-        if (!paper.isPenActive) paper.releaseRender()
-    }
+    /** [PenIdle.releaseRenderIfIdle] — [PaperView.releaseRender]'s own pen-gated contract. */
+    private fun releaseRenderIfIdle() = PenIdle.releaseRenderIfIdle(paper)
 
     companion object {
         private const val TAG = "NotebookToolbar"

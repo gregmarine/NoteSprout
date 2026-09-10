@@ -3,7 +3,7 @@ package com.symmetricalpalmtree.notesproutsn.crypto
 import android.content.Context
 import android.util.Log
 import com.symmetricalpalmtree.notesproutsn.core.Slog
-import com.symmetricalpalmtree.notesproutsn.data.gardenDir
+import com.symmetricalpalmtree.notesproutsn.data.rekeyLeftovers
 import com.symmetricalpalmtree.notesproutsn.data.soil.SoilCompactor
 import com.symmetricalpalmtree.notesproutsn.data.soil.SoilOpenFiles
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +46,13 @@ object SoilRekey {
      * `.soil`, [keyScope] is the scope the file will describe itself as; null for a store or the
      * index (no meta to restamp). IO. Throws `IllegalStateException` with a path-free message on
      * any failure, and in every failure the original is exactly as it was.
+     *
+     * [oldRawKey], when given, is the **verified** raw key of [file] under [oldPassphrase] — the
+     * caller already had it in hand (`KeyMaterial.peekVerified`) and this saves the two KDFs the
+     * source side would otherwise pay, once to absorb the WAL and once to attach (arc 34 / L17).
+     * It is only ever an optimisation: null takes the passphrase road, and a key that does not
+     * open the file fails exactly as a wrong passphrase would. The new key is always derived from
+     * [newPassphrase] — a raw key is bound to the file it came from.
      */
     suspend fun rekeyInPlace(
         context: Context,
@@ -54,19 +61,20 @@ object SoilRekey {
         oldPassphrase: String,
         newPassphrase: String,
         keyScope: String?,
+        oldRawKey: ByteArray? = null,
     ): Unit = withContext(Dispatchers.IO) {
         val app = context.applicationContext
         SoilCrypto.requireExisting(file)
         if (SoilOpenFiles.isOpen(file)) throw IllegalStateException("the file is open in this process")
 
-        absorbWal(file, oldPassphrase)
+        absorbWal(file, oldPassphrase, oldRawKey)
 
         val tmp = RekeyNames.tmpFor(file)
         ExportKeying.rejectOutput(tmp)
         ExportKeying.exportAndKeyToPrimary(
             out = tmp,
             sourcePath = file.path,
-            attachKeyLiteral = ExportKeying.sqlLiteral(oldPassphrase),
+            attachKeyLiteral = attachLiteral(oldPassphrase, oldRawKey),
             destPassphrase = newPassphrase,
             keyScope = keyScope,
             what = "re-keyed",
@@ -98,9 +106,18 @@ object SoilRekey {
      * Throws when a non-empty WAL is left afterwards: the commit would refuse it anyway, and
      * stopping here writes nothing.
      */
-    private fun absorbWal(file: File, passphrase: String) {
+    /**
+     * How the source side of the transform spells its key (arc 34 / L17): the verified raw key as
+     * SQLCipher's `x'…'` blob literal when the caller had one, else the passphrase as a plain SQL
+     * string with `''` doubling. Pure, and the one place the choice is made — an `ATTACH … KEY`
+     * that spelled a raw key as a passphrase would be a wrong-key failure with a right key in hand.
+     */
+    internal fun attachLiteral(passphrase: String, rawKey: ByteArray?): String =
+        if (rawKey != null) RawKeyDerivation.rawKeyLiteral(rawKey) else ExportKeying.sqlLiteral(passphrase)
+
+    private fun absorbWal(file: File, passphrase: String, rawKey: ByteArray?) {
         val db = try {
-            SoilCrypto.openRaw(file, passphrase)
+            if (rawKey != null) SoilCrypto.openRawKey(file, rawKey) else SoilCrypto.openRaw(file, passphrase)
         } catch (e: Exception) {
             Log.w(TAG, "absorb open failed: ${e.javaClass.simpleName}")
             throw IllegalStateException("the file could not be opened with its current key")
@@ -126,17 +143,17 @@ object SoilRekey {
      * passphrase too. Never throws; returns how many originals had leftovers. IO.
      */
     suspend fun recoverGarden(context: Context, verifies: (File) -> Boolean): Int = withContext(Dispatchers.IO) {
-        val garden = gardenDir(context.applicationContext)
-        val names = garden.list()?.toList() ?: return@withContext 0
-        val originals = RekeyNames.leftoverOriginals(names)
-        for (name in originals) {
+        // The directory is read by `SoilFile`, the one path authority, which also owns the one
+        // listing of `Garden/` (arc 34 / L18).
+        val originals = rekeyLeftovers(context.applicationContext)
+        for (original in originals) {
             val result = try {
-                RekeyRecovery.recover(RealRekeyFs, File(garden, name), verifies)
+                RekeyRecovery.recover(RealRekeyFs, original, verifies)
             } catch (e: Exception) {
                 Log.w(TAG, "recovery threw for a Garden file: ${e.javaClass.simpleName}")
                 RekeyRecovery.Result.FAILED
             }
-            Log.w(TAG, "recovered ${name.substringAfterLast('.')} leftovers: $result")
+            Log.w(TAG, "recovered ${original.name.substringAfterLast('.')} leftovers: $result")
         }
         originals.size
     }

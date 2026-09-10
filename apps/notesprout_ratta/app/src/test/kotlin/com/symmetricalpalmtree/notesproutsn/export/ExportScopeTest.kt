@@ -37,14 +37,20 @@ class ExportScopeTest {
 
     @Test
     fun nullFilterKeepsEveryRowInOrder() {
-        assertEquals(rows, ExportScope.pagesInScope(rows, null))
+        assertEquals(rows, ExportScope.pagesInScope(rows, null).map { it.row })
+        // Numbered from 1 in the DAO's order — what the notebook calls each page.
+        assertEquals(listOf(1, 2, 3), ExportScope.pagesInScope(rows, null).map { it.number })
     }
 
     @Test
     fun filterNarrowsToTheNamedPagesInDaoOrder() {
-        assertEquals(listOf("p2"), ExportScope.pagesInScope(rows, setOf("p2")).map { it.id })
+        assertEquals(listOf("p2"), ExportScope.pagesInScope(rows, setOf("p2")).map { it.row.id })
         // Order is the DAO's, never the set's.
-        assertEquals(listOf("p1", "p3"), ExportScope.pagesInScope(rows, setOf("p3", "p1")).map { it.id })
+        assertEquals(listOf("p1", "p3"), ExportScope.pagesInScope(rows, setOf("p3", "p1")).map { it.row.id })
+        // And each kept page still knows the number the NOTEBOOK gives it (arc 34 / L15) — the
+        // narrowed list renumbers from 1 only where the bundle is concerned.
+        assertEquals(listOf(2), ExportScope.pagesInScope(rows, setOf("p2")).map { it.number })
+        assertEquals(listOf(1, 3), ExportScope.pagesInScope(rows, setOf("p3", "p1")).map { it.number })
     }
 
     @Test

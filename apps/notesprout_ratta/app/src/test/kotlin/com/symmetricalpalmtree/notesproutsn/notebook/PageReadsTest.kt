@@ -160,6 +160,58 @@ class PageReadsTest {
         writer.close()
     }
 
+    /**
+     * Arc 34 / L16: the read went from six queries per level to one, split by type in Kotlin. What
+     * it answers must be exactly what the six per-type reads answer, in exactly their order — a
+     * filter never reorders what it keeps.
+     */
+    @Test
+    fun `the one-query read answers what the six per-type reads answer`() = runBlocking {
+        val dao = FakeSoilDao()
+        val writer = SoilWriter {}
+        val strokes = StrokeStore(dao, writer)
+        val headings = HeadingStore(dao, writer)
+        val texts = TextStore(dao, writer)
+        val shapes = ShapeStore(dao, writer)
+        val stickies = StickyStore(dao, writer) { block -> block() }
+        val links = LinkStore(dao, writer) { block -> block() }
+
+        // Interleaved on purpose: the kinds share one `order` sequence on the page.
+        strokes.commit("page", stroke("s1"))
+        texts.create("page", text("t1"))
+        strokes.commit("page", stroke("s2"))
+        headings.create("page", heading("h1"))
+        shapes.create("page", shape("sh1"))
+        stickies.create("page", note("n1"))
+        writer.drain()
+        links.create(
+            "page",
+            PageLink(
+                id = "l1", payload = payload, chrome = LinkPayload.CHROME_UNDERLINE,
+                x = 0f, y = 0f, width = 120f, height = 60f, order = 9,
+                strokes = listOf(stroke("s3")), headings = listOf(heading("h2")),
+                texts = listOf(text("t2")), shapes = listOf(shape("sh2")), stickies = listOf(note("n2")),
+            ),
+        )
+        writer.drain()
+
+        val content = PageReads.content(dao, "page")
+        assertEquals(dao.childrenOfType("page", SoilSchema.TYPE_STROKE).map { it.id }, content.strokes.map { it.id })
+        assertEquals(dao.childrenOfType("page", SoilSchema.TYPE_HEADING).map { it.id }, content.headings.map { it.id })
+        assertEquals(dao.childrenOfType("page", SoilSchema.TYPE_TEXT).map { it.id }, content.texts.map { it.id })
+        assertEquals(dao.childrenOfType("page", SoilSchema.TYPE_SHAPE).map { it.id }, content.shapes.map { it.id })
+        assertEquals(dao.stickiesOf("page").map { it.id }, content.stickies.map { it.id })
+        assertEquals(dao.linksOf("page").map { it.id }, content.links.map { it.id })
+
+        val link = content.links.single()
+        assertEquals(dao.childrenOfType("l1", SoilSchema.TYPE_STROKE).map { it.id }, link.strokes.map { it.id })
+        assertEquals(dao.childrenOfType("l1", SoilSchema.TYPE_HEADING).map { it.id }, link.headings.map { it.id })
+        assertEquals(dao.childrenOfType("l1", SoilSchema.TYPE_TEXT).map { it.id }, link.texts.map { it.id })
+        assertEquals(dao.childrenOfType("l1", SoilSchema.TYPE_SHAPE).map { it.id }, link.shapes.map { it.id })
+        assertEquals(dao.childrenOfType("l1", SoilSchema.TYPE_STICKY).map { it.id }, link.stickies.map { it.id })
+        writer.close()
+    }
+
     @Test
     fun `pages maps live page rows in order with their authored size`() = runBlocking {
         val dao = FakeSoilDao()

@@ -5,7 +5,6 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.LinearLayout
 import androidx.appcompat.widget.AppCompatImageButton
 import androidx.appcompat.widget.TooltipCompat
@@ -331,7 +330,7 @@ class SelectionToolbar(
     }
 
     /** The visible bars' rects in **window** coordinates — for exclusions / `overChrome`. */
-    fun rects(): List<Rect> = listOfNotNull(rectOf(bar), rectOf(subBar))
+    fun rects(): List<Rect> = listOfNotNull(PaperToolbar.rectOf(bar), PaperToolbar.rectOf(subBar))
 
     fun contains(x: Int, y: Int): Boolean = rects().any { it.contains(x, y) }
 
@@ -380,30 +379,9 @@ class SelectionToolbar(
         v.layoutParams = lp
     }
 
-    private fun rectOf(v: View): Rect? {
-        if (v.visibility != View.VISIBLE || v.width == 0 || v.height == 0) return null
-        val loc = IntArray(2)
-        v.getLocationInWindow(loc)
-        return Rect(loc[0], loc[1], loc[0] + v.width, loc[1] + v.height)
-    }
-
-    /** One toolbar button, to the one recipe: dimen-driven size, no ripple, tooltip == description. */
-    private fun button(iconRes: Int, hint: String, onClick: () -> Unit): AppCompatImageButton {
-        val ctx = bar.context
-        val size = ctx.resources.getDimensionPixelSize(R.dimen.toolbar_button_size)
-        val pad = ctx.resources.getDimensionPixelSize(R.dimen.toolbar_button_padding)
-        return AppCompatImageButton(ctx).apply {
-            setImageResource(iconRes)
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            setPadding(pad, pad, pad, pad)
-            setBackgroundResource(R.drawable.bg_toolbar_button)
-            stateListAnimator = null
-            contentDescription = hint
-            TooltipCompat.setTooltipText(this, hint)
-            layoutParams = LinearLayout.LayoutParams(size, size)
-            setOnClickListener { onClick() }
-        }
-    }
+    /** [AnchoredBar]'s one button recipe — the same one every floating bar in this screen uses. */
+    private fun button(iconRes: Int, hint: String, onClick: () -> Unit): AppCompatImageButton =
+        AnchoredBar.button(bar.context, iconRes, hint, onClick)
 
     private companion object {
         /** Gap between the drawn selection box and the bar, and between the bar and its sub-toolbar. */

@@ -215,8 +215,10 @@ class EventsActivity : AppCompatActivity() {
     private fun read(on: LocalDate): Read {
         val binder = CalendarSession.store ?: return Read.Failed
         return try {
-            val store = EventStore(binder)
-            Read.Ok(store.eventsOn(on), store.upcomingOn(on))
+            // One pass for both answers (arc 34 / L8): the whole recurring set and its three child
+            // sets serve the day list and the look-ahead alike, and were read twice.
+            val both = EventStore(binder).dayAndUpcoming(on)
+            Read.Ok(both.today, both.upcoming)
         } catch (e: StoreUnavailable) {
             Slog.d(TAG) { "store unavailable: ${e.javaClass.simpleName}" }
             Read.Failed

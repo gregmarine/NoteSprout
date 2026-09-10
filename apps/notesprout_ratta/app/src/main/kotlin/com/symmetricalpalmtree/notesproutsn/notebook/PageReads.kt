@@ -2,6 +2,7 @@ package com.symmetricalpalmtree.notesproutsn.notebook
 
 import com.symmetricalpalmtree.gpaper.core.model.Stroke
 import com.symmetricalpalmtree.notesproutsn.data.soil.SoilDao
+import com.symmetricalpalmtree.notesproutsn.data.soil.SoilObjectEntity
 import com.symmetricalpalmtree.notesproutsn.data.soil.SoilSchema
 
 /** One page as the link picker browses it: identity + authored size (page px). */
@@ -48,19 +49,43 @@ object PageReads {
      * the live notebook, a foreign file's read-only open and the export bake.
      */
     suspend fun content(dao: SoilDao, pageId: String): PageContent {
-        val strokes = dao.childrenOfType(pageId, SoilSchema.TYPE_STROKE).mapNotNull { StrokeRows.toStroke(it) }
-        val headings = dao.childrenOfType(pageId, SoilSchema.TYPE_HEADING).mapNotNull { HeadingRows.toHeading(it) }
-        val texts = dao.childrenOfType(pageId, SoilSchema.TYPE_TEXT).mapNotNull { TextRows.toText(it) }
-        val shapes = dao.childrenOfType(pageId, SoilSchema.TYPE_SHAPE).mapNotNull { ShapeRows.toShape(it) }
-        val stickies = dao.stickiesOf(pageId).mapNotNull { StickyRows.toSticky(it) }
-        val links = dao.linksOf(pageId).mapNotNull { row ->
-            val childStrokes = dao.childrenOfType(row.id, SoilSchema.TYPE_STROKE).mapNotNull { StrokeRows.toStroke(it) }
-            val childHeadings = dao.childrenOfType(row.id, SoilSchema.TYPE_HEADING).mapNotNull { HeadingRows.toHeading(it) }
-            val childTexts = dao.childrenOfType(row.id, SoilSchema.TYPE_TEXT).mapNotNull { TextRows.toText(it) }
-            val childShapes = dao.childrenOfType(row.id, SoilSchema.TYPE_SHAPE).mapNotNull { ShapeRows.toShape(it) }
-            val childStickies = dao.childrenOfType(row.id, SoilSchema.TYPE_STICKY).mapNotNull { StickyRows.toSticky(it) }
-            LinkRows.toLink(row, childStrokes, childHeadings, childTexts, childShapes, childStickies)
+        // One read per level (arc 34 / L16): the page wants five of the six kinds and the links
+        // besides, so it took six trips to the same index for what one answer holds. The split is
+        // in Kotlin, and a filter never reorders what it keeps — every kind is still in `order`.
+        val loose = dao.childrenOf(pageId)
+        val links = loose.filter { it.type == SoilSchema.TYPE_LINK }.mapNotNull { row ->
+            val wrapped = dao.childrenOf(row.id)
+            LinkRows.toLink(
+                row,
+                wrapped.strokes(),
+                wrapped.headings(),
+                wrapped.texts(),
+                wrapped.shapes(),
+                wrapped.stickies(),
+            )
         }
-        return PageContent(strokes, headings, links, texts, shapes, stickies)
+        return PageContent(
+            strokes = loose.strokes(),
+            headings = loose.headings(),
+            links = links,
+            texts = loose.texts(),
+            shapes = loose.shapes(),
+            stickies = loose.stickies(),
+        )
     }
+
+    private fun List<SoilObjectEntity>.strokes(): List<Stroke> =
+        mapNotNull { if (it.type == SoilSchema.TYPE_STROKE) StrokeRows.toStroke(it) else null }
+
+    private fun List<SoilObjectEntity>.headings(): List<Heading> =
+        mapNotNull { if (it.type == SoilSchema.TYPE_HEADING) HeadingRows.toHeading(it) else null }
+
+    private fun List<SoilObjectEntity>.texts(): List<PageText> =
+        mapNotNull { if (it.type == SoilSchema.TYPE_TEXT) TextRows.toText(it) else null }
+
+    private fun List<SoilObjectEntity>.shapes(): List<PageShape> =
+        mapNotNull { if (it.type == SoilSchema.TYPE_SHAPE) ShapeRows.toShape(it) else null }
+
+    private fun List<SoilObjectEntity>.stickies(): List<PageSticky> =
+        mapNotNull { if (it.type == SoilSchema.TYPE_STICKY) StickyRows.toSticky(it) else null }
 }

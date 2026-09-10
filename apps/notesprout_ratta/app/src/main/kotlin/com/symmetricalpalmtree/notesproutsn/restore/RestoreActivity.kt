@@ -84,9 +84,6 @@ class RestoreActivity : AppCompatActivity() {
     /** The picked tree, for this showing only. Null until a folder has listed at least one backup. */
     private var source: RestoreSource? = null
 
-    /** What the last listing found, in the order the source gave them. */
-    private var backups: List<RestoreBackup> = emptyList()
-
     /** The installed cloud provider, or null when there is none — the cloud row's whole condition.
      *  Re-found on every resume; held for the showing and never stored. */
     private var cloudRef: ProviderRef? = null
@@ -175,7 +172,6 @@ class RestoreActivity : AppCompatActivity() {
     private fun onChooseAnotherTap() {
         if (running.get()) { Slog.d(TAG) { "choose-another tap ignored: a restore is going" }; return }
         source = null
-        backups = emptyList()
         binding.rows.removeAllViews()
         binding.listPane.visibility = View.GONE
         binding.sourcesPane.visibility = View.VISIBLE
@@ -192,27 +188,14 @@ class RestoreActivity : AppCompatActivity() {
     /**
      * List the device folders under `Backups/` and show them. One `list` for the folder plus one
      * per device folder — a `list` costs most of a second on this seam, so this is the whole cost
-     * of the enumeration.
+     * of the enumeration. The cloud label carries its own "Backups in", so the pane's caption goes.
      */
-    private suspend fun adoptCloud(ref: ProviderRef) {
-        val picked = CloudRestoreSource(applicationContext, ref)
-        showProgress(getString(R.string.restore_reading_cloud))
-        val result = picked.listBackups()
-        hideProgress()
-        if (isFinishing || isDestroyed) return
-        when (result) {
-            is ListResult.Failed -> sourceProblem(result.problem)
-            is ListResult.Backups -> {
-                source = picked
-                backups = result.backups
-                // The label carries its own "Backups in", so the pane's caption goes.
-                binding.listCaption.visibility = View.GONE
-                binding.folderPath.text = getString(R.string.restore_cloud_source_label, providerName())
-                Slog.d(TAG) { "listed ${backups.size} cloud backup(s)" }
-                renderList()
-            }
-        }
-    }
+    private suspend fun adoptCloud(ref: ProviderRef) = adopt(
+        picked = CloudRestoreSource(applicationContext, ref),
+        progressRes = R.string.restore_reading_cloud,
+        label = getString(R.string.restore_cloud_source_label, providerName()),
+        showCaption = false,
+    )
 
     /** The extension's label — the only name the host has for the provider without asking it, and
      *  the same one the Backup screen falls back to. Never an account label. */
@@ -220,9 +203,29 @@ class RestoreActivity : AppCompatActivity() {
         intent.getStringExtra(EXTRA_PROVIDER_NAME) ?: cloudRef?.label?.toString() ?: getString(R.string.cloud_caption)
 
     /** List what the picked tree holds (one level deep — D1's `dev/` rule) and show it. */
-    private suspend fun adoptFolder(uri: Uri) {
-        val picked = SafRestoreSource(contentResolver, uri)
-        showProgress(getString(R.string.restore_reading))
+    private suspend fun adoptFolder(uri: Uri) = adopt(
+        picked = SafRestoreSource(contentResolver, uri),
+        progressRes = R.string.restore_reading,
+        label = folderLabel(uri),
+        showCaption = true,
+    )
+
+    /**
+     * The one adopt path both sources take (arc 34 / L12): read what [picked] holds under a
+     * *Reading…* dialog, and either name the problem or become the showing list. The three things
+     * that differ are the dialog's words ([progressRes]), the label over the list ([label]) and
+     * whether the pane's own caption still has anything to add ([showCaption]).
+     *
+     * The rows are handed straight to [renderList]: the listing was never read anywhere else, and
+     * a field holding it could only ever disagree with what is on the screen.
+     */
+    private suspend fun adopt(
+        picked: RestoreSource,
+        progressRes: Int,
+        label: String,
+        showCaption: Boolean,
+    ) {
+        showProgress(getString(progressRes))
         val result = picked.listBackups()
         hideProgress()
         if (isFinishing || isDestroyed) return
@@ -230,11 +233,10 @@ class RestoreActivity : AppCompatActivity() {
             is ListResult.Failed -> sourceProblem(result.problem)
             is ListResult.Backups -> {
                 source = picked
-                backups = result.backups
-                binding.listCaption.visibility = View.VISIBLE
-                binding.folderPath.text = folderLabel(uri)
-                Slog.d(TAG) { "listed ${backups.size} backup(s)" }
-                renderList()
+                binding.listCaption.visibility = if (showCaption) View.VISIBLE else View.GONE
+                binding.folderPath.text = label
+                Slog.d(TAG) { "listed ${result.backups.size} backup(s)" }
+                renderList(result.backups)
             }
         }
     }
@@ -252,7 +254,7 @@ class RestoreActivity : AppCompatActivity() {
 
     // ── The list ─────────────────────────────────────────────────────────────
 
-    private fun renderList() {
+    private fun renderList(backups: List<RestoreBackup>) {
         binding.sourcesPane.visibility = View.GONE
         binding.listPane.visibility = View.VISIBLE
         binding.rows.removeAllViews()
@@ -625,9 +627,6 @@ class RestoreActivity : AppCompatActivity() {
                 R.string.restore_problem_invalid_title,
                 getString(R.string.restore_problem_invalid_body, problem.fileName),
             )
-
-            RestoreEngine.Problem.NoKey ->
-                Dialogs.problem(this, R.string.restore_problem_no_key_title, R.string.restore_problem_no_key_body)
 
             RestoreEngine.Problem.ParkFailed ->
                 Dialogs.problem(this, R.string.restore_problem_park_title, R.string.restore_problem_park_body)

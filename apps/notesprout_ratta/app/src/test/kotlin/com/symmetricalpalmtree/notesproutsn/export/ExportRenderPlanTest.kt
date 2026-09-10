@@ -27,17 +27,22 @@ class ExportRenderPlanTest {
         createdAt = ++next, updatedAt = next, width = width, height = height, refId = refId,
     )
 
+    /** The rows as the whole notebook's scope hands them over: numbered 1.. in the DAO's order. */
+    private fun scoped(vararg rows: SoilObjectEntity) =
+        rows.mapIndexed { index, row -> ExportScope.ScopedPage(row, index + 1) }
+
     @Test
     fun keepsTheRowOrderItWasGiven() {
         // The DAO sorts by "order"; the plan must not re-sort, re-group or drop.
-        val plan = ExportRender.plan(listOf(page("p1", 0), page("p2", 1), page("p3", 2)))!!
+        val plan = ExportRender.plan(
+            scoped(page("p1", 0), page("p2", 1), page("p3", 2)))!!
         assertEquals(listOf("p1", "p2", "p3"), plan.map { it.id })
     }
 
     @Test
     fun takesEachPagesOwnSize() {
         val plan = ExportRender.plan(
-            listOf(page("p1", 0), page("p2", 1, width = 1920f, height = 2560f))
+            scoped(page("p1", 0), page("p2", 1, width = 1920f, height = 2560f))
         )!!
         assertEquals(1404, plan[0].widthPx)
         assertEquals(1872, plan[0].heightPx)
@@ -49,7 +54,8 @@ class ExportRenderPlanTest {
     @Test
     fun blankPaperIsTheEmptyToken() {
         // No refId is what blank IS in the format — the bake draws white, it does not go looking.
-        val plan = ExportRender.plan(listOf(page("p1", 0), page("p2", 1, refId = "t1")))!!
+        val plan = ExportRender.plan(
+            scoped(page("p1", 0), page("p2", 1, refId = "t1")))!!
         assertEquals("", plan[0].templateId)
         assertEquals("t1", plan[1].templateId)
     }
@@ -57,9 +63,12 @@ class ExportRenderPlanTest {
     @Test
     fun refusesWholesaleWhenAPageHasNoSize() {
         // Not a skip: a document silently missing a page is worse than one that refuses out loud.
-        assertNull(ExportRender.plan(listOf(page("p1", 0), page("p2", 1, width = 0f))))
-        assertNull(ExportRender.plan(listOf(page("p1", 0, height = null))))
-        assertNull(ExportRender.plan(listOf(page("p1", 0, width = -3f))))
+        assertNull(ExportRender.plan(
+            scoped(page("p1", 0), page("p2", 1, width = 0f))))
+        assertNull(ExportRender.plan(
+            scoped(page("p1", 0, height = null))))
+        assertNull(ExportRender.plan(
+            scoped(page("p1", 0, width = -3f))))
     }
 
     @Test

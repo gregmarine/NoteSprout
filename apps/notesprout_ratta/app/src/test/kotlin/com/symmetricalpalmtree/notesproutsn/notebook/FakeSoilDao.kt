@@ -27,6 +27,8 @@ class FakeSoilDao : SoilDao {
     override suspend fun childrenOfType(parentId: String, type: String) =
         rows.values.filter { it.parentId == parentId && it.type == type && it.deletedAt == null }
             .sortedBy { it.order }
+    override suspend fun childrenOf(parentId: String) =
+        rows.values.filter { it.parentId == parentId && it.deletedAt == null }.sortedBy { it.order }
     override suspend fun notebookRow() = rows.values.firstOrNull { it.type == "notebook" }
     override suspend fun templateDigests(notebookId: String) = rows.values
         .filter { it.type == "template" && it.parentId == notebookId && it.deletedAt == null }

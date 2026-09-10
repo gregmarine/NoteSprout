@@ -259,12 +259,17 @@ object GlobalRotation {
         app: Context, file: File, fileId: String, kind: RotationPlan.Kind, old: String, new: String, keyScope: String?,
         resumed: Boolean,
     ): FileOutcome {
+        // Kept when the plan actually asked (arc 34 / L17): where `beforeRekey` reads a raw-key hit
+        // it reads it AS the old key, so the rekey can attach and checkpoint with it instead of
+        // deriving the same key twice more. Null everywhere the question was not asked, and the
+        // passphrase road is what null means.
+        var oldRawKey: ByteArray? = null
         val step = RotationPlan.beforeRekey(
             kind,
             resumed = resumed,
             // Stale ones are dropped there — the V4 rule. A hit is "under the old key" only where
             // beforeRekey asks for it (a start, or a resume once the new key has failed).
-            rawKeyOpens = { KeyMaterial.peekVerified(app, fileId, file) != null },
+            rawKeyOpens = { KeyMaterial.peekVerified(app, fileId, file)?.also { oldRawKey = it } != null },
             opensUnderNew = { SoilCrypto.verifyPassphrase(file, new) },
             opensUnderOld = { SoilCrypto.verifyPassphrase(file, old) },
         )
@@ -274,7 +279,7 @@ object GlobalRotation {
                 FileOutcome.DONE
             }
             RotationPlan.Step.REKEY -> try {
-                SoilRekey.rekeyInPlace(app, file, fileId, old, new, keyScope)
+                SoilRekey.rekeyInPlace(app, file, fileId, old, new, keyScope, oldRawKey)
                 FileOutcome.DONE
             } catch (e: Exception) {
                 Log.w(TAG, "rekey failed: ${e.message}")

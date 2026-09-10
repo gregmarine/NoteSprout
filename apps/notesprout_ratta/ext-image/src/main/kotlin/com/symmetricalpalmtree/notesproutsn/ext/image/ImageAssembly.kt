@@ -85,6 +85,8 @@ internal object ImageAssembly {
         } finally {
             bitmap.recycle()
         }
+        // `:ext-image` depends on `:extension-api` only, so there is no `Slog` here — the hand-written
+        // gate is the same one `Slog.d` compiles to (CLAUDE.md § Standing rules, arc 34 / L20).
         if (BuildConfig.DEBUG) {
             Log.d(
                 tag,

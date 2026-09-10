@@ -154,6 +154,39 @@ class EventStoreTest {
         assertEquals(3, out.single().daysUntil)
     }
 
+    /** Arc 34 / L8: the events screen wants both answers, and the recurring set — four of the six
+     *  queries each read costs — is read and decoded ONCE for the pair. */
+    @Test
+    fun dayAndUpcomingReadTheRecurringSetOnce() {
+        val fake = FakeEventStore()
+        fake.seed(testEvent(id = "today", title = "Dentist", start = sep1))
+        fake.seed(testEvent(id = "soon", title = "Trip", start = sep1.plusDays(3), reminders = listOf(Reminder(1, ReminderUnit.WEEKS))))
+        fake.seed(
+            testEvent(
+                id = "weekly", title = "Standup", start = sep1,
+                recurrence = RecurrenceRule(Freq.WEEKLY, weekdays = setOf(sep1.dayOfWeek.value % 7)),
+            )
+        )
+        fake.calls.clear()
+
+        val out = store(fake).dayAndUpcoming(sep1)
+
+        // Eight, not the twelve the two separate reads cost: one recurring set, one weekday set,
+        // one exception set, one recurring-reminder set — and the two one-off windows that differ.
+        assertEquals(
+            listOf(
+                "query(oneOffsOverlapping)", "query(remindersOverlapping)",
+                "query(oneOffsStartingIn)", "query(remindersStartingIn)",
+                "query(recurring)", "query(recurringWeekdays)",
+                "query(recurringExceptions)", "query(recurringReminders)",
+            ),
+            fake.calls,
+        )
+        assertEquals(store(fake).eventsOn(sep1).map { it.title }, out.today.map { it.title })
+        assertEquals(listOf("Dentist", "Standup"), out.today.map { it.title })
+        assertEquals(listOf("Trip"), out.upcoming.map { it.event.title })
+    }
+
     @Test
     fun getReadsTheRowAndItsThreeChildSets() {
         val fake = FakeEventStore()

@@ -198,8 +198,11 @@ it produced; since arc 33 / F4 the key carries no bar heights (a chrome flip re-
 a `showPage` whose key is unchanged (an undo or a redo on the showing page) reloads
 the strokes and nothing else: no page-sized bitmap, no `setPageSize`/`setTemplate` repaints (each is
 its own EPD frame), the replaced bitmap recycled (the Y4 review's finding: an undo was paying for a
-full bake). A real navigation changes the key; `onResume` forces one only when the date has actually
-changed (there is no date-change receiver — a planner call the user may revisit, tracked in
+full bake). A real navigation changes the key; `onResume` re-applies only when the date has actually changed —
+asked of `bakeKey.today` since arc 34 / L6, the day the showing template was baked for already being
+part of the key, so there is no second field to fall out of step with it, and the plain re-apply is
+enough (a changed `today` is a changed key, and a changed key is a bake). There is no date-change
+receiver — a planner call the user may revisit, tracked in
 `BACKLOG.md`).
 
 ## The store
@@ -456,7 +459,9 @@ its soonest qualifying occurrence — ordered nearest-first, then all-day, then 
 the time badge ("All day" / "9:00 AM"), the meta line (type, span, the recurrence summary, the end
 clause), the Upcoming badge ("Tomorrow" / "In 6 days"), the Day-row label ("N events") — is built
 from ints through `CalendarDates`' hand lists, **never a formatter** (arc 5's rule, restated here for
-a second reason to need it). `EventWrites` is the pure statement-list layer under `EventStore`:
+a second reason to need it). Since arc 34 / L5 the 12-hour split inside `minute` is `TimeMath`'s
+own (`hour12` / `isPm`) and the half's word is `CalendarDates.HALF_NAMES` — the badge and the time
+picker must agree about what "12 PM" is, and they had each written the `% 12` out. `EventWrites` is the pure statement-list layer under `EventStore`:
 `save`, `delete`, `deleteWithScope`, `editWithScope`, `editSeries` (og's three scopes, below) and
 `editLandsUnder`, the one function both the store's compensation and its return value read so they
 cannot disagree about which id an edit landed under.
@@ -490,7 +495,12 @@ An "ends on" date before the start is refused at `Save`, before any of this runs
 
 `EventsActivity` lists one day: **Today**, then **Upcoming**, the tags idiom — section labels
 `inkBlack`, "Today" appearing only when Upcoming follows (a label exists to tell two lists apart).
-Rows are `EventsPaging.rows` over the store's two reads, paged **greedily by measured height**
+Rows are `EventsPaging.rows` over the store's **one** read — `EventStore.dayAndUpcoming(day)`,
+which answers both lists in a single pass (arc 34 / L8): the whole recurring set and its three
+child sets serve the day list and the look-ahead alike, and asking `eventsOn` then `upcomingOn`
+read and decoded all four twice. Eight queries where there were twelve; the two one-off windows
+(the day itself, and the look-ahead horizon) are all that still differ — paged **greedily by
+measured height**
 against the band `EventsActivity` actually has (`EventsPaging.pageCount` / `pageOf` / `clampPage`,
 two row heights — a header and an event card — so a page never ends on a header and never half-draws
 a row); the in-band `‹ 1/2 ›` pager is `INVISIBLE`, never `GONE`, when there is only one page, and
@@ -719,7 +729,11 @@ glyph on the page. `Glyph` is og's six per-type icons (`Glyph.of(type)` — cake
 people, clock, dot) drawn as Canvas primitives so the template painter stays Context-free — it holds
 no resources and no drawables, only arithmetic on a box. `MarkSource` is a `fun interface`, the
 document's one read seam onto marks; `EventStore : InkStore, MarkSource` answers it with `marksFor`,
-the same six-query `eventsInRange` mapped to `DayMark`s rather than a separate read.
+the same six-query `eventsInRange` mapped to `DayMark`s rather than a separate read. Since arc 34 /
+L7 that expansion asks `Recurrence.coveredDays(event, from, to)` once per series instead of
+`occursOn` once per day: a COUNT rule enumerates its own N inside the question, so a Month grid's
+42 cells used to regenerate a "100 times" series 42 times for one event. NEVER / UNTIL keep the
+per-day walk, which is bounded by the span and generates nothing.
 
 `GridMarks` is pure: `distinct` keeps first-seen order so two birthdays on one day still show one
 cake; `layout` is og's slot arithmetic — right-packing from the row's right edge, a lone `+` when a
@@ -1376,7 +1390,7 @@ same gate the pad's screen calls, rather than a copy each screen kept for itself
 | `ext-calendar/UpcomingTest` | a lead that reaches the day surfaces and one that doesn't does not, the day-before/day-of boundary, a span already under way is not upcoming, no reminders never surfaces, a recurring event bounded by its largest lead, one row per event at its soonest occurrence, an excluded occurrence skipped, the nearest-first/all-day/title order, the year-long horizon |
 | `ext-calendar/EventRulesTest` | title trimmed/tab-and-newline-dropped/cut, the note text cut, reminders filtered/deduped/sorted/capped (a tie between a week and seven days breaks by unit), an inverted span straightened, all-day clearing both minutes, an end minute before the start cleared, the interval and weekday/mode/date/count field clearing per `endMode`, `normalize` idempotent, the two `Problem`s |
 | `ext-calendar/EventSqlTest` | the events step's shape, every statement through the real host validator, `event` never `REPLACE`d, no read ever carries an `IN (…)`, the one `COLUMNS` constant, `insertEvent`/`updateEvent`'s exact columns, the NOT NULL defaults on a one-off, the two stamps, the delete, child sets cleared then `OR IGNORE`d, the event/child/set reads including a one-off's reminders JOIN |
-| `ext-calendar/EventStoreTest` | a range as six queries expanding the recurring set in Kotlin, a saved event reading back with its children, the day order, marks narrowed to what the grid draws (and empty for an empty range), Upcoming as its own six queries, `get` reading the row and its three child sets, the note read through the lens then the planned ranges, a bad row dropped while the day still lists, `delete` answering false for no occurrence, a delete taking its children and note, `edit` answering the id the fields landed under, an override/an in-place edit each asking for the note under the right id, a failed override/in-place-edit/new-event save each compensating correctly, a THIS override / a FOLLOWING split / an existing event's save that fails part-way each leaving the original byte-identical (arc 34 / M5), the row rewrite always the whole last batch, `save` refusing a `Problem` before any store call, the caps applied on the way in, every store failure reading as `StoreUnavailable` |
+| `ext-calendar/EventStoreTest` | a range as six queries expanding the recurring set in Kotlin, `dayAndUpcoming` reading that set **once** for both answers (arc 34 / L8 — eight queries, not twelve), a saved event reading back with its children, the day order, marks narrowed to what the grid draws (and empty for an empty range), Upcoming as its own six queries, `get` reading the row and its three child sets, the note read through the lens then the planned ranges, a bad row dropped while the day still lists, `delete` answering false for no occurrence, a delete taking its children and note, `edit` answering the id the fields landed under, an override/an in-place edit each asking for the note under the right id, a failed override/in-place-edit/new-event save each compensating correctly, a THIS override / a FOLLOWING split / an existing event's save that fails part-way each leaving the original byte-identical (arc 34 / M5), the row rewrite always the whole last batch, `save` refusing a `Problem` before any store call, the caps applied on the way in, every store failure reading as `StoreUnavailable` |
 | `ext-calendar/EventWritesTest` | the note's puts, a save as additions-then-note-mutations-then-rewrite (`EventWrite`), the rewrite always one whole batch behind every addition, a `NoteWrite` splitting its op log by what the save minted, a one-off still clearing every child set, a non-recurring or whole-series delete as one statement, THIS as an exception-plus-stamp, FOLLOWING as a truncate, a split at the first occurrence collapsing to a whole delete or whole edit, a day mapping to no occurrence answering nothing-to-do, THIS/FOLLOWING edits exceptioning or truncating and starting a fresh series, a FOLLOWING split of a COUNT series carrying the remaining count (4 + 6 = 10; a moved date too) and a retyped rule keeping its own, a FOLLOWING split carrying the exceptions at/after it (dropping those before, keeping them on a re-anchor), `countBefore` counting the starts ahead of a date, ALL keeping the anchor when the dates come back as the prefill and re-anchoring on a deliberate change, a new or non-recurring save/edit taking the one plain road |
 | `ext-calendar/EventRowsTest` | a good row round-trips, a one-off carries its defaults and ignores stray child rows, an unknown enum name / an unparseable date / an end before the start each drop the row, the `recurring` mirror is load-bearing, a wrong storage-class cell drops the row, the child-row helpers, an unknown type is never folded to `OTHER` |
 | `ext-calendar/EventWordingTest` | 12-hour minutes, the date builders, the events screen naming the whole day (not a half), the time badge, the meta line growing with the event, a span carrying the year on both sides only when they differ, recurrence summaries, weekdays listed Sun-first, the ending clause, the Upcoming row, the repeat glance saying only the value, reminder labels, the Day-row label, every type's label and default |

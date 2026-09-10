@@ -14,14 +14,19 @@ import java.time.LocalDate
  */
 object EventWording {
 
-    /** A minute of day as a 12-hour clock time: `0` → "12:00 AM", `750` → "12:30 PM", `1439` → "11:59 PM". */
+    /**
+     * A minute of day as a 12-hour clock time: `0` → "12:00 AM", `750` → "12:30 PM",
+     * `1439` → "11:59 PM".
+     *
+     * The 12-hour split is [TimeMath]'s — the picker and the badge must agree about what "12 PM"
+     * is — and the half's word is [CalendarDates.HALF_NAMES], the same two strings the Day page's
+     * own row labels take.
+     */
     fun minute(m: Int): String {
         val clamped = m.coerceIn(EventRules.MINUTE_RANGE)
-        val hour24 = clamped / 60
         val minutes = clamped % 60
-        val hour12 = if (hour24 % 12 == 0) 12 else hour24 % 12
-        val suffix = if (hour24 < 12) "AM" else "PM"
-        return "$hour12:${if (minutes < 10) "0$minutes" else "$minutes"} $suffix"
+        val half = CalendarDates.HALF_NAMES[if (TimeMath.isPm(clamped)) 1 else 0]
+        return "${TimeMath.hour12(clamped)}:${if (minutes < 10) "0$minutes" else "$minutes"} $half"
     }
 
     /** "Sep 3" — a date inside the year being looked at. */

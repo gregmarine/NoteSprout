@@ -39,12 +39,13 @@ class ExportRenderEndnotesTest {
         sticky("wrapped", "link", 0, contentW = 0, contentH = 0)
 
         val pages = listOf(
-            ExportRender.PageBake("p1", 1404, 1872, ""),
-            ExportRender.PageBake("p2", 1404, 1872, ""),
+            ExportRender.PageBake("p1", 1404, 1872, "", number = 1),
+            ExportRender.PageBake("p2", 1404, 1872, "", number = 2),
         )
         val sources = ExportRender.endnoteSources(dao, pages)
         assertEquals(listOf("first", "second", "wrapped", "late"), sources.map { it.stickyId })
         assertEquals(listOf(1, 1, 1, 2), sources.map { it.fromPage })
+        assertEquals(listOf(1, 1, 1, 2), sources.map { it.fromPageLabel })
         // The icon rect is page-absolute; the row's content size travels, 0 = none carried.
         assertEquals(10f, sources[0].iconL); assertEquals(82f, sources[0].iconR)
         assertEquals(800, sources[0].contentW)
@@ -55,6 +56,6 @@ class ExportRenderEndnotesTest {
     fun noNotesWithContentIsNoWalkAtAll() = runBlocking {
         row("p1", "nb", SoilSchema.TYPE_PAGE, 0, w = 1404f, h = 1872f)
         sticky("empty", "p1", 0, withStroke = false)
-        assertTrue(ExportRender.endnoteSources(dao, listOf(ExportRender.PageBake("p1", 1404, 1872, ""))).isEmpty())
+        assertTrue(ExportRender.endnoteSources(dao, listOf(ExportRender.PageBake("p1", 1404, 1872, "", number = 1))).isEmpty())
     }
 }

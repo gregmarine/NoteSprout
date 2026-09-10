@@ -71,11 +71,12 @@ object ShapeGeometry {
                 )
             }
         }
-        val rad = Math.toRadians(s.rotationDeg.toDouble())
-        val c = cos(rad).toFloat()
-        val sn = sin(rad).toFloat()
+        // The local → page step is g-paper's own: a shape's five geometry numbers ARE an
+        // OrientedBox (ShapeBox), and `toPage` is the rotate-then-translate the transform mode
+        // edits against. Writing the matrix out a second time here is how the two would drift.
+        val box = ShapeBox.toBox(s)
         return local.map { poly ->
-            Poly(poly.points.map { p -> Pt(s.cx + p.x * c - p.y * sn, s.cy + p.x * sn + p.y * c) }, poly.closed)
+            Poly(poly.points.map { p -> box.toPage(p.x, p.y).let { (x, y) -> Pt(x, y) } }, poly.closed)
         }
     }
 

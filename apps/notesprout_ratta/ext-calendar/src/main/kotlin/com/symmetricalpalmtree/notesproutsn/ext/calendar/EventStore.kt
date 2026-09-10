@@ -66,32 +66,25 @@ class EventStore(
      * cares about four of them.
      */
     fun eventsInRange(from: LocalDate, to: LocalDate): Map<LocalDate, List<Event>> = guard {
-        var dropped = 0
-        val oneOffRows = StoreReads.all(store, EventSql.selectOneOffsOverlapping(from, to)).rows
-        val oneOffReminders = remindersBy(EventSql.selectRemindersOverlapping(from, to))
-        val recurringRows = StoreReads.all(store, EventSql.selectRecurring()).rows
-        val weekdays = weekdaysBy()
-        val exceptions = exceptionsBy()
-        val recurringReminders = remindersBy(EventSql.selectRecurringReminders())
+        // Read order is the pinned one — the one-offs and their reminders, then the recurring set
+        // and its three child sets (`aRangeIsSixQueries_…`).
+        val raw = readOneOffs(EventSql.selectOneOffsOverlapping(from, to), EventSql.selectRemindersOverlapping(from, to))
+        val series = recurringSeries()
+        val oneOffs = raw.decoded(series)
+        reportDropped(series.dropped + oneOffs.dropped)
+        val recurring = series.events
 
-        val oneOffs = ArrayList<Event>(oneOffRows.size)
-        for (row in oneOffRows) {
-            val e = decode(row, weekdays, exceptions, oneOffReminders)
-            if (e == null) dropped++ else oneOffs += e
-        }
-        val recurring = ArrayList<Event>(recurringRows.size)
-        for (row in recurringRows) {
-            val e = decode(row, weekdays, exceptions, recurringReminders)
-            if (e == null) dropped++ else recurring += e
-        }
-        if (dropped > 0) Log.w(TAG, "$dropped event row(s) dropped")
-
+        // Each recurring series is expanded over the whole range ONCE (arc 34 / L7): a COUNT rule
+        // enumerates its own N inside `occursOn`, so asking it per day made a Month grid's 42 cells
+        // regenerate a "100 times" series 42 times. Day order is unchanged — one-offs in row order,
+        // then the recurring set in row order, then `EventOrder.DAY`, whose sort is stable.
+        val recurringDays = recurring.map { it to Recurrence.coveredDays(it, from, to) }
         val out = LinkedHashMap<LocalDate, List<Event>>()
         var day = from
         while (!day.isAfter(to)) {
             val onDay = ArrayList<Event>()
-            for (e in oneOffs) if (!e.startDate.isAfter(day) && !e.endDate.isBefore(day)) onDay += e
-            for (e in recurring) if (Recurrence.occursOn(e, day)) onDay += e
+            for (e in oneOffs.events) if (!e.startDate.isAfter(day) && !e.endDate.isBefore(day)) onDay += e
+            for ((e, days) in recurringDays) if (day in days) onDay += e
             if (onDay.isNotEmpty()) out[day] = onDay.sortedWith(EventOrder.DAY)
             day = day.plusDays(1)
         }
@@ -104,28 +97,35 @@ class EventStore(
     /** The **Upcoming** look-ahead for [day] ([Upcoming]) — the one-offs starting inside the window
      *  and the whole recurring set, each probed against its own reminders. */
     fun upcomingOn(day: LocalDate): List<UpcomingEvent> = guard {
-        val horizon = day.plusDays(Upcoming.MAX_LOOKAHEAD_DAYS.toLong())
-        var dropped = 0
-        val oneOffRows = StoreReads.all(store, EventSql.selectOneOffsStartingIn(day, horizon)).rows
-        val oneOffReminders = remindersBy(EventSql.selectRemindersStartingIn(day, horizon))
-        val recurringRows = StoreReads.all(store, EventSql.selectRecurring()).rows
-        val weekdays = weekdaysBy()
-        val exceptions = exceptionsBy()
-        val recurringReminders = remindersBy(EventSql.selectRecurringReminders())
-
-        val oneOffs = ArrayList<Event>(oneOffRows.size)
-        for (row in oneOffRows) {
-            val e = decode(row, weekdays, exceptions, oneOffReminders)
-            if (e == null) dropped++ else oneOffs += e
-        }
-        val recurring = ArrayList<Event>(recurringRows.size)
-        for (row in recurringRows) {
-            val e = decode(row, weekdays, exceptions, recurringReminders)
-            if (e == null) dropped++ else recurring += e
-        }
-        if (dropped > 0) Log.w(TAG, "$dropped event row(s) dropped")
-        Upcoming.forDay(day, oneOffs, recurring)
+        val raw = lookAhead(day)
+        val series = recurringSeries()
+        val ahead = raw.decoded(series)
+        reportDropped(series.dropped + ahead.dropped)
+        Upcoming.forDay(day, ahead.events, series.events)
     }
+
+    /** One day's list and its [Upcoming] look-ahead, in **one** pass (arc 34 / L8).
+     *
+     * The events screen wants both and asked for them one after the other, which read the whole
+     * recurring set — the series rows and their three child sets, four of the six queries — and
+     * decoded it twice. Everything the two answers share is read once here; what differs is only
+     * the one-off window (the day itself vs. the look-ahead horizon) and its reminders. */
+    fun dayAndUpcoming(day: LocalDate): DayAndUpcoming = guard {
+        val rawDay = readOneOffs(EventSql.selectOneOffsOverlapping(day, day), EventSql.selectRemindersOverlapping(day, day))
+        val rawAhead = lookAhead(day)
+        val series = recurringSeries()
+        val onDay = rawDay.decoded(series)
+        val ahead = rawAhead.decoded(series)
+        reportDropped(series.dropped + onDay.dropped + ahead.dropped)
+
+        val today = ArrayList<Event>()
+        for (e in onDay.events) if (!e.startDate.isAfter(day) && !e.endDate.isBefore(day)) today += e
+        for (e in series.events) if (Recurrence.occursOn(e, day)) today += e
+        DayAndUpcoming(today.sortedWith(EventOrder.DAY), Upcoming.forDay(day, ahead.events, series.events))
+    }
+
+    /** [dayAndUpcoming]'s two answers. */
+    data class DayAndUpcoming(val today: List<Event>, val upcoming: List<UpcomingEvent>)
 
     /** One event by id, with its children; null when there is no such row or it will not decode. */
     fun get(id: String): Event? = guard {
@@ -239,6 +239,68 @@ class EventStore(
     /** What a failed multi-batch write gives back — see [save]. */
     private fun compensation(id: String, isNew: Boolean, mintedStrokeIds: List<String>): List<Statement> =
         if (isNew) listOf(EventSql.deleteEvent(id)) else mintedStrokeIds.map { NoteSql.dropStroke(it) }
+
+    /** A decoded set of event rows and how many of them would not decode. */
+    private class Decoded(val events: List<Event>, val dropped: Int)
+
+    /** The whole recurring set with its three child sets — the four queries the day read and the
+     *  look-ahead both need, so a caller that wants both pays for them once. */
+    private fun recurringSeries(): Series {
+        val rows = StoreReads.all(store, EventSql.selectRecurring()).rows
+        val weekdays = weekdaysBy()
+        val exceptions = exceptionsBy()
+        val reminders = remindersBy(EventSql.selectRecurringReminders())
+        val decoded = decodeAll(rows, weekdays, exceptions, reminders)
+        return Series(decoded.events, decoded.dropped, weekdays, exceptions)
+    }
+
+    /** [recurringSeries]' answer: the series themselves, plus the two child maps a one-off read
+     *  still needs (a one-off has neither, but [decode] is one function for both kinds). */
+    private class Series(
+        val events: List<Event>,
+        val dropped: Int,
+        val weekdays: Map<String, Set<Int>>,
+        val exceptions: Map<String, Set<LocalDate>>,
+    )
+
+    /** One-off rows read but not yet decoded — a one-off carries no weekdays and no exceptions,
+     *  but [decode] is one function for both kinds, so the two maps the series read produces are
+     *  what it waits for. Reading first keeps the pinned query order. */
+    private class RawOneOffs(val rows: List<Row>, val reminders: Map<String, List<Reminder>>)
+
+    private fun readOneOffs(rows: Statement, reminders: Statement): RawOneOffs =
+        RawOneOffs(StoreReads.all(store, rows).rows, remindersBy(reminders))
+
+    private fun RawOneOffs.decoded(series: Series): Decoded =
+        decodeAll(rows, series.weekdays, series.exceptions, reminders)
+
+    private fun lookAhead(day: LocalDate): RawOneOffs {
+        val horizon = day.plusDays(Upcoming.MAX_LOOKAHEAD_DAYS.toLong())
+        return readOneOffs(
+            EventSql.selectOneOffsStartingIn(day, horizon),
+            EventSql.selectRemindersStartingIn(day, horizon),
+        )
+    }
+
+    private fun decodeAll(
+        rows: List<Row>,
+        weekdays: Map<String, Set<Int>>,
+        exceptions: Map<String, Set<LocalDate>>,
+        reminders: Map<String, List<Reminder>>,
+    ): Decoded {
+        val out = ArrayList<Event>(rows.size)
+        var dropped = 0
+        for (row in rows) {
+            val e = decode(row, weekdays, exceptions, reminders)
+            if (e == null) dropped++ else out += e
+        }
+        return Decoded(out, dropped)
+    }
+
+    /** Counts only — an event's title is the person's own words. */
+    private fun reportDropped(dropped: Int) {
+        if (dropped > 0) Log.w(TAG, "$dropped event row(s) dropped")
+    }
 
     private fun decode(
         row: Row,

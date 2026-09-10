@@ -334,7 +334,10 @@ screen's *Resume*. It passes the provider's `providerName` as an extra so the cl
 6. **The key prompt** — *Unlock the backup — Enter the passphrase or recovery key of the library
    this backup came from*; inflates `dialog_notebook_passphrase.xml` with body/hint/error swapped,
    keeps the IME up (Ratta), hides the entry row under the `RESTORE_KEY` lockout with the countdown
-   ticking, calls only `proveTyped`; Cancel discards staging and answers `NoKey`.
+   ticking, calls only `proveTyped`; **Cancel discards staging and says nothing** — the person
+   cancelled, so there is no problem to report and the screen simply returns to the list. (There is
+   no `Problem.NoKey`: arc 27 declared one, no path ever answered it, and arc 34 / L11 deleted it
+   with its two strings.)
 7. **Four endings, all dialogs, no toast:** **Committed** (*Restore complete — Restored N notebooks
    and M extension stores from <name>*, plus the left-out names, one action *Restart*) ·
    **RolledBack** (*Restore failed* / nothing changed, *Restart*) · **Interrupted** (*The backup is
@@ -356,7 +359,7 @@ screen's *Resume*. It passes the provider's `providerName` as an extra so the cl
 | Cloud: not connected / network / unanswered / provider gone | the four `CloudBackupLeg` wordings, naming the provider (mid-fetch `svc wifi disable` → dialog in < 1 s) | staging discarded |
 | Staged index not encrypted SQLite | *Backup isn't complete — notesprout.db … is not encrypted, is damaged, or is no longer there* | staging discarded |
 | Staged `.soil` fails its probe (after the prune) | the same, naming the file | staging discarded |
-| No key opens the staged index | *That key does not open this backup.* (field clears); 3 misses → *Too many attempts. Try again in N s* with the row hidden; Cancel → `NoKey` | staging discarded on Cancel |
+| No key opens the staged index | *That key does not open this backup.* (field clears); 3 misses → *Too many attempts. Try again in N s* with the row hidden; Cancel → back to the list, silently | staging discarded on Cancel |
 | A `.soil` the index has no alive row for · a store under neither key · a plaintext store | restored anyway, then named in *Restore complete* as **left out** | pruned from staging, never installed |
 | Staged set torn between validate and commit | *Backup isn't complete* naming the file (`Refused`) | nothing live touched |
 | Park fails | `ParkFailed`, refused | nothing |

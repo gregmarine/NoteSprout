@@ -92,64 +92,50 @@ object RestoreStaging {
      * the source would say a size at all, and only then does the part take the real name.
      *
      * False for any failure — a short write, an unwritable path, an exception out of [write]. The
-     * part is deleted on every failing path, and **nothing here throws**: the fetch turns a false
-     * into `RestoreProblem.FetchFailed` and abandons the whole attempt.
+     * part is deleted on every failing path, and nothing is thrown but a cancellation: the fetch
+     * turns a false into `RestoreProblem.FetchFailed` and abandons the whole attempt. The `.part`
+     * discipline itself is [stage]'s, shared with [writeStagedVia]; the stream and its fsync are
+     * all that is this one's own.
      */
-    fun writeStaged(target: File, expectedSize: Long, write: (OutputStream) -> Long): Boolean {
-        val part = File(target.path + BackupPredicates.PART_SUFFIX)
-        try {
-            target.parentFile?.mkdirs()
-            if (part.exists()) part.delete()
-            val written = FileOutputStream(part).use { out ->
+    fun writeStaged(target: File, expectedSize: Long, write: (OutputStream) -> Long): Boolean =
+        stage(target, expectedSize) { part ->
+            FileOutputStream(part).use { out ->
                 val n = write(out)
                 out.flush()
                 out.fd.sync()
                 n
             }
-            val landed = part.length()
-            if (expectedSize >= 0L && (written != expectedSize || landed != expectedSize)) {
-                Log.w(TAG, "short staged write ($written written, $landed landed, $expectedSize expected)")
-                part.delete()
-                return false
-            }
-            if (target.exists() && !target.delete()) {
-                part.delete()
-                return false
-            }
-            if (!part.renameTo(target)) {
-                part.delete()
-                return false
-            }
-            return true
-        } catch (e: Exception) {
-            Log.w(TAG, "staged write failed", e)
-            part.delete()
-            return false
         }
-    }
 
     /**
      * [writeStaged]'s twin for a source that will not hand over an [OutputStream] (arc 27 / L4):
      * the cloud leg's `download` takes a **file descriptor** the provider streams into itself, so
      * there is no stream here for a caller to fill.
      *
-     * The contract is deliberately identical to [writeStaged]'s, one word at a time: a `.part`
-     * sibling is prepared and any stale one removed, [fill] is handed **that file** and answers how
-     * many bytes it believes were written (a negative for "it failed", which is how a caller
-     * reports its own typed failure without throwing), the count is checked against [expectedSize]
-     * *and* against what the part actually weighs, and only then does the part take the real name.
-     * The one difference is the fsync: the provider fsyncs the descriptor before it answers, so
-     * there is no `fd` on this side to sync.
-     *
-     * False for any failure, the part deleted on every failing path, and **nothing here throws**
-     * except a cancellation, which is always passed on: the fetch turns a false into
-     * `RestoreProblem.FetchFailed` and abandons the whole attempt.
+     * The contract is identical to [writeStaged]'s because since arc 34 / L10 it is literally the
+     * same code — [stage] — with [fill] handed the `.part` file instead of a stream. The one
+     * difference is the fsync: the provider fsyncs the descriptor before it answers, so there is no
+     * `fd` on this side to sync.
      */
     suspend fun writeStagedVia(
         target: File,
         expectedSize: Long,
         fill: suspend (part: File) -> Long,
-    ): Boolean {
+    ): Boolean = stage(target, expectedSize) { part -> fill(part) }
+
+    /**
+     * The `.part` discipline both public writers keep, written once (arc 34 / L10 — they had been
+     * two copies of it): prepare a `.part` sibling and remove any stale one, let [fill] put the
+     * bytes there and say how many it believes it wrote, refuse a negative ("it failed", which is
+     * how a caller reports its own typed failure without throwing) and refuse a count that does
+     * not match [expectedSize] *and* what the part actually weighs, and only then let the part take
+     * the real name.
+     *
+     * False for any failure, the part deleted on every failing path, **nothing thrown except a
+     * cancellation**, which is always passed on. Inline, and [fill] is not `crossinline`, so the
+     * suspending writer can hand it a lambda that suspends.
+     */
+    private inline fun stage(target: File, expectedSize: Long, fill: (part: File) -> Long): Boolean {
         val part = File(target.path + BackupPredicates.PART_SUFFIX)
         try {
             target.parentFile?.mkdirs()

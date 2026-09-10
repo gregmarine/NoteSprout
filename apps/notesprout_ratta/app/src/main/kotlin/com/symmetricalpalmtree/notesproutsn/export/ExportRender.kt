@@ -198,8 +198,16 @@ object ExportRender {
         ExportOpen.Guard.UNREADABLE -> Problem.UNREADABLE
     }
 
-    /** One page as the bake takes it: identity, its **own** pixel size, and the paper under it. */
-    class PageBake(val id: String, val widthPx: Int, val heightPx: Int, val templateId: String)
+    /** One page as the bake takes it: identity, its **own** pixel size, the paper under it, and
+     *  [number] — what the **notebook** calls this page (arc 34 / L15), which is its place in the
+     *  bundle only when the whole notebook is in scope. */
+    class PageBake(
+        val id: String,
+        val widthPx: Int,
+        val heightPx: Int,
+        val templateId: String,
+        val number: Int,
+    )
 
     /**
      * The page rows as the bake reads them — pure, so the three decisions that shape every exported
@@ -213,11 +221,12 @@ object ExportRender {
      * have to be guessed at or dropped, and a document silently missing a page is worse than one
      * that refuses out loud.
      */
-    fun plan(rows: List<SoilObjectEntity>): List<PageBake>? = rows.map { row ->
+    fun plan(scoped: List<ExportScope.ScopedPage>): List<PageBake>? = scoped.map { page ->
+        val row = page.row
         val width = (row.width ?: 0f).toInt()
         val height = (row.height ?: 0f).toInt()
         if (width < 1 || height < 1) return null
-        PageBake(row.id, width, height, row.refId.orEmpty())
+        PageBake(row.id, width, height, row.refId.orEmpty(), page.number)
     }
 
     /**
@@ -237,11 +246,11 @@ object ExportRender {
         progress: suspend (Int, Int) -> Unit,
     ): Outcome {
         val dao = db.dao()
-        val rows = ExportScope.pagesInScope(dao.childrenOfType(notebookId, SoilSchema.TYPE_PAGE), pageIds)
-        if (rows.isEmpty()) return Outcome.Failed(Problem.EMPTY)
+        val scoped = ExportScope.pagesInScope(dao.childrenOfType(notebookId, SoilSchema.TYPE_PAGE), pageIds)
+        if (scoped.isEmpty()) return Outcome.Failed(Problem.EMPTY)
         // Each refusal keeps its own Problem — routing either through the generic render catch
         // would blame memory or space for a data problem (the D3 review).
-        val pages = plan(rows) ?: return Outcome.Failed(Problem.DAMAGED)
+        val pages = plan(scoped) ?: return Outcome.Failed(Problem.DAMAGED)
         if (pages.size > PageBundle.MAX_PAGES) return Outcome.Failed(Problem.TOO_LONG)
         // The endnotes are planned before the first page is drawn: the bundle declares its page
         // count and its links up front, and both include the notes (D7).
@@ -339,7 +348,10 @@ object ExportRender {
                 val sticky = StickyRows.toSticky(row) ?: continue
                 sources += Endnotes.Source(
                     stickyId = sticky.id,
+                    // Bundle-relative for the link (the container addresses its own pages);
+                    // notebook-relative for what the caption says (arc 34 / L15).
                     fromPage = index + 1,
+                    fromPageLabel = page.number,
                     iconL = sticky.x, iconT = sticky.y,
                     iconR = sticky.x + sticky.width, iconB = sticky.y + sticky.height,
                     contentW = sticky.contentW, contentH = sticky.contentH,
@@ -374,7 +386,7 @@ object ExportRender {
             canvas.drawRect(0f, top, w.toFloat(), top + 1f, captionPaint)
             val metrics = captionPaint.fontMetrics
             val baseline = top + Endnotes.CAPTION_PX / 2f - (metrics.ascent + metrics.descent) / 2f
-            canvas.drawText(Endnotes.caption(note.number, note.fromPage), Endnotes.CAPTION_INSET_PX, baseline, captionPaint)
+            canvas.drawText(Endnotes.caption(note.number, note.fromPageLabel), Endnotes.CAPTION_INSET_PX, baseline, captionPaint)
             BuiltInTemplates.toWebp(bitmap)
         } finally {
             bitmap.recycle()

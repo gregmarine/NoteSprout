@@ -7,7 +7,7 @@ the cross-session memory for the arc: read it whole at every phase start, togeth
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `FOCUS_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 ✅ (M1–M9 landed 2026-09-09, all by Fable at the user's call — 3069 JVM tests, 1646 in `:app`) · P3 ⬜ · P4 ⬜.**
+**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 ✅ (M1–M9 landed 2026-09-09, all by Fable at the user's call — 3069 JVM tests, 1646 in `:app`) · P3 ✅ (L1–L22 landed 2026-09-10, all by **Opus** at the user's call — the plan said Sonnet; 3077 JVM tests, 1653 in `:app`) · P4 ⬜.**
 Baseline before the arc: 1626 `:app` / 3033 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump, no schema change, no g-paper change, no new
 module, no new dependency. **The notebook's bottom-strip pager (`NotebookActivity.kt` /
@@ -30,7 +30,7 @@ weight to the model that fits:
 |---|---|---|---|
 | **P1** | **Fable** | The one high — a restore data-path defect | H1 |
 | **P2** | **Opus** | The nine mediums — correctness in rotation, events, notebook, extension launch; two efficiency items | M1–M9 |
-| **P3** | **Sonnet** | The twenty-two lows — reuse, simplification, dead code, conventions, small efficiency, two doc mismatches | L1–L22 |
+| **P3** | ~~Sonnet~~ **Opus** (the user's call, 2026-09-10) | The twenty-two lows — reuse, simplification, dead code, conventions, small efficiency, two doc mismatches | L1–L22 |
 | **P4** | **Sonnet** (docs) + **Fable** (freeze) | Docs, ledger, memory, freeze | — |
 
 Every fix carries its JVM test where the code is pure; the three findings that need a device
@@ -576,3 +576,97 @@ explanation and an `AskUserQuestion` never share one turn — explain, wait, the
   suite 3069 (3033 baseline + 36 across the arc so far: 1646 `:app`, 320 `:ext-calendar`, 147
   `:ext-cloud`), all green; `:app` + `:ext-cloud` release compile; NUL scan clean. Next: P3
   (Sonnet, L1–L22) — a fresh session; L17 may now proceed (M1/M2 landed).
+- **2026-09-10 — P3 ✅ (Opus — the user asked for Opus, not Sonnet, and for all twenty-two in one
+  run). L1–L22 landed as one pass.** Gates: full JVM suite **3077** (3069 baseline + 8: 1653
+  `:app`, 321 `:ext-calendar`), all green; `assembleRelease` for all fourteen modules; NUL scan
+  clean. Group by group:
+  - **A / L1** — `NotebookActivity`'s two private copies now delegate (`releaseRenderIfIdle` keeps
+    only its `::paper.isInitialized` guard on top — chrome can be tapped before the surface is
+    built; `whenPenIdle` is a one-liner over `PenIdle.whenIdle(paper, binding.root, …)`, kept as a
+    function because `ContentsFlow` takes `::whenPenIdle`). `NotebookToolbar.releaseRenderIfIdle`
+    is now `= PenIdle.releaseRenderIfIdle(paper)`, `PaperToolbar`'s shape. Pager untouched (`9f651def`).
+  - **B / L2** — the three private `rectOf` copies (`AnchoredBar`, `ShapeTransformBar`,
+    `SelectionToolbar`) are gone; all call `PaperToolbar.rectOf`, so the arc-33 visibility rule
+    exists once. **The plan's "make `AnchoredBar.button` `internal`" cannot work** — `internal` is
+    per Gradle module and the two other bars are in `:app` while `AnchoredBar` is in `:sn-screen`
+    — so the recipe became the **public companion** `AnchoredBar.button(ctx, iconRes, hint,
+    onClick)` (`PaperToolbar.rectOf`'s shape), which the instance `button` and both `:app` bars
+    call. `ImageView` imports dropped from both bars.
+  - **C / L3** — `ChromeToggle` gained `onChanged: (Boolean) -> Unit = {}` (fired only on a real
+    change; the two host screens pass `{ chromePrefs.hidden = it }` — a bound property-setter
+    reference is not Kotlin syntax) and `sync(persisted)`; `initial` became `releaseRender`, and
+    `apply` is now unconditional (the first application must set every bar's visibility even when
+    the state already matches — "nothing changed" is `sync`'s question). All four consumers
+    updated. **No `ChromeToggleTest`:** the class is two Android views and `:sn-screen` has no
+    Robolectric and no mocking library — `docs/sn-screen.md` already records that `ChromeToggle`
+    has no JVM suite of its own, and `sync`'s whole rule is one `if`.
+  - **C / L4** — `ShapeGeometry.outline`'s local→page step is `ShapeBox.toBox(s).toPage(...)`;
+    `tightBounds` untouched. `OrientedBox.toPage` does the trig in `Double` where the old inline
+    matrix used `Float`, which moves nothing at `ShapeGeometryTest`'s `TOL` of 1e-3 — the numbers
+    are byte-identical as the plan required.
+  - **D / L5** — `EventWording.minute` reads `TimeMath.hour12` / `isPm` and
+    `CalendarDates.HALF_NAMES`.
+  - **D / L6** — `bakedToday` deleted; `onResume` asks `bakeKey?.today` and re-applies with
+    `force = false` (a changed `today` is a changed key, and a changed key is a bake).
+  - **D / L7** — `Recurrence.coveredDays(event, from, to)`: a COUNT series' starts generated
+    **once** and expanded over its span; NEVER / UNTIL keep the per-day walk (bounded by the span,
+    generates nothing). `eventsInRange` maps each series to its day set before the day loop; day
+    order is unchanged (one-offs in row order, then the recurring set in row order, then the stable
+    `EventOrder.DAY` sort).
+  - **D / L8** — `EventStore.dayAndUpcoming(day)`: **eight queries where the two reads cost
+    twelve**. `recurringSeries()` reads the series and its three child sets once; `readOneOffs` /
+    `RawOneOffs.decoded(series)` split the read from the decode so the **pinned query order**
+    survives (`aRangeIsSixQueries_…` compares the call list, and building the series first
+    reordered it — caught by the suite, fixed by reading the one-offs first). `EventsActivity`
+    makes one call. New `EventStoreTest.dayAndUpcomingReadTheRecurringSetOnce`.
+  - **E / L9** — `CloudRestoreRules` → **`RestoreRows`** (file + test renamed with `git mv`);
+    `rowFor(name, entries, leg, handle)` serves both legs and `SafRestoreSource.backupOf` is one
+    line over it. `deviceFolders` stays (cloud's own). Test gained the LOCAL case (the sidecars the
+    cloud leg drops ARE counted here) and a no-index case.
+  - **E / L10** — `writeStaged` and `writeStagedVia` are both one line over a new `private inline
+    fun stage(...)`. Inline with a **non-`crossinline`** `fill` is what lets the suspending writer
+    pass a lambda that suspends. Two behaviours were unified upward, deliberately: `writeStaged`
+    now rethrows `CancellationException` (it had swallowed it) and refuses a negative count. No
+    caller can hit either — `input.copyTo(out)` throws neither — and both are the stricter reading.
+  - **E / L11** — `Problem.NoKey`, its `RestoreActivity` arm and both strings deleted. Verified
+    against the code: **Cancel returns silently**, discarding staging; no path ever answered
+    `NoKey`. `docs/restore.md` step 6 and the failure table corrected.
+  - **E / L12** — one `adopt(picked, progressRes, label, showCaption)`; the `backups` field is
+    gone (it was read in one place) and `renderList(backups)` takes the rows straight from the
+    result.
+  - **E / L13** — one `legBlock(r, countsRes, countsFailedRes, vararg prefixArgs)`; the cloud
+    caller appends its own problem line, the local one keeps its folder-gone short-circuit.
+  - **F / L14** — the four fields (`documentAnswer`, `stickyAnswer`, `pageFacts`, `pageAnswered`)
+    are one `NotebookAnswers?`, and the gate is `answers == null`. `hasStickyContent` became a
+    getter over it.
+  - **F / L15** — `ExportScope.pagesInScope` answers `ScopedPage(row, number)` with the
+    **notebook-relative** number; `ExportRender.PageBake` carries it; `Endnotes.Source` / `Note`
+    gained `fromPageLabel` and the caption reads that while `fromPage` stays bundle-relative for
+    the links. New `EndnotesTest` case (a one-page bake captioned "from page 7" with both links
+    still addressing pages 1 and 2) + `ExportScopeTest` number assertions.
+  - **F / L16** — new `SoilDao.childrenOf(parentId)`; `PageReads.content` is **one query per
+    level** instead of six, split by type in five private `List<SoilObjectEntity>` extensions.
+    New `PageReadsTest` case asserting the answer equals the six per-type reads, ids and order,
+    at both levels. `FakeSoilDao` gained the query.
+  - **G / L17** — `SoilRekey.rekeyInPlace(..., oldRawKey: ByteArray? = null)`: `absorbWal` opens
+    with `SoilCrypto.openRawKey` and the ATTACH takes `RawKeyDerivation.rawKeyLiteral`, saving the
+    two source-side KDFs. `GlobalRotation.rotateFile` keeps the key its `rawKeyOpens` probe
+    already verified (`peekVerified(...)?.also { oldRawKey = it }`) — safe because `beforeRekey`
+    reads a hit **as** the old key exactly where it asks for it. **No `SoilRekeyTest` exists and
+    none can** (SQLCipher does not run on the JVM — the `RekeyProbe` debug row is U2's pin), so
+    the pure piece was named: `internal fun attachLiteral(passphrase, rawKey)`, with a new
+    3-case `SoilRekeyKeysTest`.
+  - **G / L18** — `SoilFile.rekeyLeftovers(context)` owns the `Garden/` walk; `recoverGarden`
+    calls it. `CLAUDE.md` § Standing rules amended.
+  - **H / L19** — `InkScreenActivity.onSaveInstanceState` parks `chromeToggle.hidden` under
+    `KEY_CHROME_HIDDEN`, and `initChrome(savedInstanceState)` prefers it over the launch extra (a
+    rebuilt Activity has a flip of the person's own since the host launched it). Both callers pass
+    their bundle.
+  - **H / L20** — no code change but a comment: the `Slog` exception is written into
+    `CLAUDE.md` § Standing rules (`:extension-api`-only modules have no `Slog` on the classpath and
+    write the same gate by hand), and `ImageAssembly` points at it.
+  - **I / L21** — `encryption_key_caption`, `sticky_open_failed_title/_body` deleted (grepped
+    across every module first).
+  - **I / L22** — `CloudBrowserDialog.Pick.File.path` deleted with its construction.
+
+  Next: P4 (docs sweep + freeze).

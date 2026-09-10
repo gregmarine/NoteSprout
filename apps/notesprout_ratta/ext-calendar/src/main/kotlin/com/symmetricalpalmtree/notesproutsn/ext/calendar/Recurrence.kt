@@ -200,6 +200,44 @@ object Recurrence {
         return occursOn(rule, event.startDate, event.endDate, event.exceptions, day)
     }
 
+    /**
+     * Every day in `[from, to]` that [event] covers — [occursOn] asked once for a whole range
+     * instead of once per day (arc 34 / L7).
+     *
+     * The reason it exists is the COUNT branch: [occurrenceStartCovering] enumerates a COUNT
+     * series' whole N on every call, so a Month grid's 42 days regenerated a "100 times" rule 42
+     * times for one event. Here the starts are generated **once** and each is expanded over its
+     * own span. NEVER / UNTIL keep the per-day walk, which is already bounded by the span and
+     * generates nothing.
+     */
+    fun coveredDays(event: Event, from: LocalDate, to: LocalDate): Set<LocalDate> {
+        if (from.isAfter(to)) return emptySet()
+        val out = LinkedHashSet<LocalDate>()
+        val rule = event.recurrence
+        if (rule != null && rule.endMode == EndMode.COUNT) {
+            val span = spanOf(event.startDate, event.endDate)
+            val lo = from.toEpochDay()
+            val hi = to.toEpochDay()
+            for (start in generateStarts(rule, event.startDate, (rule.endCount ?: 0).coerceAtLeast(0))) {
+                if (start in event.exceptions) continue
+                val s = start.toEpochDay()
+                var d = maxOf(s, lo)
+                val last = minOf(s + span, hi)
+                while (d <= last) {
+                    out += LocalDate.ofEpochDay(d)
+                    d++
+                }
+            }
+            return out
+        }
+        var day = from
+        while (!day.isAfter(to)) {
+            if (occursOn(event, day)) out += day
+            day = day.plusDays(1)
+        }
+        return out
+    }
+
     /** [occurrenceStartCovering] for [event]; a one-off's covering occurrence is its own start. */
     fun occurrenceStartCovering(event: Event, day: LocalDate): LocalDate? {
         val rule = event.recurrence

@@ -215,12 +215,28 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
     private var scope: ExportScope = ExportScope.Whole
 
     /** What the one open answered about the door's page (arc 30 / PE2): its 1-based position, its
-     *  topmost heading (the Contents rule), whether it has its own document. Remembered with
-     *  [documentAnswer] for the same reason — nothing here can change under a standing screen. Null
-     *  until read, and null when the page is not among the notebook's live pages any more. */
+     *  topmost heading (the Contents rule), whether it has its own document. Null when the page is
+     *  not among the notebook's live pages any more. */
     private class PageFacts(val number: Int, val title: String?, val hasDocument: Boolean)
-    private var pageFacts: PageFacts? = null
-    private var pageAnswered = false
+
+    /**
+     * Everything the **one** `.soil` open answers, together (arc 34 / L14 — they had been three
+     * fields and a fourth saying whether the third had been asked, which could only ever describe
+     * the same read): whether the notebook holds a document, whether it holds a sticky note with
+     * content, and, from the page-sheet door, that page's own facts.
+     *
+     * Kept for the life of the screen (the M11 review). The exporter re-discovery on every resume
+     * is deliberate — a package can be disabled or replaced under a standing screen — but **none
+     * of these** can change while the screen stands: Export is only ever entered with the notebook
+     * closed (from the library, or from the page sheet after the notebook has closed itself — arc
+     * 30 / PE2), and there is no way from here into the notebook or the document editor. Re-asking
+     * was a full SQLCipher open, KDF and all, per resume for booleans that were already known.
+     *
+     * Null while unanswered, which includes a read that could not answer — "cannot answer" is not
+     * an answer worth remembering, and `null` is the whole gate.
+     */
+    private class NotebookAnswers(val hasDocument: Boolean, val hasSticky: Boolean, val page: PageFacts?)
+    private var answers: NotebookAnswers? = null
 
     /** One installed exporter, what it said it offers, and how many files it delivers per export
      *  ([ExportDelivery.delivery] — the descriptor's tail, read only from a service that declares
@@ -245,29 +261,19 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
      *  export of the Document is that page's document or nothing). */
     private val hasDocument: Boolean
         get() = when (scope) {
-            is ExportScope.Page -> pageFacts?.hasDocument ?: false
-            ExportScope.Whole -> documentAnswer ?: false
+            is ExportScope.Page -> answers?.page?.hasDocument ?: false
+            ExportScope.Whole -> answers?.hasDocument ?: false
             // A calendar page is ink. There is no document behind it and no Source row to ask about
             // one (arc 31 / HV4) — and no notebook was opened to find out.
             is ExportScope.Calendar -> false
         }
 
-    /** [hasDocument]'s answer, kept for the life of the screen (M11 review). The re-discovery on
-     *  every resume is deliberate — a package can be disabled or replaced under a standing screen —
-     *  but *this* answer cannot change while the screen stands: Export is only ever entered with
-     *  the notebook closed (from the library, or from the page sheet after the notebook has closed
-     *  itself — arc 30 / PE2), and there is no way from here into the notebook or the document
-     *  editor. Re-asking was a full SQLCipher open (KDF and all) per resume for a boolean
-     *  that was already known. Null while unanswered, which includes a read that could not answer —
-     *  "cannot answer" is not an answer worth remembering. */
-    private var documentAnswer: Boolean? = null
-
-    /** Whether this notebook holds a sticky note with content (arc 28 / D7) — read with
-     *  [documentAnswer] on the same open and remembered for the same reason. It decides one line:
-     *  a page exporter that reads only the version-1 bundle gets the notes as icons, and the
-     *  screen says so before the tap rather than after. */
-    private var hasStickyContent = false
-    private var stickyAnswer: Boolean? = null
+    /** Whether this notebook holds a sticky note with content (arc 28 / D7) — read on the same one
+     *  open as everything else in [NotebookAnswers]. It decides one line: a page exporter that
+     *  reads only the version-1 bundle gets the notes as icons, and the screen says so before the
+     *  tap rather than after. */
+    private val hasStickyContent: Boolean
+        get() = answers?.hasSticky ?: false
 
     /** The host's own Source answer for a [ExporterContract.SOURCE_PAGES] exporter: false = the
      *  notebook's pages (what this screen has always exported), true = the document laid out on
@@ -599,8 +605,8 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
      *  Export is only ever entered with the notebook closed (both doors, arc 30 / PE2) — and its
      *  null means
      *  "cannot answer", which is not an answer to build a chooser row on. Asked **once** and then
-     *  remembered ([documentAnswer]): the exporters can change under a standing screen, the
-     *  document cannot.
+     *  remembered ([answers]): the exporters can change under a standing screen, the document
+     *  cannot.
      *
      *  It is also where the notebook's own key is settled ([resolveSourceKey]) — **before** the
      *  document question, because that question is the screen's first read of the file. */
@@ -611,13 +617,11 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
         if (!calendarMode && !resolveSourceKey()) return emptyList()
         loadCloud()
         if (calendarMode) calendarRef = ExtensionRegistry.calendar(this)
-        if (!calendarMode &&
-            (documentAnswer == null || stickyAnswer == null || (pageId != null && !pageAnswered))
-        ) {
+        if (!calendarMode && answers == null) {
             // One open answers every question (the M11 finding: a SQLCipher open per boolean) —
             // the two notebook-wide ones and, from the page-sheet door, the page's own (PE2).
             val door = pageId
-            val answers = SoilDatabase.readOnce(this, notebookId, sourceKey!!) { dao ->
+            val read = SoilDatabase.readOnce(this, notebookId, sourceKey!!) { dao ->
                 val facts: PageFacts? = door?.let { id ->
                     val pages = dao.childrenOfType(notebookId, SoilSchema.TYPE_PAGE)
                     val index = pages.indexOfFirst { it.id == id }
@@ -632,16 +636,10 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
                     val pageDoc = dao.childrenOfType(id, SoilSchema.TYPE_DOCUMENT).any { !it.text.isNullOrBlank() }
                     PageFacts(index + 1, title, pageDoc)
                 }
-                Triple(dao.hasLiveDocument(), dao.stickyIdsWithContent().isNotEmpty(), facts)
+                NotebookAnswers(dao.hasLiveDocument(), dao.stickyIdsWithContent().isNotEmpty(), facts)
             }
-            if (answers != null) {
-                documentAnswer = answers.first
-                stickyAnswer = answers.second
-                pageFacts = answers.third
-                pageAnswered = true
-            }
+            if (read != null) answers = read
         }
-        hasStickyContent = stickyAnswer ?: false
         val refs = ExtensionRegistry.exporters(this)
         val kept = ArrayList<Candidate>(refs.size)
         for (ref in refs) {
@@ -1078,7 +1076,7 @@ class ExportActivity : AppCompatActivity(), ExportPresetRow.Host {
     private fun stem(): String = when (val s = scope) {
         ExportScope.Whole -> ExportNaming.base(notebookName, notebookId)
         is ExportScope.Page -> {
-            val facts = pageFacts
+            val facts = answers?.page
             ExportNaming.pageStem(notebookName, notebookId, facts?.number ?: 0, facts?.title)
         }
         // The period, with no notebook in it and no ` AM` / ` PM` — that suffix only means

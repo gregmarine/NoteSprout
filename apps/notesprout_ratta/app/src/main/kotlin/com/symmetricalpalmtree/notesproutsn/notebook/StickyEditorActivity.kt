@@ -277,6 +277,7 @@ class StickyEditorActivity : AppCompatActivity() {
             bars = listOf(binding.topBar),
             beforeHide = { hideEraserBar() },
             afterLayout = ::pushExclusions,
+            onChanged = { chromePrefs.hidden = it },
         )
 
         gestures = PageGestures(
@@ -311,7 +312,7 @@ class StickyEditorActivity : AppCompatActivity() {
         }
         // Applied from the persisted flag before the first layout, so an editor opened hidden never
         // shows its bar. `initial`: nothing is on the glass yet, so no render release.
-        chromeToggle.apply(chromePrefs.hidden, initial = true)
+        chromeToggle.apply(chromePrefs.hidden, releaseRender = false)
         Slog.d(TAG) {
             "open: sticky ${showing.stickyId} ${showing.initial.size} stroke(s) " +
                 "${showing.contentW}x${showing.contentH} engine=${paper.engineId}"
@@ -339,11 +340,8 @@ class StickyEditorActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         // Arc 33: another paper screen (the notebook, the pad, the calendar) may have flipped the
-        // one global flag while this one was away — re-sync before the paper comes back. Nothing is
-        // on the glass yet, so no render release; a no-op when nothing changed.
-        if (::chromeToggle.isInitialized && chromeToggle.hidden != chromePrefs.hidden) {
-            chromeToggle.apply(chromePrefs.hidden, initial = true)
-        }
+        // one global flag while this one was away — re-sync before the paper comes back.
+        if (::chromeToggle.isInitialized) chromeToggle.sync(chromePrefs.hidden)
         // Reclaim the pipeline (focus events are unreliable on e-ink) — the notebook released it
         // immediately before launching us.
         if (::paper.isInitialized) paper.resumeDrawing()
@@ -641,7 +639,6 @@ class StickyEditorActivity : AppCompatActivity() {
     private fun toggleChrome() {
         if (!shown || closing) return
         chromeToggle.toggle()
-        chromePrefs.hidden = chromeToggle.hidden
     }
 
     private fun overChrome(ev: MotionEvent): Boolean {

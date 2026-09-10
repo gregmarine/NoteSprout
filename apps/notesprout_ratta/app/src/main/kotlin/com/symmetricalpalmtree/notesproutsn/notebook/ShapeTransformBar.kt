@@ -5,7 +5,6 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.LinearLayout
 import androidx.appcompat.widget.AppCompatButton
 import androidx.appcompat.widget.AppCompatImageButton
@@ -140,7 +139,7 @@ class ShapeTransformBar(
      * gate for re-placing during a drag. False while the bar is down, so a caller need not check.
      */
     fun coveredBy(shape: PageShape): Boolean {
-        val barRect = rectOf(bar) ?: return false
+        val barRect = PaperToolbar.rectOf(bar) ?: return false
         val loc = IntArray(2).also { paperView.getLocationInWindow(it) }
         val b = overlayBox(shape)
         val overlay = Rect(
@@ -156,7 +155,7 @@ class ShapeTransformBar(
     }
 
     /** The visible bar's rect in **window** coordinates — for exclusions / `overChrome`. */
-    fun rects(): List<Rect> = listOfNotNull(rectOf(bar))
+    fun rects(): List<Rect> = listOfNotNull(PaperToolbar.rectOf(bar))
 
     fun contains(x: Int, y: Int): Boolean = rects().any { it.contains(x, y) }
 
@@ -164,30 +163,9 @@ class ShapeTransformBar(
     private fun overlayBox(shape: PageShape): Bounds =
         ShapeGeometry.aabb(shape, density).inflated(SELECTION_BOX_INFLATE_PX + OVERLAY_REACH_DP * density)
 
-    private fun rectOf(v: View): Rect? {
-        if (v.visibility != View.VISIBLE || v.width == 0 || v.height == 0) return null
-        val loc = IntArray(2)
-        v.getLocationInWindow(loc)
-        return Rect(loc[0], loc[1], loc[0] + v.width, loc[1] + v.height)
-    }
-
-    /** [AnchoredBar]'s button recipe: dimen-driven size, no ripple, tooltip == description. */
-    private fun iconButton(iconRes: Int, hint: String, onClick: () -> Unit): AppCompatImageButton {
-        val ctx = bar.context
-        val size = ctx.resources.getDimensionPixelSize(R.dimen.toolbar_button_size)
-        val pad = ctx.resources.getDimensionPixelSize(R.dimen.toolbar_button_padding)
-        return AppCompatImageButton(ctx).apply {
-            setImageResource(iconRes)
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            setPadding(pad, pad, pad, pad)
-            setBackgroundResource(R.drawable.bg_toolbar_button)
-            stateListAnimator = null
-            contentDescription = hint
-            TooltipCompat.setTooltipText(this, hint)
-            layoutParams = LinearLayout.LayoutParams(size, size)
-            setOnClickListener { onClick() }
-        }
-    }
+    /** [AnchoredBar]'s one button recipe — the same one every floating bar in this screen uses. */
+    private fun iconButton(iconRes: Int, hint: String, onClick: () -> Unit): AppCompatImageButton =
+        AnchoredBar.button(bar.context, iconRes, hint, onClick)
 
     private companion object {
 

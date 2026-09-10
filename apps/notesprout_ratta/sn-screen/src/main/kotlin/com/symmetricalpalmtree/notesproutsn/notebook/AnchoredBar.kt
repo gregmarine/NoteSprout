@@ -1,5 +1,6 @@
 package com.symmetricalpalmtree.notesproutsn.notebook
 
+import android.content.Context
 import android.graphics.Rect
 import android.view.Gravity
 import android.view.View
@@ -93,38 +94,44 @@ class AnchoredBar(
     }
 
     /** The visible bar's rect in **window** coordinates — for exclusions / `overChrome`. */
-    fun rects(): List<Rect> = listOfNotNull(rectOf(bar))
+    fun rects(): List<Rect> = listOfNotNull(PaperToolbar.rectOf(bar))
 
     fun contains(x: Int, y: Int): Boolean = rects().any { it.contains(x, y) }
 
-    private fun rectOf(v: View): Rect? {
-        if (v.visibility != View.VISIBLE || v.width == 0 || v.height == 0) return null
-        val loc = IntArray(2)
-        v.getLocationInWindow(loc)
-        return Rect(loc[0], loc[1], loc[0] + v.width, loc[1] + v.height)
-    }
+    private fun button(iconRes: Int, hint: String, onClick: () -> Unit): AppCompatImageButton =
+        button(bar.context, iconRes, hint, onClick)
 
-    /** One toolbar button, to the one recipe: dimen-driven size, no ripple, tooltip == description. */
-    private fun button(iconRes: Int, hint: String, onClick: () -> Unit): AppCompatImageButton {
-        val ctx = bar.context
-        val size = ctx.resources.getDimensionPixelSize(R.dimen.toolbar_button_size)
-        val pad = ctx.resources.getDimensionPixelSize(R.dimen.toolbar_button_padding)
-        return AppCompatImageButton(ctx).apply {
-            setImageResource(iconRes)
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            setPadding(pad, pad, pad, pad)
-            setBackgroundResource(R.drawable.bg_toolbar_button)
-            stateListAnimator = null
-            contentDescription = hint
-            TooltipCompat.setTooltipText(this, hint)
-            layoutParams = LinearLayout.LayoutParams(size, size)
-            setOnClickListener { onClick() }
-        }
-    }
-
-    private companion object {
+    companion object {
         /** Gap between the anchoring button and the bar — the selection bar's gap, so every
          *  floating bar sits off its anchor alike. */
-        const val GAP_DP = 8f
+        private const val GAP_DP = 8f
+
+        /**
+         * **The** floating-bar icon-button recipe: dimen-driven size (so it grows with the tablet
+         * tier), no ripple, no state-list animator, tooltip == content description. Public and
+         * static because the other two floating bars in the notebook (`ShapeTransformBar`,
+         * `SelectionToolbar`) build their buttons the same way and had each grown a copy of it —
+         * one recipe, or three that drift.
+         */
+        fun button(
+            ctx: Context,
+            iconRes: Int,
+            hint: String,
+            onClick: () -> Unit,
+        ): AppCompatImageButton {
+            val size = ctx.resources.getDimensionPixelSize(R.dimen.toolbar_button_size)
+            val pad = ctx.resources.getDimensionPixelSize(R.dimen.toolbar_button_padding)
+            return AppCompatImageButton(ctx).apply {
+                setImageResource(iconRes)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setPadding(pad, pad, pad, pad)
+                setBackgroundResource(R.drawable.bg_toolbar_button)
+                stateListAnimator = null
+                contentDescription = hint
+                TooltipCompat.setTooltipText(this, hint)
+                layoutParams = LinearLayout.LayoutParams(size, size)
+                setOnClickListener { onClick() }
+            }
+        }
     }
 }

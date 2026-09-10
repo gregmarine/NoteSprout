@@ -890,8 +890,9 @@ class NotebookActivity : AppCompatActivity() {
             bars = listOf(binding.topBar, binding.bottomStrip),
             beforeHide = { hideLassoPopup(); hideTagsPopup(); hideInsertBar(); hideEraserBar() },
             afterLayout = ::pushExclusions,
+            onChanged = { chromePrefs.hidden = it },
         )
-        chromeToggle.apply(chromePrefs.hidden, initial = true)
+        chromeToggle.apply(chromePrefs.hidden, releaseRender = false)
 
         followFlow = LinkFollowFlow(
             activity = this,
@@ -1860,7 +1861,6 @@ class NotebookActivity : AppCompatActivity() {
     private fun toggleChrome() {
         if (!opened || closing) return
         chromeToggle.toggle()
-        chromePrefs.hidden = chromeToggle.hidden
     }
 
     /** Both Backs — the toolbar button and the system back — funnel here: in a via-link notebook
@@ -3948,17 +3948,14 @@ class NotebookActivity : AppCompatActivity() {
         whenPenIdle { binding.pageIndicator.text = text }
     }
 
-    /** [NotebookToolbar]'s rule for any chrome tap of ours: release the EPD render so the tap's
-     *  visual result shows, but never inside the pen-active window — an ungated release there can
-     *  cost a live stroke. */
+    /** [PenIdle.releaseRenderIfIdle] — the same rule [NotebookToolbar] writes against, plus the
+     *  `lateinit` guard this screen needs (chrome can be tapped before the surface is built). */
     private fun releaseRenderIfIdle() {
-        if (::paper.isInitialized && !paper.isPenActive) paper.releaseRender()
+        if (::paper.isInitialized) PenIdle.releaseRenderIfIdle(paper)
     }
 
-    private fun whenPenIdle(action: () -> Unit) {
-        if (!paper.isPenActive) { action(); return }
-        binding.root.postDelayed({ whenPenIdle(action) }, PaperView.PEN_ACTIVE_TAIL_MS)
-    }
+    /** [PenIdle.whenIdle] — the frame-silence gate, posted on this screen's root. */
+    private fun whenPenIdle(action: () -> Unit) = PenIdle.whenIdle(paper, binding.root, action)
 
     /** EPD chrome-release: a finger landing on chrome must release the overlay so the tap's visual
      *  result shows. Done here because the buttons consume the touch. Palm-gated.
@@ -4075,10 +4072,7 @@ class NotebookActivity : AppCompatActivity() {
         if (::stack.isInitialized) stack.markTop(stackToken)
         // Arc 33: another paper screen (the pad, the calendar, the sticky editor) may have flipped
         // the one global flag while this one was away — re-sync before the paper comes back.
-        // Nothing is on the glass yet, so no render release; a no-op when nothing changed.
-        if (::chromeToggle.isInitialized && chromeToggle.hidden != chromePrefs.hidden) {
-            chromeToggle.apply(chromePrefs.hidden, initial = true)
-        }
+        if (::chromeToggle.isInitialized) chromeToggle.sync(chromePrefs.hidden)
         if (::paper.isInitialized) paper.resumeDrawing()
         // Re-discovered on every resume: a package can be disabled or replaced under us, and this
         // is also the resume that follows a return from the pad.

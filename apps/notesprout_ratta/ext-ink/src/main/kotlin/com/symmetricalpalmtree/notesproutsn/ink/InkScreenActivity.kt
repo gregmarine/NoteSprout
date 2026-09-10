@@ -3,6 +3,7 @@ package com.symmetricalpalmtree.notesproutsn.ink
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Rect
+import android.os.Bundle
 import android.util.Log
 import android.view.MotionEvent
 import android.view.View
@@ -568,13 +569,18 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
     // ── The chrome toggle (arc 33 / F3) ──────────────────────────────────────
 
     /**
-     * Build [chromeToggle] over both bars and put the chrome into the state the host launched us
-     * in — [ExtensionContract.EXTRA_CHROME_HIDDEN], absent = shown — before the first layout, so a
-     * screen opened hidden never shows its bars. The eraser sub-bar goes down at a hide (its button
-     * is about to go); the selection bar stays, a lasso being a deliberate act. After the flip's
-     * relayout the exclusions are re-pushed once — the band and every rect are read fresh.
+     * Build [chromeToggle] over both bars and put the chrome into the state this screen should
+     * open in, before the first layout, so a screen opened hidden never shows its bars. The eraser
+     * sub-bar goes down at a hide (its button is about to go); the selection bar stays, a lasso
+     * being a deliberate act. After the flip's relayout the exclusions are re-pushed once — the
+     * band and every rect are read fresh.
+     *
+     * **[savedInstanceState] wins over the launch extra** (arc 34 / L19). The Intent's
+     * [ExtensionContract.EXTRA_CHROME_HIDDEN] is what the host knew when it launched us; a
+     * rebuilt Activity has a flip of the person's own since then, and replaying the Intent would
+     * bring the bars back under their hand. Absent on both sides = shown.
      */
-    protected fun initChrome() {
+    protected fun initChrome(savedInstanceState: Bundle? = null) {
         val root = screenRoot ?: return
         chromeToggle = ChromeToggle(
             paper = paper,
@@ -583,7 +589,19 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
             beforeHide = { hideEraserBar() },
             afterLayout = { pushExclusions() },
         )
-        chromeToggle.apply(intent.getBooleanExtra(ExtensionContract.EXTRA_CHROME_HIDDEN, false), initial = true)
+        val launched = intent.getBooleanExtra(ExtensionContract.EXTRA_CHROME_HIDDEN, false)
+        val hidden = savedInstanceState?.takeIf { it.containsKey(KEY_CHROME_HIDDEN) }
+            ?.getBoolean(KEY_CHROME_HIDDEN)
+            ?: launched
+        chromeToggle.apply(hidden, releaseRender = false)
+    }
+
+    /** The chrome state survives a rebuild (arc 34 / L19) — it is the person's way of working, and
+     *  nothing else on this screen would remember it: the extension persists nothing itself, and
+     *  the host's own flag is only read on the launch Intent. */
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if (::chromeToggle.isInitialized) outState.putBoolean(KEY_CHROME_HIDDEN, chromeToggle.hidden)
     }
 
     /**
@@ -693,6 +711,9 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
     }
 
     private companion object {
+
+        /** Where [onSaveInstanceState] parks the chrome state (arc 34 / L19). */
+        const val KEY_CHROME_HIDDEN = "chromeHidden"
 
         /** Quiet time before the page's op log is written. */
         const val SAVE_DEBOUNCE_MS = 800L

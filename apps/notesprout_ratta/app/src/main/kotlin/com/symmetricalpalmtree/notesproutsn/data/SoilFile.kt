@@ -1,6 +1,7 @@
 package com.symmetricalpalmtree.notesproutsn.data
 
 import android.content.Context
+import com.symmetricalpalmtree.notesproutsn.crypto.RekeyNames
 import java.io.File
 
 /** The one directory that holds every notebook file. */
@@ -75,3 +76,19 @@ fun extensionStoreFiles(context: Context): List<File> =
     (gardenDir(context).listFiles() ?: emptyArray())
         .filter { it.isFile && extensionStorePackage(it.name) != null }
         .sortedBy { it.name }
+
+/**
+ * Every `Garden/` original that has a re-key leftover beside it — a `.rekey.tmp` or a `.old.bak`
+ * (arc 26 / U2's recovery, moved here at arc 34 / L18).
+ *
+ * It lives here because **this file owns the one listing of `Garden/`**, beside
+ * [extensionStoreFiles]: the library's structure is index-only and stays that way, and a second
+ * `listFiles()` grown somewhere else is the beginning of a second answer to "what is in there".
+ * The naming rule itself is `RekeyNames.leftoverOriginals`, pure and JVM-tested; this is only
+ * where the directory is read.
+ */
+fun rekeyLeftovers(context: Context): List<File> {
+    val garden = gardenDir(context)
+    val names = garden.list()?.toList() ?: return emptyList()
+    return RekeyNames.leftoverOriginals(names).map { File(garden, it) }
+}

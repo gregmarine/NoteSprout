@@ -136,9 +136,6 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
     /** True when the host says this launch follows a `receiveInk` (Y3's host half). */
     private var openReceived = false
 
-    /** The day the showing template was baked for — re-baked when it is no longer today. */
-    private var bakedToday: LocalDate? = null
-
     /** What the template on the paper was baked from — the page, the day, the page size and
      *  (arc 24 / Z4) **the marks that were drawn into it**. A [showPage]
      *  whose key is unchanged (an undo or redo on the showing page) reloads the strokes and nothing
@@ -357,7 +354,7 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
         // (`CalendarDoubleTap`): cells open a day, the Notes band and the whole Day page toggle.
         // The grid is full page either way (F4) — hiding the bars only uncovers what is already
         // drawn there.
-        initChrome()
+        initChrome(savedInstanceState)
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() { exit() }
         })
@@ -601,7 +598,6 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
      *  a Day page takes the one day's list, both halves from the same read). */
     private fun bakeTemplate(t: CalendarTarget): android.graphics.Bitmap {
         val today = LocalDate.now()
-        bakedToday = today
         val density = resources.displayMetrics.density
         val notes = getString(R.string.calendar_notes_label)
         val marks = document?.marks.orEmpty()
@@ -638,10 +634,12 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
     override fun onResume() {
         super.onResume()
         // A date rolled over while the screen sat in the background: the ring moves with it. Only
-        // when it did — a resume is otherwise not a frame.
-        if (opened && !closing && bakedToday != null && bakedToday != LocalDate.now()) {
-            applyTemplate(force = true)
-        }
+        // when it did — a resume is otherwise not a frame. The day the showing template was baked
+        // for is already part of the bake key, so this asks the key rather than a second field
+        // that could disagree with it, and the plain re-apply is enough: a changed `today` is a
+        // changed key, and a changed key is a bake.
+        val key = bakeKey ?: return
+        if (opened && !closing && key.today != LocalDate.now()) applyTemplate(force = false)
     }
 
     private companion object {

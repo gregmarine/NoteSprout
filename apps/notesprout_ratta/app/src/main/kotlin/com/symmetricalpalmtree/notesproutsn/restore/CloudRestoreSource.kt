@@ -80,7 +80,7 @@ class CloudRestoreSource(
         val found = ArrayList<RestoreBackup>()
         var skipped = 0
         var lastProblem: RestoreProblem? = null
-        for (folder in CloudRestoreRules.deviceFolders(folders.map(::listed))) {
+        for (folder in RestoreRows.deviceFolders(folders.map(::listed))) {
             val entries = try {
                 CloudClient.list(app, ref, arrayOf(BackupPredicates.CLOUD_BACKUPS_FOLDER, folder.name))
             } catch (e: CancellationException) {
@@ -94,7 +94,7 @@ class CloudRestoreSource(
                 lastProblem = problemFor(e)
                 continue
             }
-            CloudRestoreRules.rowFor(folder.name, entries.map(::listed))?.let(found::add)
+            RestoreRows.rowFor(folder.name, entries.map(::listed), RestoreLeg.CLOUD, folder.name)?.let(found::add)
         }
 
         Slog.d(TAG) { "enumerated ${found.size} backup(s) in the cloud, $skipped folder(s) skipped" }

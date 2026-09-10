@@ -79,23 +79,14 @@ class SafRestoreSource(private val reader: SafBackupReader) : RestoreSource {
         FetchResult.Staged(manifest)
     }
 
-    /** A backup row for [entries] when they are a backup folder's, else null. */
+    /** A backup row for [entries] when they are a backup folder's, else null — the shared
+     *  [RestoreRows.rowFor], on this leg, addressed by the folder's own tree `Uri`. */
     private fun backupOf(
         entries: List<SafBackupReader.Entry>,
         name: String,
         dirUri: Uri,
-    ): RestoreBackup? {
-        val listed = entries.map(::listed)
-        val manifest = RestoreManifest.plan(listed, RestoreLeg.LOCAL) ?: return null
-        val indexEntry = entries.first { !it.isDir && it.name == RestoreManifest.INDEX_NAME }
-        return RestoreBackup(
-            name = name,
-            notebookCount = manifest.notebookCount,
-            indexModifiedAt = indexEntry.lastModified,
-            totalBytes = manifest.totalBytes,
-            handle = dirUri.toString(),
-        )
-    }
+    ): RestoreBackup? =
+        RestoreRows.rowFor(name, entries.map(::listed), RestoreLeg.LOCAL, dirUri.toString())
 
     private fun listed(entry: SafBackupReader.Entry): Listed =
         Listed(entry.name, entry.size, entry.isDir, entry.lastModified)

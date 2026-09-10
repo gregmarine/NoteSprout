@@ -89,9 +89,6 @@ object RestoreEngine {
          *  [fileName] is a UUID or a store package — safe to show. */
         data class InvalidFile(val fileName: String) : Problem()
 
-        /** The staged index opens under no offered key (the screen's prompt loop ended). */
-        object NoKey : Problem()
-
         /** This device's destination could not be parked; the swap was never started. */
         object ParkFailed : Problem()
 

@@ -180,7 +180,7 @@ object DocumentPdfRender {
         // The notebook's own edge — the first page row's authored size, exactly as the page render
         // takes each page's (the D1 rule read from the document side); at page scope, that page's.
         val first = ExportScope.pagesInScope(db.dao().childrenOfType(notebookId, SoilSchema.TYPE_PAGE), pageIds)
-            .firstOrNull()
+            .firstOrNull()?.row
         val pageW = (first?.width ?: 0f).toInt()
         val pageH = (first?.height ?: 0f).toInt()
         val metrics = context.resources.displayMetrics

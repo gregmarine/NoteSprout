@@ -393,7 +393,6 @@
 
     <!-- Encryption screen (arc 26 / U1). og's wording, "global passphrase" read as "recovery key". -->
     <string name="encryption_title">Encryption</string>
-    <string name="encryption_key_caption">Recovery key</string>
     <string name="encryption_key_set">Recovery key: set</string>
     <string name="encryption_key_not_set">Recovery key: not on this device</string>
     <string name="encryption_count_zero">No notebooks use this device\'s key</string>
@@ -983,8 +982,6 @@
     <string name="restore_problem_fetch_body">%1$s could not be copied out of the backup, so nothing was restored. Your library is untouched.</string>
     <string name="restore_problem_invalid_title">Backup isn\'t complete</string>
     <string name="restore_problem_invalid_body">%1$s in this backup is not encrypted, is damaged, or is no longer there, so nothing was restored. Your library is untouched.</string>
-    <string name="restore_problem_no_key_title">Backup not unlocked</string>
-    <string name="restore_problem_no_key_body">The backup was not unlocked, so nothing was restored. Your library is untouched.</string>
     <string name="restore_problem_park_title">Couldn\'t start the restore</string>
     <string name="restore_problem_park_body">This device\'s backup settings could not be set aside first, so nothing was changed.</string>
     <string name="restore_problem_swap_title">Restore failed</string>
@@ -1015,8 +1012,6 @@
     <string name="sticky_paste_ink_only_toast">Pasted the ink only</string>
     <string name="sticky_paste_no_ink_title">Paste</string>
     <string name="sticky_paste_no_ink_body">Only ink can be pasted into a note, and the clipboard holds none.</string>
-    <string name="sticky_open_failed_title">Sticky note</string>
-    <string name="sticky_open_failed_body">This note couldn\'t be read. Try again.</string>
 
     <!-- Shapes on the page (arc 28 / H4). Transform is the lasso bar's button on a lone shape;
          the rest are the floating transform bar's two controls. The aspect latch names the state

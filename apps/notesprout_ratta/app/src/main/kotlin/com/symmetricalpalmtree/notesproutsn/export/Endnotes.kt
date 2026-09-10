@@ -34,7 +34,11 @@ object Endnotes {
      *  on that page (page px), and the content size the row carries (0 = none carried). */
     class Source(
         val stickyId: String,
+        /** The source page's place **in the bundle**, 1-based — what the container's links address. */
         val fromPage: Int,
+        /** What the **notebook** calls that page — what the caption says (arc 34 / L15). The two
+         *  differ only when the export was narrowed to a page. */
+        val fromPageLabel: Int,
         val iconL: Float,
         val iconT: Float,
         val iconR: Float,
@@ -52,6 +56,7 @@ object Endnotes {
         val stickyId: String,
         val number: Int,
         val fromPage: Int,
+        val fromPageLabel: Int,
         val page: Int,
         val contentW: Int,
         val contentH: Int,
@@ -78,7 +83,7 @@ object Endnotes {
             val number = index + 1
             val page = pageCount + number
             val (w, h) = contentSize(s)
-            notes += Note(s.stickyId, number, s.fromPage, page, w, h)
+            notes += Note(s.stickyId, number, s.fromPage, s.fromPageLabel, page, w, h)
             if (s.iconR > s.iconL && s.iconB > s.iconT &&
                 s.iconL.isFinite() && s.iconT.isFinite() && s.iconR.isFinite() && s.iconB.isFinite()
             ) {
