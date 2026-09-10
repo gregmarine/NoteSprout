@@ -981,8 +981,8 @@ after a selection send — see `docs/calendar.md` § Notebook → calendar for t
 `RENDER_MAX_TARGETS = 8`, and `CALENDAR_RENDER_TIMEOUT_MS` — see [Timeouts](#timeouts) below for
 the measured number. `:ext-calendar`'s manifest moved 7 → 9 for this; the render itself draws
 through g-paper's public `StrokeRasterizer.draw` (the same door `ExportRender.bakeEndnote` already
-uses — no separate stroke painter was needed) at **the screen's own bar insets**, not a full-page
-grid — see the inset trap below.
+uses — no separate stroke painter was needed) at the **full page** (arc 33 / F4 — the screen's own
+grid is full page under floating bars, so the render agrees with it).
 
 **What a page export holds, and what it never opens.** A calendar file export never touches a
 `.soil`, never asks for a passphrase, and never appears in a notebook's own export history — it is

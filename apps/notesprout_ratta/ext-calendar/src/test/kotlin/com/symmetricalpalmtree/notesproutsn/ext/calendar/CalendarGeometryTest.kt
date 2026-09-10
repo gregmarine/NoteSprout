@@ -9,19 +9,22 @@ import java.time.LocalDate
 /** The three pages' rects and their hit-tests — at the Nomad's size and at pages it never sees. */
 class CalendarGeometryTest {
 
-    /** The Nomad: 1404 × 1872 at 1.875, two 56 dp bars plus their 1 dp hairline. */
-    private val nomad = CalendarGeometry.month(1404, 1872, 1.875f, topInsetPx = 107, bottomInsetPx = 107)
-    private val nomadWeek = CalendarGeometry.week(1404, 1872, 1.875f, topInsetPx = 107, bottomInsetPx = 107)
-    private val nomadDay = CalendarGeometry.day(1404, 1872, 1.875f, topInsetPx = 107, bottomInsetPx = 107)
+    /**
+     * The Nomad: 1404 × 1872 at 1.875. The bars float over the page (arc 33 / F4) — they are no
+     * longer a layout input, so the geometry is built from just the page size and density.
+     */
+    private val nomad = CalendarGeometry.month(1404, 1872, 1.875f)
+    private val nomadWeek = CalendarGeometry.week(1404, 1872, 1.875f)
+    private val nomadDay = CalendarGeometry.day(1404, 1872, 1.875f)
     private val september = LocalDate.of(2026, 9, 1)   // a Tuesday; the grid opens Sun Aug 30
     private val augustSunday = LocalDate.of(2026, 8, 30)   // the Sunday the week of Sep 1 opens on
 
     @Test
     fun hairlineIsRoundedDensity_andEveryEdgeIsAnInteger() {
         assertEquals(2, nomad.hairline)
-        assertEquals(1, CalendarGeometry.month(1000, 1000, 1f, 0, 0).hairline)
-        assertEquals(1, CalendarGeometry.month(1000, 1000, 0.75f, 0, 0).hairline)
-        assertEquals(3, CalendarGeometry.month(1000, 1000, 3.0f, 0, 0).hairline)
+        assertEquals(1, CalendarGeometry.month(1000, 1000, 1f).hairline)
+        assertEquals(1, CalendarGeometry.month(1000, 1000, 0.75f).hairline)
+        assertEquals(3, CalendarGeometry.month(1000, 1000, 3.0f).hairline)
     }
 
     @Test
@@ -31,16 +34,16 @@ class CalendarGeometryTest {
         assertEquals(198, g.cell)
         assertEquals(3, g.left)                             // (1404 − (7·198 + 6·2)) / 2
         assertEquals(1401, g.contentRight)
-        assertEquals(107, g.headerTop)
-        assertEquals(107 + 75, g.headerBottom)              // 40 dp → 75 px
+        assertEquals(0, g.headerTop)                        // no top-bar inset any more (arc 33 / F4)
+        assertEquals(0 + 75, g.headerBottom)                // 40 dp → 75 px
         assertEquals(g.headerBottom + 2, g.gridTop)
         assertEquals(g.gridTop + 6 * 198 + 5 * 2, g.gridBottom)
         assertEquals(g.gridBottom + 2, g.notesTop)
-        assertEquals(1872 - 107, g.notesBottom)
+        assertEquals(1872, g.notesBottom)                   // bottom = heightPx, no bottom-bar inset
         assertTrue("notes band ${g.notesHeight}", g.notesHeight > 300)
         // Nothing is a proportional slice of the height: the same width at a taller page gives the
         // same cells and a taller band.
-        val taller = CalendarGeometry.month(1404, 2400, 1.875f, 107, 107)
+        val taller = CalendarGeometry.month(1404, 2400, 1.875f)
         assertEquals(g.cell, taller.cell)
         assertEquals(g.notesHeight + (2400 - 1872), taller.notesHeight)
     }
@@ -59,10 +62,10 @@ class CalendarGeometryTest {
     }
 
     @Test
-    fun aShortPageShrinksTheCellsRatherThanRunningUnderTheBar() {
-        val g = CalendarGeometry.month(1404, 900, 1.875f, 107, 107)
+    fun aShortPageShrinksTheCellsRatherThanRunningOffThePage() {
+        val g = CalendarGeometry.month(1404, 900, 1.875f)
         assertTrue(g.cell < 198)
-        assertTrue(g.gridBottom + g.hairline <= 900 - 107)
+        assertTrue(g.gridBottom + g.hairline <= 900)        // bottom = heightPx, no bottom-bar inset
         // Integer cells leave at most the division's remainder as a band — a few px, never negative.
         assertTrue("band ${g.notesHeight}", g.notesHeight in 0..6)
         assertTrue(g.notesBottom >= g.notesTop)
@@ -88,8 +91,11 @@ class CalendarGeometryTest {
         assertNull(g.hitTest(g.contentRight.toFloat(), g.cellTop(0) + 5f, september))
         assertNull(g.hitTest(g.columnDividerX(1).toFloat(), g.cellTop(0) + 5f, september))   // on a divider
         assertNull(g.hitTest(g.cellLeft(1) + 5f, g.rowDividerY(1).toFloat(), september))
-        assertNull(g.hitTest(10f, 5f, september))                                   // under the top bar
-        assertNull(g.hitTest(10f, 1871f, september))                                // under the bottom bar
+        // Month keeps its own header (headerTop = 0, gridTop = 77) even with the bar insets gone,
+        // so this point (y = 5) is still in the header — the same point as the header assertion
+        // above, now that headerTop is 0 instead of 107 (noted, not deleted: see the sweep report).
+        assertNull(g.hitTest(10f, 5f, september))
+        assertNull(g.hitTest(10f, 1871f, september))                                // deep in the Notes band
     }
 
     // ── Week ─────────────────────────────────────────────────────────────────
@@ -102,14 +108,14 @@ class CalendarGeometryTest {
         assertEquals(349, g.cellW)
         assertEquals(1, g.left)                                // (1404 − (4·349 + 3·2)) / 2
         assertEquals(1403, g.contentRight)
-        assertEquals(107, g.cellsTop)
+        assertEquals(0, g.cellsTop)                          // no top-bar inset any more (arc 33 / F4)
         // The cell area IS the Month page's grid area, so the two bands match — to the one px
         // that halving an odd area cannot give back.
         assertTrue("cellsBottom ${g.cellsBottom} vs ${nomad.gridBottom}", nomad.gridBottom - g.cellsBottom in 0..1)
         assertEquals(636, g.cellH)
         assertEquals(g.cellsTop + 2 * g.cellH + g.hairline, g.cellsBottom)
         assertEquals(g.cellsBottom + g.hairline, g.notesTop)
-        assertEquals(1872 - 107, g.notesBottom)
+        assertEquals(1872, g.notesBottom)                    // bottom = heightPx, no bottom-bar inset
         assertTrue("week ${g.notesHeight} vs month ${nomad.notesHeight}", Math.abs(g.notesHeight - nomad.notesHeight) <= 1)
     }
 
@@ -147,28 +153,31 @@ class CalendarGeometryTest {
         assertNull(g.hitTest(g.contentRight.toFloat(), g.cellTop(0) + 5f, augustSunday))
         assertNull(g.hitTest(g.columnDividerX(1).toFloat(), g.cellTop(0) + 5f, augustSunday))
         assertNull(g.hitTest(g.cellLeft(1) + 5f, g.rowDividerY().toFloat(), augustSunday))
-        assertNull(g.hitTest(10f, 5f, augustSunday))                                   // under the top bar
-        assertNull(g.hitTest(10f, 1871f, augustSunday))                                // under the bottom bar
+        // Week has no header of its own, so cellsTop is 0 now and (10, 5) lands inside the first
+        // cell instead of above it — there is no longer any point "above the grid" except off the
+        // page entirely (y < 0), which is what this now checks (see the sweep report).
+        assertNull(g.hitTest(10f, -1f, augustSunday))
+        assertNull(g.hitTest(10f, 1871f, augustSunday))                                // deep in the Notes band
     }
 
     // ── Day ──────────────────────────────────────────────────────────────────
 
     @Test
-    fun dayRowsShareTheWholeHeightBetweenTheBars_andTheLastRowTakesTheRemainder() {
+    fun dayRowsShareTheWholeHeightOfThePage_andTheLastRowTakesTheRemainder() {
         val g = nomadDay
         assertEquals(2, g.hairline)
-        // (1872 − 107 − 107 − 23 × 2) / 24 = 1612 / 24 = 67, remainder 4 px — the last row's.
-        assertEquals(67, g.rowHeight)
-        assertEquals(69, g.pitch)
-        assertEquals(107, g.rowsTop)
+        // (1872 − 0 − 23 × 2) / 24 = 1826 / 24 = 76, remainder 2 px — the last row's.
+        assertEquals(76, g.rowHeight)
+        assertEquals(78, g.pitch)                              // rowHeight + hairline
+        assertEquals(0, g.rowsTop)                             // no top-bar inset any more (arc 33 / F4)
         assertEquals(150, g.gutterLeft)                        // round(80 × 1.875)
         assertEquals(152, g.gutterRight)
         assertEquals(0, g.left)
         assertEquals(1404, g.right)
-        assertEquals(1872 - 107, g.rowsBottom)                  // the bottom bar's top, exactly
-        for (i in 0 until CalendarGeometry.DAY_ROWS) assertEquals(107 + i * 69, g.rowTop(i))
-        for (i in 0 until CalendarGeometry.DAY_ROWS - 1) assertEquals(67, g.rowHeight(i))
-        assertEquals(67 + 4, g.rowHeight(23))
+        assertEquals(1872, g.rowsBottom)                        // the page's own bottom, exactly
+        for (i in 0 until CalendarGeometry.DAY_ROWS) assertEquals(0 + i * 78, g.rowTop(i))
+        for (i in 0 until CalendarGeometry.DAY_ROWS - 1) assertEquals(76, g.rowHeight(i))
+        assertEquals(76 + 2, g.rowHeight(23))
         assertEquals(g.rowsBottom, g.rowTop(23) + g.rowHeight(23))
         for (i in 1..23) assertEquals(g.rowTop(i - 1) + g.rowHeight, g.rowDividerY(i))
     }
@@ -176,19 +185,19 @@ class CalendarGeometryTest {
     @Test
     fun dayRowsGrowWithThePage_theMantaGetsTallerRowsThanTheNomad() {
         // A taller page is taller rows, not a band: the Day page is the one height-derived layout.
-        val taller = CalendarGeometry.day(1404, 2400, 1.875f, 107, 107)
+        val taller = CalendarGeometry.day(1404, 2400, 1.875f)
         assertTrue(taller.rowHeight > nomadDay.rowHeight)
-        assertEquals((2400 - 107 - 107 - 23 * 2) / 24, taller.rowHeight)
-        assertEquals(2400 - 107, taller.rowsBottom)
+        assertEquals((2400 - 23 * 2) / 24, taller.rowHeight)
+        assertEquals(2400, taller.rowsBottom)
         assertTrue(taller.rowHeight(23) - taller.rowHeight in 0 until CalendarGeometry.DAY_ROWS)
     }
 
     @Test
-    fun aShortDayPageShrinksTheRowsRatherThanRunningUnderTheBar() {
-        val g = CalendarGeometry.day(1404, 900, 1.875f, 107, 107)
-        assertTrue("row ${g.rowHeight}", g.rowHeight in 1 until 67)
-        assertEquals(900 - 107, g.rowsBottom)
-        assertTrue("last row at ${g.rowTop(23) + g.rowHeight(23)}", g.rowTop(23) + g.rowHeight(23) <= 900 - 107)
+    fun aShortDayPageShrinksTheRowsRatherThanRunningOffThePage() {
+        val g = CalendarGeometry.day(1404, 900, 1.875f)
+        assertTrue("row ${g.rowHeight}", g.rowHeight in 1 until 76)
+        assertEquals(900, g.rowsBottom)
+        assertTrue("last row at ${g.rowTop(23) + g.rowHeight(23)}", g.rowTop(23) + g.rowHeight(23) <= 900)
     }
 
     @Test

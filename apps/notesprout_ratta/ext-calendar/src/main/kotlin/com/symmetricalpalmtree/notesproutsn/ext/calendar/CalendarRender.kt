@@ -32,10 +32,11 @@ import java.time.LocalDate
  * Per target: the page's rows through [CalendarStore] (the store is the one the host lent for this
  * call — `open()` first, because the host's gate refuses a query on a binder that has not declared
  * its schema), the size by [RenderRequest.pageSize], a white RGB_565 ground, then by flag: the
- * ruling from [CalendarTemplate] at **the screen's insets** ([CalendarBars] — the grid must sit
- * where the ink was written against it, not at the page's edge) with today's ring only when asked
- * and the marks from [EventStore] over [GridMarks.rangeOf] only when asked; the ink through g-paper's own [StrokeRasterizer] — the same door the host's export
- * bakes endnotes through, so ink on a calendar file is pixel-identical to ink on a notebook file.
+ * ruling from [CalendarTemplate] at the **full page** (arc 33 / F4 — the screen draws the grid full
+ * page under floating bars, so the render agrees with it) with today's ring only when asked and the
+ * marks from [EventStore] over [GridMarks.rangeOf] only when asked; the ink through g-paper's own
+ * [StrokeRasterizer] — the same door the host's export bakes endnotes through, so ink on a calendar
+ * file is pixel-identical to ink on a notebook file.
  * Encoded WEBP q100 (the F5 recipe the host bakes with), one `writePage` per target.
  *
  * Reads only. Density is this process's display density — the page was sized under it. The two
@@ -61,8 +62,6 @@ internal object CalendarRender {
             throw IllegalStateException(InkTransferSession.STORE_UNAVAILABLE)
         }
         val density = context.resources.displayMetrics.density
-        val top = CalendarBars.topInsetPx(context.resources)
-        val bottom = CalendarBars.bottomInsetPx(context.resources)
         val palette = CalendarTemplate.Palette(
             ink = ContextCompat.getColor(context, R.color.inkBlack),
             light = ContextCompat.getColor(context, R.color.inkLight),
@@ -80,7 +79,7 @@ internal object CalendarRender {
                         val (from, to) = GridMarks.rangeOf(target)
                         events.marksFor(from, to)
                     } else emptyMap()
-                    val page = bake(target, w, h, density, top, bottom, palette, notesLabel, today, marks, stored, request)
+                    val page = bake(target, w, h, density, palette, notesLabel, today, marks, stored, request)
                     strokes += stored.strokes.size
                     writer.writePage(w, h, page)
                 }
@@ -108,8 +107,6 @@ internal object CalendarRender {
         w: Int,
         h: Int,
         density: Float,
-        top: Int,
-        bottom: Int,
         palette: CalendarTemplate.Palette,
         notesLabel: String,
         today: LocalDate?,
@@ -124,13 +121,13 @@ internal object CalendarRender {
             if (request.grid) {
                 val ruling = when (target.kind) {
                     CalendarTarget.KIND_WEEK -> CalendarTemplate.week(
-                        CalendarGeometry.week(w, h, density, top, bottom), target.localDate, today, density, palette, notesLabel, marks,
+                        CalendarGeometry.week(w, h, density), target.localDate, today, density, palette, notesLabel, marks,
                     )
                     CalendarTarget.KIND_DAY -> CalendarTemplate.day(
-                        CalendarGeometry.day(w, h, density, top, bottom), target.half, density, palette, marks[target.localDate].orEmpty(),
+                        CalendarGeometry.day(w, h, density), target.half, density, palette, marks[target.localDate].orEmpty(),
                     )
                     else -> CalendarTemplate.month(
-                        CalendarGeometry.month(w, h, density, top, bottom), target.localDate, today, density, palette, notesLabel, marks,
+                        CalendarGeometry.month(w, h, density), target.localDate, today, density, palette, notesLabel, marks,
                     )
                 }
                 try {

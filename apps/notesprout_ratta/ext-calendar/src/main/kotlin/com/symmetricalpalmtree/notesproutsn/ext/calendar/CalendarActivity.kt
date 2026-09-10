@@ -47,8 +47,9 @@ import kotlin.coroutines.resume
  * page and its persistence are [CalendarDocument]'s; the store is the host's, lent for this showing
  * — **the extension writes nothing to disk itself, ever**.
  *
- * **The grid is the page's template.** [CalendarGeometry] lays it out at the page's own size under
- * the two bars, [CalendarTemplate] paints it, and g-paper sets it behind the ink — so a store
+ * **The grid is the page's template.** [CalendarGeometry] lays it out at the page's own size — the
+ * **full page** since arc 33 / F4, the bars floating over it — [CalendarTemplate] paints it, and
+ * g-paper sets it behind the ink — so a store
  * carried to another screen keeps grid and ink registered (the pad's 1:1 rule). It is re-baked on
  * every navigation and on `onResume`, because today's ring moves — and since arc 24 / Z4 **the
  * day's events are in it too**: [CalendarDocument] loads the page's marks in the same IO hop as its
@@ -138,8 +139,8 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
     /** The day the showing template was baked for — re-baked when it is no longer today. */
     private var bakedToday: LocalDate? = null
 
-    /** What the template on the paper was baked from — the page, the day, the page size, the
-     *  bars' measured heights and (arc 24 / Z4) **the marks that were drawn into it**. A [showPage]
+    /** What the template on the paper was baked from — the page, the day, the page size and
+     *  (arc 24 / Z4) **the marks that were drawn into it**. A [showPage]
      *  whose key is unchanged (an undo or redo on the showing page) reloads the strokes and nothing
      *  else: no page-sized bitmap, no extra EPD frames. */
     private var bakeKey: BakeKey? = null
@@ -155,8 +156,6 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
         val today: LocalDate,
         val width: Int,
         val height: Int,
-        val top: Int,
-        val bottom: Int,
         val marks: Map<LocalDate, List<DayMark>>,
     )
 
@@ -354,8 +353,10 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
         )
         binding.root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> binding.root.post { pushExclusions() } }
         // Arc 33 / F3: the calendar opens in the chrome state the host handed over and echoes the
-        // final one on the way out (the skeleton's). Its own double-tap stays the day-open until
-        // F4 brings the zone rule; a hidden launch simply lays its grid under no bars.
+        // final one on the way out (the skeleton's). Its own double-tap routes by zone
+        // (`CalendarDoubleTap`): cells open a day, the Notes band and the whole Day page toggle.
+        // The grid is full page either way (F4) — hiding the bars only uncovers what is already
+        // drawn there.
         initChrome()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() { exit() }
@@ -476,11 +477,12 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
         override fun onFlipPrevious() = runPageOp { step(forward = false) }
         override fun onUndo() = runPageOp { doUndo() }
         override fun onRedo() = runPageOp { doRedo() }
-        // A double-tap on a day cell opens that day. `onFingerTap` is deliberately NOT overridden:
+        // A double-tap routes by zone (arc 33 / F4): a day cell opens that day, the Notes band and
+        // a Day page toggle the chrome. `onFingerTap` is deliberately NOT overridden:
         // a single tap selects nothing here (the wizard's call), so the calendar hears only the
         // double. No long-press, no inserts, no swipe-down either: the calendar has only what it
         // has, and the rest stay the no-op defaults `PageGestures.Listener` already gives.
-        override fun onFingerDoubleTap(x: Float, y: Float) = runPageOp { openDay(x, y) }
+        override fun onFingerDoubleTap(x: Float, y: Float) = runPageOp { doubleTap(x, y) }
     }
 
     /**
@@ -501,19 +503,23 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
     private suspend fun step(forward: Boolean) = showMove(nav.stepped(forward, LocalDate.now(), nowHour()))
 
     /**
-     * A double-tap at ([x], [y]): the day under it, opened as a Day page. Page coordinates are view
-     * coordinates 1:1, so the raw point goes straight at the geometry the template was painted
-     * from. A tap that names no day — the spare Week cell, a band, a margin, a hairline — and a
-     * double-tap on a Day page are both **nothing**, silently: there is no wrong page to land on.
+     * A finger double-tap, routed by zone (arc 33 / F4, decision 2): a Month/Week cell → that day as
+     * a Day page; the Notes band → the chrome toggle; a Day page → the toggle anywhere; the header,
+     * the side margins, a hairline, the spare Week cell → nothing, silently. Page coordinates are
+     * view coordinates 1:1. Inside `runPageOp` so it is serialised against a page swap.
      */
-    private suspend fun openDay(x: Float, y: Float) {
+    private suspend fun doubleTap(x: Float, y: Float) {
         val t = document?.target ?: return
-        val day = when (t.kind) {
-            CalendarTarget.KIND_MONTH -> monthGeometry().hitTest(x, y, t.localDate)
-            CalendarTarget.KIND_WEEK -> weekGeometry().hitTest(x, y, t.localDate)
-            else -> null
-        } ?: return
-        nav.dayAt(day)?.let { showMove(it) }
+        val decision = CalendarDoubleTap.decide(
+            kind = t.kind, x = x, y = y, date = t.localDate,
+            month = if (t.kind == CalendarTarget.KIND_MONTH) monthGeometry() else null,
+            week = if (t.kind == CalendarTarget.KIND_WEEK) weekGeometry() else null,
+        )
+        when (decision) {
+            is CalendarDoubleTap.Decision.OpenDay -> nav.dayAt(decision.date)?.let { showMove(it) }
+            CalendarDoubleTap.Decision.Toggle -> toggleChrome()
+            CalendarDoubleTap.Decision.Nothing -> Unit
+        }
     }
 
     /** The pager title's day picker. A dialog raised at a chrome tap — the ledgered exception, not
@@ -578,8 +584,7 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
         val doc = document ?: return
         val today = LocalDate.now()
         val key = BakeKey(
-            doc.target, today, doc.pageWidth.toInt(), doc.pageHeight.toInt(),
-            binding.topBar.height, binding.bottomBar.height, doc.marks,
+            doc.target, today, doc.pageWidth.toInt(), doc.pageHeight.toInt(), doc.marks,
         )
         if (!force && key == bakeKey && baked != null) return
         val fresh = bakeTemplate(doc.target)
@@ -591,7 +596,7 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
         old?.recycle()
     }
 
-    /** The page's grid at the page's own size, under the bars as they are laid out now — the three
+    /** The page's grid at the page's own size, full page — the three
      *  layouts dispatched by the showing page's kind, each with the page's own marks (arc 24 / Z4;
      *  a Day page takes the one day's list, both halves from the same read). */
     private fun bakeTemplate(t: CalendarTarget): android.graphics.Bitmap {
@@ -608,18 +613,15 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
     }
 
     private fun monthGeometry() = CalendarGeometry.month(
-        pageWidthPx(), pageHeightPx(),
-        resources.displayMetrics.density, binding.topBar.height, binding.bottomBar.height,
+        pageWidthPx(), pageHeightPx(), resources.displayMetrics.density,
     )
 
     private fun weekGeometry() = CalendarGeometry.week(
-        pageWidthPx(), pageHeightPx(),
-        resources.displayMetrics.density, binding.topBar.height, binding.bottomBar.height,
+        pageWidthPx(), pageHeightPx(), resources.displayMetrics.density,
     )
 
     private fun dayGeometry() = CalendarGeometry.day(
-        pageWidthPx(), pageHeightPx(),
-        resources.displayMetrics.density, binding.topBar.height, binding.bottomBar.height,
+        pageWidthPx(), pageHeightPx(), resources.displayMetrics.density,
     )
 
     private fun pageWidthPx(): Int = (document?.pageWidth ?: 0f).toInt()

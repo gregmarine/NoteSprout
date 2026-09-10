@@ -7,7 +7,7 @@ cross-session memory for the arc: read it whole at every phase start, together w
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `RESUME_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — F1 ✅ (2026-09-09) · F2 ✅ (2026-09-09) · F3 ✅ (2026-09-09) · F4 ⬜ · F5 ⬜.**
+**Status: 🔄 IN PROGRESS — F1 ✅ (2026-09-09) · F2 ✅ (2026-09-09) · F3 ✅ (2026-09-09) · F4 ✅ (2026-09-09) · F5 ⬜.**
 Baseline before the arc: 1606 `:app` / 2987 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump (one compatible Intent extra), no schema
 change, no g-paper change, no new module.
@@ -341,7 +341,7 @@ hidden, show → covered.
 **Questions at phase start:** (a) the extra's name (`chromeHidden`) and its home (`ExtensionContract`
 vs a per-point constant) — recommended: one constant, both screens read it in one base class.
 
-### ⬜ F4 — The calendar (Opus on a Fable brief · Sonnet background agent for the geometry-test sweep · Fable review · Sonnet adb walk)
+### ✅ F4 — The calendar (Opus on a Fable brief · Sonnet background agent for the geometry-test sweep · Fable review · Sonnet adb walk)
 
 **Goal:** D4 — full-page grids on screen and in every render; the zone rule; the calendar toggles.
 
@@ -570,3 +570,52 @@ floating selection bar; ink to the pad's top edge, shown → the bar covers it).
 seam: `toggleChrome()` is already on the base class, so the calendar's listener only needs the
 zone rule in front of it.
 
+
+
+### F4 ✅ 2026-09-09 — The calendar
+
+**Phase-start questions:** none asked (the plan expected none).
+
+**Landed (Opus on the brief, Sonnet test sweep, Fable review).** `CalendarGeometry.month/week/day(widthPx,
+heightPx, density)` — the two inset parameters **removed** (`headerTop` / `cellsTop` / `rowsTop` = 0,
+`bottom = heightPx`, every other formula byte-identical; KDoc: the page is the whole surface, a bar is
+never a layout input, the ruling does not move when the chrome flips). **`CalendarBars` deleted** (the
+`calendar_bar_rule` dimen stays — the layout's two bar hairlines use it). `CalendarRender` bakes with the
+new signatures (HV4's file export and, through the host's untouched `renderPaper`, HV5's papered send
+both render the full-page grid). `CalendarActivity`: the three `*Geometry()` helpers drop the bar
+heights, `BakeKey` drops `top` / `bottom` (a flip re-bakes nothing), `onFingerDoubleTap → runPageOp {
+doubleTap(x, y) }` over the new pure `CalendarDoubleTap.decide(kind, x, y, date, month?, week?)` →
+`Decision { OpenDay(date) · Toggle · Nothing }` — Month / Week: `hitTest` hit → `OpenDay`, `y` in
+`[notesTop, notesBottom)` over the full width → `Toggle`, header / margins / hairlines / the spare Week
+cell → `Nothing`; Day → `Toggle`; unknown kind or a missing geometry → `Nothing`; `Toggle` calls the
+base class's `toggleChrome()` (F3's seam, no new one). `CalendarGeometryTest`'s 107-px fixture swept
+to the no-inset signatures with every literal re-derived from the formulas (Nomad Day rows 67 → **76**
+px, pitch 78, remainder 2; Month `gridTop` 77, `notesBottom` 1872); the Week "under the top bar" null
+hit became a `y = -1` edge check, since Week and Day no longer have a region above the grid — Month
+keeps one through its 40 dp header. `docs/export.md` § Calendar mode's one sentence ("at the screen's
+own bar insets" → "at the full page"). No `:ext-ink`, `:sn-screen`, `:app` or `:extension-api` change.
+
+**Numbers:** `:ext-calendar` 295 → **308** (`CalendarDoubleTapTest` 13 new; `CalendarGeometryTest`
+still 14), **3033** across the modules; all fourteen modules debug + release; the three release APKs
+sign and verify; NUL scan clean.
+
+**Sonnet adb walk (Nomad, `.dev`) 8/8:** library → calendar opens shown, no hang, the weekday header
+under the top bar (full-page grid, bars floating over it) · Month Notes band double-tap → one
+`hidden=true`, header at y = 0, band to the bottom edge · hidden Month cell double-tap → the Day page,
+zero toggle lines · Day double-tap → `false`, again → `true`, one line each · hidden + Back →
+`resultCode=0`, reopened from the library **hidden**, no hang · hidden weekday-header double-tap →
+nothing · Week band toggles, hidden Week cell opens its day with no toggle line · shown + Back → crash
+buffer empty. Walk trap: the brief's "row 2 col 3" y ≈ 476 landed on a hairline (nothing, by design);
+a cell centre is `77 + row·200 + 99`.
+
+**Consequences to say plainly:** (1) decision 3's shift is now live — pre-arc calendar ink sits one
+bar height above the ruling it was written on; nothing is moved or lost, hidden shows it. (2)
+Decision 2's consequence: a Day page's first and last rows (12:00 AM / 11:30 AM and their PM twins)
+live under the shown bars, as does the Month / Week weekday header and the first row's date numbers;
+hiding the chrome is how they are written in. (3) Export no longer carries the blank bar bands HV4
+added — a calendar PNG / PDF is the full grid edge to edge.
+
+**Left for F5:** `CalendarTemplate.kt` has three stale prose lines ("starting at the top inset", "the
+rows fill the page to the bottom bar") — prose only, the painter reads geometry values; `docs/
+calendar.md`, `docs/extensions.md` and `HARVEST_PLAN.md`'s ledger still describe `CalendarBars` and
+the inset trap as current (the ledger stays as history; the two docs get F5's rewrite).

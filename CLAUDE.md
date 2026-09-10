@@ -197,7 +197,7 @@ skill (`.claude/skills/device-build-install/SKILL.md`) — invoked automatically
   missing target dropped; host-only, no point, no API bump, no schema change, no code review.
   **Arcs 1–32 are all complete and frozen, and `apps/notesprout_ratta/PARITY_BACKLOG.md` is
   closed — every item done.**
-  **Arc 33 "Focus" is IN PROGRESS (wizard locked 2026-09-09; F1–F3 ✅, F4–F5 ⬜, a fresh user decision, not
+  **Arc 33 "Focus" is IN PROGRESS (wizard locked 2026-09-09; F1–F4 ✅, F5 ⬜, a fresh user decision, not
   a backlog item)**: a single-finger double-tap hides / shows all chrome on the four paper
   screens, full-bleed paper with floating bars everywhere (the sticky editor restructured),
   full-page calendar grids, one global persisted flag handed to the pad and calendar as a

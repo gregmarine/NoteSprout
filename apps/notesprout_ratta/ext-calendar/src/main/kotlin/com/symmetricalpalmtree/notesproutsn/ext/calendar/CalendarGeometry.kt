@@ -13,7 +13,7 @@ import kotlin.math.roundToInt
  * Notes band; nothing is a proportional slice of the height.** The Month grid is square cells from
  * the width and whatever height is left below is the Notes band; Week borrows both. **The Day page
  * is the one exception, by decision (Z5b Manta check, 2026-09-04): its 24 rows share the whole
- * height between the bars evenly and there is no band** — a day is a ledger, not a ledger over a
+ * page height evenly and there is no band** — a day is a ledger, not a ledger over a
  * note. og's height-derived Day rows were a ledgered bug because og's *canvas* changed height under
  * the same page (the top guard); here the page is the whole screen, the bars overlay it and the
  * guard is 0 on Ratta, so the height a page is laid out at is the height it is drawn at.
@@ -21,8 +21,10 @@ import kotlin.math.roundToInt
  * **Hairlines are `round(density)` px on integer edges** — a 1 dp line at the Nomad's 1.875 density
  * is a coin flip otherwise (the standing trap). Every edge here is an `Int`.
  *
- * The page is the whole paper surface; the two chrome bars overlay it, so the layout begins under
- * the top bar ([topInset]) and ends above the bottom one ([bottomInset]).
+ * **The page is the whole surface** (arc 33 / F4): every layout here begins at y = 0 and ends at
+ * the page's bottom edge. The two chrome bars are floating overlays the person can hide with a
+ * finger double-tap, and hiding them is how they write where the bars were — so a bar is never a
+ * layout input, and a page's ruling does not move when the chrome flips.
  */
 object CalendarGeometry {
 
@@ -85,19 +87,19 @@ object CalendarGeometry {
     }
 
     /**
-     * The Month page for a [widthPx] × [heightPx] page at [density], under a top bar [topInsetPx]
-     * tall and above a bottom bar [bottomInsetPx] tall. Cells are the widest square that lets seven
-     * of them and six hairlines fit the width — and, should a page be too short for six of those
-     * plus the header (never on a Nomad, but a store can travel), the tallest square that fits the
-     * height instead, so the Notes band is never negative and the grid never runs under the bar.
+     * The Month page for a [widthPx] × [heightPx] page at [density], the whole page. Cells are the
+     * widest square that lets seven of them and six hairlines fit the width — and, should a page be
+     * too short for six of those plus the header (never on a Nomad, but a store can travel), the
+     * tallest square that fits the height instead, so the Notes band is never negative and the grid
+     * never runs off the page.
      */
-    fun month(widthPx: Int, heightPx: Int, density: Float, topInsetPx: Int, bottomInsetPx: Int): Month {
+    fun month(widthPx: Int, heightPx: Int, density: Float): Month {
         val hairline = maxOf(1, density.roundToInt())
-        val headerTop = topInsetPx
+        val headerTop = 0
         val headerH = (DOW_HEADER_DP * density).roundToInt()
         val headerBottom = headerTop + headerH
         val gridTop = headerBottom + hairline
-        val bottom = heightPx - bottomInsetPx
+        val bottom = heightPx
         val byWidth = (widthPx - 6 * hairline) / 7
         val byHeight = (bottom - gridTop - 6 * hairline) / 6     // 5 dividers + the Notes band's top line
         val cell = maxOf(1, minOf(byWidth, byHeight))
@@ -167,11 +169,11 @@ object CalendarGeometry {
      * Month's band to within the integer rounding of halving that area. Cells are the width's
      * quarter, two rows with one divider between them; the eighth cell is spare.
      */
-    fun week(widthPx: Int, heightPx: Int, density: Float, topInsetPx: Int, bottomInsetPx: Int): Week {
+    fun week(widthPx: Int, heightPx: Int, density: Float): Week {
         val hairline = maxOf(1, density.roundToInt())
-        val reference = month(widthPx, heightPx, density, topInsetPx, bottomInsetPx)
-        val cellsTop = topInsetPx
-        val bottom = heightPx - bottomInsetPx
+        val reference = month(widthPx, heightPx, density)
+        val cellsTop = 0
+        val bottom = heightPx
         val area = maxOf(0, reference.gridBottom - cellsTop)
         val cellW = maxOf(1, (widthPx - 3 * hairline) / 4)
         val left = (widthPx - (4 * cellW + 3 * hairline)) / 2
@@ -188,11 +190,11 @@ object CalendarGeometry {
     // ── Day ──────────────────────────────────────────────────────────────────
 
     /**
-     * The Day page's geometry: [DAY_ROWS] half-hour rows of **one even height** filling the page
-     * between the bars and a time-label gutter down the left. **The last row takes the integer
-     * division's remainder** (at most 23 px) so the rows meet the bottom bar exactly, and there is
-     * no closing hairline — the bar's own top border closes the ledger. The rows span the page's
-     * full width, as og's do — [left] and [right] are 0 and the width.
+     * The Day page's geometry: [DAY_ROWS] half-hour rows of **one even height** filling the whole
+     * page and a time-label gutter down the left. **The last row takes the integer division's
+     * remainder** (at most 23 px) so the rows meet the page's bottom edge exactly, and there is no
+     * closing hairline — the page's own edge closes the ledger. The rows span the page's full
+     * width, as og's do — [left] and [right] are 0 and the width.
      */
     class Day(
         val width: Int,
@@ -205,7 +207,7 @@ object CalendarGeometry {
         val rowsTop: Int,
         /** Every row's height but the last's — see [rowHeight]. */
         val rowHeight: Int,
-        /** The last row's bottom edge: the bottom bar's top, exactly. */
+        /** The last row's bottom edge: the page's bottom edge, exactly. */
         val rowsBottom: Int,
     ) {
         val left: Int get() = 0
@@ -225,14 +227,14 @@ object CalendarGeometry {
     }
 
     /**
-     * The Day page for one half. The height between the bars, less the 23 dividers, is split evenly
-     * over the 24 rows (integer, never below 1 px); the remainder — at most 23 px — goes to the last
-     * row, so [Day.rowsBottom] is the bottom bar's top. A taller page means taller rows.
+     * The Day page for one half. The height of the page, less the 23 dividers, is split evenly over
+     * the 24 rows (integer, never below 1 px); the remainder — at most 23 px — goes to the last
+     * row, so [Day.rowsBottom] is the page's bottom edge. A taller page means taller rows.
      */
-    fun day(widthPx: Int, heightPx: Int, density: Float, topInsetPx: Int, bottomInsetPx: Int): Day {
+    fun day(widthPx: Int, heightPx: Int, density: Float): Day {
         val hairline = maxOf(1, density.roundToInt())
-        val rowsTop = topInsetPx
-        val bottom = heightPx - bottomInsetPx
+        val rowsTop = 0
+        val bottom = heightPx
         val dividers = (DAY_ROWS - 1) * hairline
         val rowHeight = maxOf(1, (bottom - rowsTop - dividers) / DAY_ROWS)
         val rowsBottom = maxOf(bottom, rowsTop + DAY_ROWS * rowHeight + dividers)
