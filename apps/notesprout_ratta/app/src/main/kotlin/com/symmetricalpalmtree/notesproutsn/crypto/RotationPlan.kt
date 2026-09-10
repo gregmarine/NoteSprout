@@ -100,6 +100,45 @@ object RotationPlan {
         else -> Failure.STOP
     }
 
+    /** What [afterThrow] answers for a file whose rekey threw. */
+    enum class Aftermath { DONE, TRANSIENT, QUARANTINE, STOP }
+
+    /**
+     * The whole sequence after a rekey threw (arc 34 / M1), so the executor cannot ask the key
+     * question of a file that is not there. `SoilRekey.rekeyInPlace` can throw with the original
+     * gone — `RekeyCommit.Outcome.BothKept` leaves `X.old.bak` + `X.rekey.tmp` and no `X` — and
+     * against a missing file every verify is false, which used to read as "under neither key":
+     * a good `GLOBAL` notebook quarantined to `NOTEBOOK` scope while Bootstrap's recovery later
+     * restored the verified tmp; a store or the index reported STUCK though they self-heal.
+     *
+     *  1. If the original is missing, [recover] (`RekeyRecovery.recover` for that one file, under
+     *     a verifier that knows both keys) — the plan's "if the original is missing but a verified
+     *     tmp exists, finish the commit". Still missing afterwards → [Aftermath.TRANSIENT]: nothing
+     *     on disk can answer the key question, the file stays pending, the next resume runs
+     *     recovery again before its loop. Never a quarantine, never STUCK.
+     *  2. A standing original that opens under the new key → [Aftermath.DONE] (the commit landed
+     *     late, or recovery just finished it).
+     *  3. Otherwise [afterFailure] over the old key, as before.
+     */
+    fun afterThrow(
+        kind: Kind,
+        originalExists: () -> Boolean,
+        recover: () -> Unit,
+        opensUnderNew: () -> Boolean,
+        opensUnderOld: () -> Boolean,
+    ): Aftermath {
+        if (!originalExists()) {
+            recover()
+            if (!originalExists()) return Aftermath.TRANSIENT
+        }
+        if (opensUnderNew()) return Aftermath.DONE
+        return when (afterFailure(kind, opensUnderOld())) {
+            Failure.TRANSIENT -> Aftermath.TRANSIENT
+            Failure.QUARANTINE -> Aftermath.QUARANTINE
+            Failure.STOP -> Aftermath.STOP
+        }
+    }
+
     // ── Commit ───────────────────────────────────────────────────────────────
 
     enum class CommitStep {

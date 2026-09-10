@@ -42,9 +42,12 @@ import kotlin.coroutines.coroutineContext
  * `NOTEBOOK` (the lock card from U4 on), its backup stamps cleared, dropped from pending, the
  * rotation carries on, and the count is reported at the end; U6's recovery is the way back. A
  * store or the index under neither stops the rotation with [Result.Failed] — nothing to
- * quarantine, nothing deleted, hand recovery. A rekey that throws is re-read: still under the old
- * key → transient, keep pending, stop with Failed (the person resumes); otherwise the same
- * neither-key rule.
+ * quarantine, nothing deleted, hand recovery. A rekey that throws is re-read
+ * ([RotationPlan.afterThrow]): an original that is **missing** (a commit that kept both copies)
+ * is put back by [SoilRekey.recoverOne] first and, if still missing, kept pending as transient —
+ * never judged against a file that is not there; then under the new key → done (the commit
+ * landed late); still under the old key → transient, keep pending, stop with Failed (the person
+ * resumes); otherwise the same neither-key rule.
  *
  * **The rituals**: `ExtensionStores.closeAll()` before the first store, and before the index:
  * the backup stamps cleared in **both** maps while the index is still open (decision 4 — a rekey
@@ -258,11 +261,25 @@ object GlobalRotation {
                 FileOutcome.DONE
             } catch (e: Exception) {
                 Log.w(TAG, "rekey failed: ${e.message}")
-                if (SoilCrypto.verifyPassphrase(file, new)) return FileOutcome.DONE // the commit landed late
-                when (RotationPlan.afterFailure(kind, opensUnderOld = SoilCrypto.verifyPassphrase(file, old))) {
-                    RotationPlan.Failure.TRANSIENT -> FileOutcome.TRANSIENT
-                    RotationPlan.Failure.QUARANTINE -> FileOutcome.QUARANTINED
-                    RotationPlan.Failure.STOP -> FileOutcome.STUCK
+                // M1: a commit that left `X.old.bak` + `X.rekey.tmp` and no `X` (BothKept) is
+                // finished here — the tmp verifies under the new key, so recovery renames it back
+                // — before anything reads the key question off a file that is not there.
+                when (RotationPlan.afterThrow(
+                    kind,
+                    originalExists = { file.exists() },
+                    recover = {
+                        val result = SoilRekey.recoverOne(file) { f ->
+                            SoilCrypto.verifyPassphrase(f, new) || SoilCrypto.verifyPassphrase(f, old)
+                        }
+                        Log.w(TAG, "original missing after the rekey threw; recovery: $result")
+                    },
+                    opensUnderNew = { SoilCrypto.verifyPassphrase(file, new) }, // the commit landed late, or recovery finished it
+                    opensUnderOld = { SoilCrypto.verifyPassphrase(file, old) },
+                )) {
+                    RotationPlan.Aftermath.DONE -> { KeyMaterial.invalidate(app, fileId); FileOutcome.DONE }
+                    RotationPlan.Aftermath.TRANSIENT -> FileOutcome.TRANSIENT
+                    RotationPlan.Aftermath.QUARANTINE -> FileOutcome.QUARANTINED
+                    RotationPlan.Aftermath.STOP -> FileOutcome.STUCK
                 }
             }
             RotationPlan.Step.QUARANTINE -> FileOutcome.QUARANTINED

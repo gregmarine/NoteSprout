@@ -7,7 +7,7 @@ the cross-session memory for the arc: read it whole at every phase start, togeth
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `FOCUS_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 ⬜ · P3 ⬜ · P4 ⬜.**
+**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 🔄 (M1 ✅ 2026-09-09, by Fable at the user's call; M2–M9 ⬜) · P3 ⬜ · P4 ⬜.**
 Baseline before the arc: 1626 `:app` / 3033 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump, no schema change, no g-paper change, no new
 module, no new dependency. **The notebook's bottom-strip pager (`NotebookActivity.kt` /
@@ -416,3 +416,19 @@ explanation and an `AskUserQuestion` never share one turn — explain, wait, the
      with **no** "were not part of this backup and were left out" line — not *Backup isn't
      complete* naming `<pkg>.db`.
   4. After the relaunch, open the calendar: the stroke from step 1 is there.
+
+- **2026-09-09 — P2 / M1 ✅ (Fable — the user asked for Fable, not Opus, for this item).**
+  Failing test first: `RotationPlanTest` gained four `afterThrow` cases (compile-red before the
+  fix). `RotationPlan.afterThrow(kind, originalExists, recover, opensUnderNew, opensUnderOld)`
+  is the pure sequence after a rekey throws: a **missing original is recovered before either
+  verify is read**, and one still missing afterwards is TRANSIENT (kept pending; the next resume
+  runs `recoverGarden` before its loop) — never a quarantine, never STUCK; a standing original
+  reads DONE under the new key (now also `KeyMaterial.invalidate`, the step the throw skipped)
+  else the old `afterFailure` table. `GlobalRotation.rotateFile`'s catch calls it with
+  `SoilRekey.recoverOne(file) { new || old }` as the recover step (the existing recovery table:
+  original ABSENT + tmp VERIFIES → RestoreTmp, the bak dropped once `X` verifies). No new file,
+  no direct rename. Docs: `docs/encryption.md` § The pure half (`afterThrow` bullet), the
+  failure table (a new BothKept row), the test table. Gates: 1630 `:app` tests (1626 + 4), all
+  green; `:app` release compiles; NUL scan clean. No walk (JVM-pinned; BothKept needs two
+  renames to fail on a real filesystem). Next: M2 (same file — `underNew` before `opensUnderOld`).
+

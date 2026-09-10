@@ -201,9 +201,18 @@ rest under the cached global (still the old one until commit).
   after a resume), `REKEY` (still under the old), `QUARANTINE` (a notebook under neither key),
   `STOP` (a store or the index under neither — nothing to quarantine, the rotation stops with
   `Failed`).
-- **`afterFailure`** — the same table re-read once a rekey throws: still under the old key is
-  `TRANSIENT` (kept pending, `Failed` reported, the person resumes); a notebook under neither is
-  `QUARANTINE`; a store or the index under neither is `STOP`.
+- **`afterThrow` / `afterFailure`** — the sequence once a rekey throws. **A missing original is
+  recovered before anything is read** (arc 34 / M1): `RekeyCommit.Outcome.BothKept` leaves
+  `X.old.bak` + `X.rekey.tmp` and no `X`, and against a missing file every verify is false, which
+  used to read as "under neither key" — a good `GLOBAL` notebook quarantined to `NOTEBOOK` scope
+  while Bootstrap later restored the verified tmp, a store or the index reported STUCK though they
+  self-heal. Now `SoilRekey.recoverOne` runs for that one file under a verifier that knows both
+  keys (the tmp verifies under the new one → it becomes `X`); an original still missing afterwards
+  is `TRANSIENT` (kept pending — the next resume runs recovery again before its loop), never a
+  verdict. Then the table as before: under the new key is `DONE` (the commit landed late, or
+  recovery just finished it — the cached raw key is invalidated, as a normal rekey does); still
+  under the old key is `TRANSIENT` (kept pending, `Failed` reported, the person resumes); a
+  notebook under neither is `QUARANTINE`; a store or the index under neither is `STOP`.
 - **`commitSteps(minted)`** — the ordered side-effect list the commit executes: `SET_GLOBAL` first
   (a death right after still resumes to a rotation where every file skips and the commit re-runs),
   `CLEAR_ACK` only for a minted key, `CLEAR_RAW_KEYS`, `SET_SESSION`, `CLEAR_MARKER` last (the
@@ -521,6 +530,7 @@ sidecar (arc 25's law), and there is no new status-line wording for the case.
 | Wrong global at Unlock | `unlock_wrong` inline error | Nothing | Try again; the confusable fold is tried automatically |
 | Lockout (per bucket — global, a notebook id, or `"IMPORT"`) | Entry row `GONE`, countdown text | Nothing | Wait it out; `AttemptLimiter.recordSuccess` clears it |
 | Rekey interrupted between renames | (silent — a later launch recovers it) | `.rekey.tmp` verifies or `.old.bak` verifies | Bootstrap's `recoverGarden` (or rotation resume's, before its loop) restores whichever survives |
+| Rotation's rekey throws with both copies kept (`BothKept`, no `X`) | Nothing — the file is counted as done | `SoilRekey.recoverOne` puts the verified `.rekey.tmp` back as `X` at once (arc 34 / M1); if nothing can be put back the file stays pending | The next Resume runs recovery again before its loop; never quarantined, never STUCK |
 | Rotation cancelled | "Change paused" | Marker kept, index still open | Resume banner on the Encryption screen |
 | Process death mid-rotation, before the index's rekey | (process gone) | Marker on disk, cached global still old | Bootstrap forwards to the Encryption screen's banner (path 2) |
 | Process death mid-rotation, after the index rekey, before commit | (process gone) | Index opens only under the marker's new passphrase | `SnIndex.ensureReady` opens under the marker's key and self-commits (path 3) |
@@ -687,7 +697,7 @@ transform steps are proven on the Nomad by the debug tools above).
 | `PassphraseRulesTest` | length, mismatch, same-as-current, trimming |
 | `PassphraseCacheTest` | single-use `takeOnce`, the 60 s TTL, `clear` |
 | `RotationMarkerTest` | JSON encode/decode round-trip, `augmented`, `quarantine`, `without` |
-| `RotationPlanTest` | id ordering (notebooks → stores → index), the `decide` / `afterFailure` outcome tables, `commitSteps`, `resumeCandidates` |
+| `RotationPlanTest` | id ordering (notebooks → stores → index), the `decide` / `afterFailure` / `afterThrow` outcome tables (a missing original is recovered, never judged), `commitSteps`, `resumeCandidates` |
 | `BootstrapRouteTest` | the three-way `afterOpen` decision and `carriesThenBackup` |
 | `BackupStoreTest` | both stamp maps, `clearAllStamps` |
 | `RawKeyDerivationTest` | the platform PBKDF2 path agrees byte-for-byte with the hand loop |

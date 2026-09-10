@@ -1,10 +1,13 @@
 package com.symmetricalpalmtree.notesproutsn.crypto
 
+import com.symmetricalpalmtree.notesproutsn.crypto.RotationPlan.Aftermath
 import com.symmetricalpalmtree.notesproutsn.crypto.RotationPlan.CommitStep
 import com.symmetricalpalmtree.notesproutsn.crypto.RotationPlan.Failure
 import com.symmetricalpalmtree.notesproutsn.crypto.RotationPlan.Kind
 import com.symmetricalpalmtree.notesproutsn.crypto.RotationPlan.Step
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -61,6 +64,79 @@ class RotationPlanTest {
         assertEquals(Failure.QUARANTINE, RotationPlan.afterFailure(Kind.NOTEBOOK, opensUnderOld = false))
         assertEquals(Failure.STOP, RotationPlan.afterFailure(Kind.STORE, opensUnderOld = false))
         assertEquals(Failure.STOP, RotationPlan.afterFailure(Kind.INDEX, opensUnderOld = false))
+    }
+
+    // ── afterThrow — arc 34 / M1: a missing original is recovered first, never judged ─────
+
+    /** A fake of the four facts `afterThrow` may ask for, recording what it was asked. */
+    private class Facts(
+        private var present: Boolean,
+        private val presentAfterRecover: Boolean = present,
+        private val underNew: Boolean = false,
+        private val underOld: Boolean = false,
+    ) {
+        var recovered = 0
+        var askedNew = 0
+        var askedOld = 0
+        fun run(kind: Kind): Aftermath = RotationPlan.afterThrow(
+            kind,
+            originalExists = { present },
+            recover = { recovered++; present = presentAfterRecover },
+            opensUnderNew = { askedNew++; underNew },
+            opensUnderOld = { askedOld++; underOld },
+        )
+    }
+
+    @Test
+    fun bothKeptIsFinishedByRecoveryAndAnswersDone() {
+        // `RekeyCommit.Outcome.BothKept`: `X.old.bak` + `X.rekey.tmp`, no `X`. Recovery puts the
+        // verified tmp back as `X`; it opens under the new key → DONE for every kind, no quarantine.
+        for (kind in Kind.values()) {
+            val f = Facts(present = false, presentAfterRecover = true, underNew = true, underOld = false)
+            assertEquals(Aftermath.DONE, f.run(kind))
+            assertEquals(1, f.recovered)
+            assertEquals(0, f.askedOld)
+        }
+    }
+
+    @Test
+    fun aPresentOriginalIsNeverRecoveredAndReadsTheOldTable() {
+        // The export failed, or the commit landed late: `X` stands. Recovery is not run.
+        for (kind in Kind.values()) {
+            val late = Facts(present = true, underNew = true)
+            assertEquals(Aftermath.DONE, late.run(kind))
+            assertEquals(0, late.recovered)
+            val transient = Facts(present = true, underOld = true)
+            assertEquals(Aftermath.TRANSIENT, transient.run(kind))
+            assertEquals(0, transient.recovered)
+        }
+        assertEquals(Aftermath.QUARANTINE, Facts(present = true).run(Kind.NOTEBOOK))
+        assertEquals(Aftermath.STOP, Facts(present = true).run(Kind.STORE))
+        assertEquals(Aftermath.STOP, Facts(present = true).run(Kind.INDEX))
+    }
+
+    @Test
+    fun aStillMissingOriginalIsTransientNotAVerdict() {
+        // Recovery could not put a file back (both leftovers unverified, or the rename failed):
+        // nothing on disk answers the key question, so the file stays pending for the next resume.
+        for (kind in Kind.values()) {
+            val f = Facts(present = false, presentAfterRecover = false)
+            assertEquals(Aftermath.TRANSIENT, f.run(kind))
+            assertEquals(1, f.recovered)
+            assertEquals(0, f.askedNew)
+            assertEquals(0, f.askedOld)
+        }
+    }
+
+    @Test
+    fun recoveryThatRestoresTheOldCopyIsTransient() {
+        // The tmp did not verify, the bak did: the original is back under the OLD key → try again.
+        for (kind in Kind.values()) {
+            val f = Facts(present = false, presentAfterRecover = true, underNew = false, underOld = true)
+            assertEquals(Aftermath.TRANSIENT, f.run(kind))
+            assertTrue(f.askedNew == 1 && f.askedOld == 1)
+            assertFalse(f.recovered == 0)
+        }
     }
 
     @Test
