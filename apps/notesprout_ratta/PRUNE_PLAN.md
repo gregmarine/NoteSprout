@@ -7,12 +7,13 @@ the cross-session memory for the arc: read it whole at every phase start, togeth
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `FOCUS_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 PLANNED 2026-09-09 — P1 ⬜ · P2 ⬜ · P3 ⬜ · P4 ⬜.**
+**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk pending) · P2 ⬜ · P3 ⬜ · P4 ⬜.**
 Baseline before the arc: 1626 `:app` / 3033 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump, no schema change, no g-paper change, no new
-module, no new dependency. **The uncommitted working tree (the notebook's bottom-strip pager in
-`NotebookActivity.kt` / `activity_notebook.xml` / `docs/notebook.md`) is part of this arc's
-baseline** — it lands with P3's cleanup of its `PenIdle` copies, never separately.
+module, no new dependency. **The notebook's bottom-strip pager (`NotebookActivity.kt` /
+`activity_notebook.xml` / `docs/notebook.md`) was committed as `9f651def` before P1 started** (the
+tree was clean at P1's start) — P3's group A now only replaces its `PenIdle` copies (L1); there is
+no uncommitted working tree to land.
 
 **Phase code:** **P** — one letter (no earlier arc used a bare P; PE was arc 30).
 
@@ -249,12 +250,11 @@ listing per new segment per run, zero per repeated upload, and the eviction on 4
 Grouped by file set; each group is one commit-sized unit. Every deletion is grep-verified across
 **all** modules first (Kotlin + XML, build dirs excluded).
 
-### Group A — the uncommitted pager + `PenIdle` (lands the working tree)
+### Group A — the pager's `PenIdle` copies (the pager itself is already committed, `9f651def`)
 - **L1** `NotebookActivity.kt:3931` — replace the private `releaseRenderIfIdle()` /
   `whenPenIdle()` with `PenIdle.releaseRenderIfIdle(paper)` / `PenIdle.whenIdle(paper,
   binding.root, action)`; also `NotebookToolbar.releaseRenderIfIdle` (`NotebookToolbar.kt:163`).
   Do **not** move the pager into `NotebookToolbar` (out of scope — a "fix the neighbourhood").
-  Then commit the working tree as this group.
 
 ### Group B — chrome bars
 - **L2** `ShapeTransformBar.kt:167` / `AnchoredBar.kt:100` / `SelectionToolbar.kt:383` — delete
@@ -381,3 +381,37 @@ explanation and an `AskUserQuestion` never share one turn — explain, wait, the
 - **2026-09-09 — planned.** Review run (`/code-review` arcs 24–33, eight finders, four
   verifiers): 37 candidates → 32 confirmed / plausible (1 high, 9 medium, 22 low), 4 refuted.
   Model split decided by the user: Fable H1, Opus M1–M9, Sonnet L1–L22. Phases P1–P4.
+- **2026-09-09 — P1 ✅ (Fable) — H1 fixed, option 1 (read-only verify).**
+  `SoilCrypto.openRawReadOnly(file, passphrase)` (`ZeticDB.openDatabase` with `OPEN_READONLY or
+  NO_LOCALIZED_COLLATORS`) + `verifyPassphraseReadOnly`; `pruneOrphans` verifies every staged
+  store through it and deletes the `-shm` the read-only open leaves (not a manifest item);
+  Step 0 untouched — the index stays the one exemption, and the comment says why the stores are
+  not. Found along the way: sqlcipher-android's raw read-write open also runs
+  `PRAGMA journal_mode=delete` (`SQLiteGlobal.getDefaultJournalMode()`), so the old verify did
+  not just checkpoint at close — it flipped the staged store out of WAL mode; and its wrong-key
+  path goes through `DefaultDatabaseErrorHandler.onCorruption`, which returns early under a codec
+  (never deletes) — the read-only path meets the same handler, unchanged.
+  **The pin is on-device, not JVM** (no SQLCipher on the JVM — the same reason arc 26 / U2 made
+  `RekeyProbe`): a new debug-menu row *Read-only verify vs a staged WAL* (`WalVerifyProbe`,
+  cache dir only) builds the SAF backup's shape (rows only in the `-wal`, main + sidecar copied
+  while the writer is open), and asserts read-only verify true / wrong key false / both files
+  byte-identical / 3 rows read through the WAL, then runs the old read-write verify last and
+  reports the defect (main 4096 → 8192 B, `-wal` gone). **PASS on the Nomad 2026-09-09 over
+  adb.** The mechanism was also shown on plain SQLite on the Mac first (read-only open keeps
+  both files byte-identical + a `-shm`; read-write close checkpoints and unlinks). The plan's
+  `RestoreEngineTest` / `SoilCryptoTest` items are therefore replaced by that probe row —
+  nothing pure changed, so no JVM test moved (1626 `:app`, all green). `:app` release compiles.
+  Docs: `docs/restore.md` § The commit (Step 0), § Orphans (the read-only bullet), § Standing
+  traps (never open a staged file read-write before Step 0), § Debug tooling (the probe row).
+  **Walk left to the user's hand** (below). No code review (not asked).
+
+  **P1 user checklist (Nomad, `.dev` — the plan's H1 walk):**
+  1. Open the calendar, write a stroke on a day, back out to the library.
+  2. Backup → local folder → run it now. In the picked folder's device subfolder, confirm a
+     `com.symmetricalpalmtree.notesproutsn.ext.calendar.dev.db-wal` (any `<pkg>.db-wal`) sits
+     beside its `.db` — if none does, open the calendar, write again, back out and back up again
+     straight away.
+  3. Backup → *Restore from a backup…* → that local backup → restore. Expect *Restore complete*
+     with **no** "were not part of this backup and were left out" line — not *Backup isn't
+     complete* naming `<pkg>.db`.
+  4. After the relaunch, open the calendar: the stroke from step 1 is there.

@@ -132,7 +132,10 @@ Whole under `NonCancellable` on IO. Steps 0–7 still touch nothing live.
 
 0. **Re-check the staged set for a tear** (every `SOIL`/`STORE` present and the size the listing
    said; the index exempt from the size rule — the proof opened it and SQLite's close checkpointed
-   its WAL into it). The marker and held-file rules are re-checked at the last moment.
+   its WAL into it). The stores are **not** exempt: the prune verifies them **read-only**
+   (`SoilCrypto.verifyPassphraseReadOnly`, arc 34 / H1), which leaves a staged store and its
+   `-wal` byte-for-byte what the listing measured. The marker and held-file rules are re-checked
+   at the last moment.
 1. **Read out this device's destination** (decision 3) from `BackupStore` while the index is still
    open and park it in `SecurePrefs`. `ParkFailed` refuses.
 2. **Re-measure free space** — the staged bytes already sit on the volume, so only the 64 MB
@@ -187,8 +190,14 @@ After the key is proven and before the notebooks are validated:
 
 - reads `SELECT id FROM objects WHERE type = 'notebook' AND deletedAt IS NULL` off the **staged**
   index under the proven key — the same rows `BackupEngine` builds its work list from;
-- test-opens every staged store (probe `Encrypted` + `verifyPassphrase`, ≈4 s each on the Nomad,
-  *Checking extension data n of m…*);
+- test-opens every staged store (probe `Encrypted` + `verifyPassphraseReadOnly`, ≈4 s each on
+  the Nomad, *Checking extension data n of m…*). **Read-only is load-bearing** (arc 34 / H1): the
+  SAF leg stages a store's `-wal` beside it, and a read-write raw open's close checkpoints that
+  WAL into the main file and unlinks it (SQLCipher's raw open also switches the file to
+  `journal_mode=delete`), so the store then weighed more than its manifest row and the
+  `STORE_WAL` file was gone — commit's Step 0 refused every intact local backup that carried
+  one as `InvalidFile(<pkg>.db)`. A read-only connection never checkpoints; the one thing it
+  leaves is a `-shm`, which the prune deletes so the staged Garden holds exactly what was fetched;
 - applies the pure `orphanRule(manifest, aliveIds, deadStores)`: a staged `.soil` with no alive row,
   and a staged store that is not encrypted SQLite or does not open under the proven key, are
   dropped from the manifest and **deleted from staging**;
@@ -433,6 +442,12 @@ and `RestoreManifestTest`, and the L4 walk fetched 55 mains and 0 sidecars. Do n
   taps (the walk's `type.sh`, keyboard rows y = 1337 / 1453 / 1568 / 1683 on the Nomad) or by
   clipboard paste.
 - **File tools can land a raw NUL byte** — byte-scan changed files before calling a phase done.
+- **Never open a staged file read-write before Step 0 measures it** (arc 34 / H1). A read-write
+  SQLCipher open checkpoints and unlinks a `-wal` sidecar on close and flips the file to
+  `journal_mode=delete`; the index gets away with it only because Step 0 exempts it. Anything
+  that must look inside a staged store or notebook uses `SoilCrypto.openRawReadOnly` /
+  `verifyPassphraseReadOnly`. The cloud leg never staged a WAL (R3), which is why the walks of
+  arc 27 never met the refusal: they restored a cloud backup or a local one with no store WAL.
 
 ## Debug tooling (`.dev` only)
 
@@ -447,6 +462,12 @@ and `RestoreManifestTest`, and the L4 walk fetched 55 mains and 0 sidecars. Do n
   sidecar) was adb or hand setup.
 - **Extension store self-test** now deletes its two `probe.*` files at the end (an L5 chore; the
   copies already in the backup folders stay, and restore as stores).
+- **Read-only verify vs a staged WAL (debug)** — `WalVerifyProbe` (arc 34 / H1): builds the SAF
+  backup's shape in the cache dir (a WAL-mode encrypted database whose rows sit only in the
+  `-wal`, main + sidecar copied while the writer is open), then proves `verifyPassphraseReadOnly`
+  answers true / false-on-wrong-key with both files byte-identical and the rows readable, and
+  reproduces the defect with the read-write verify last (main grows, `-wal` gone). PASS on the
+  Nomad 2026-09-09. The JVM cannot pin this (no SQLCipher), so this row is H1's pin.
 
 ## Not built / future (recorded, no user decision to build them)
 

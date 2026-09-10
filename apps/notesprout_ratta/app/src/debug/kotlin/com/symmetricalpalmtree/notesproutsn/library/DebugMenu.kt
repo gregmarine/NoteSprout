@@ -82,6 +82,10 @@ import java.io.File
  *  - **WEBP encoder measurement** ([WebpProbe]) — lossless vs lossy-q100 on this device's own page
  *    size, for the open question in `BuiltInTemplates.toWebp`. Skia's encoders are the subject, so
  *    no host tool can answer it; run it on every device tier before changing the format.
+ *  - **Read-only verify vs a staged WAL** ([WalVerifyProbe], arc 34 / H1) — the on-device proof
+ *    that `SoilCrypto.verifyPassphraseReadOnly` leaves a staged store and its `-wal`
+ *    byte-for-byte (the restore's Step 0 measures them), where the read-write verify checkpoints
+ *    the WAL away. Cache dir only; PASS / FAIL in the report.
  */
 object DebugMenu {
 
@@ -112,6 +116,7 @@ object DebugMenu {
             "Break a rekey commit (debug)",
             "Break keying (debug)",
             "Break a restore (debug)",
+            "Read-only verify vs a staged WAL (debug)",
         )
         val actions = listOf<() -> Unit>(
             { storeSelfTest(activity) },
@@ -122,6 +127,7 @@ object DebugMenu {
             { pickNotebook(activity, "Break a rekey commit") { id -> breakRekeyCommit(activity, id) } },
             { pickNotebook(activity, "Break keying") { id -> breakKeying(activity, id) } },
             { breakRestore(activity) },
+            { walVerifyProbe(activity) },
         )
         Dialogs.style(
             AlertDialog.Builder(activity)
@@ -172,6 +178,27 @@ object DebugMenu {
                     .setPositiveButton("Copy") { _, _ ->
                         val cm = activity.getSystemService(AppCompatActivity.CLIPBOARD_SERVICE) as ClipboardManager
                         cm.setPrimaryClip(ClipData.newPlainText("rekey round-trip", text))
+                        Toast.makeText(activity, "Copied", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNegativeButton("Close", null)
+                    .create()
+            ).show()
+        }
+    }
+
+    /** Arc 34 / H1 — [WalVerifyProbe]: the read-only verify leaves a staged store and its `-wal`
+     *  byte-for-byte, where the read-write one checkpoints the WAL away. Cache dir only. */
+    private fun walVerifyProbe(activity: AppCompatActivity) {
+        activity.lifecycleScope.launch {
+            val text = WalVerifyProbe.run(activity)
+            Slog.d("DebugMenu") { "wal verify probe\n$text" }
+            Dialogs.style(
+                AlertDialog.Builder(activity)
+                    .setTitle("Read-only verify vs a staged WAL")
+                    .setMessage(text)
+                    .setPositiveButton("Copy") { _, _ ->
+                        val cm = activity.getSystemService(AppCompatActivity.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(ClipData.newPlainText("wal verify probe", text))
                         Toast.makeText(activity, "Copied", Toast.LENGTH_SHORT).show()
                     }
                     .setNegativeButton("Close", null)

@@ -58,10 +58,36 @@ object SoilCrypto {
         return ZeticDB.openOrCreateDatabase(file, RawKeyDerivation.rawKeyLiteral(rawKey), null, null)
     }
 
+    /**
+     * Raw encrypted open with the passphrase, **read-only**. [file] must exist and be non-empty.
+     *
+     * The one open that leaves the bytes on disk exactly as they were: a read-only connection
+     * never checkpoints, so a `-wal` sidecar beside [file] is read through but neither replayed
+     * into the main file nor unlinked when the connection closes (a read-write open — the last
+     * connection's close — does both). It can still create a `-shm` beside the file when none
+     * exists, so the directory must be writable. [NO_LOCALIZED_COLLATORS][ZeticDB.NO_LOCALIZED_COLLATORS]
+     * keeps the open from wanting to write `android_metadata`.
+     */
+    fun openRawReadOnly(file: File, passphrase: String): ZeticDB {
+        requireExisting(file)
+        return ZeticDB.openDatabase(
+            file.path, passphrase, null,
+            ZeticDB.OPEN_READONLY or ZeticDB.NO_LOCALIZED_COLLATORS, null,
+        )
+    }
+
     /** True iff [passphrase] opens [file]. False for a missing/empty file (a create-capable open
-     *  would otherwise mint an empty DB keyed to whatever was typed and "verify" against nothing). */
+     *  would otherwise mint an empty DB keyed to whatever was typed and "verify" against nothing).
+     *  **Opens read-write**: on a WAL-mode file the close checkpoints and unlinks a `-wal`
+     *  sidecar — use [verifyPassphraseReadOnly] where the bytes on disk must stay what they are. */
     fun verifyPassphrase(file: File, passphrase: String): Boolean =
         verifyWith { openRaw(file, passphrase) }
+
+    /** [verifyPassphrase] over [openRawReadOnly]: the same answer, and [file] plus any `-wal`
+     *  beside it are byte-for-byte what they were afterwards (arc 34 / H1 — the restore's staged
+     *  stores are measured against their manifest sizes after this verify). */
+    fun verifyPassphraseReadOnly(file: File, passphrase: String): Boolean =
+        verifyWith { openRawReadOnly(file, passphrase) }
 
     /** True iff [rawKey] opens [file]. Same missing-file rule as [verifyPassphrase]. */
     fun verifyRawKey(file: File, rawKey: ByteArray): Boolean =

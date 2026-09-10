@@ -337,13 +337,20 @@ object RestoreEngine {
             // damaged copy — the same dead weight. Left out and named, never a refusal: nothing
             // names a store the way the index names a notebook, so nothing can vouch for one.
             // One KDF each — a handful of files, unlike the notebooks, which a rotation
-            // quarantines instead.
+            // quarantines instead. The verify is READ-ONLY (H1): the SAF leg stages a store's
+            // `-wal` beside it, and a read-write open's close would checkpoint that WAL into the
+            // main file and unlink it — the store then weighs more than its manifest row and the
+            // STORE_WAL row's file is gone, so commit's Step 0 refused every intact backup that
+            // carried one. Read-only, the staged bytes stay what the manifest measured; the one
+            // thing the open leaves behind is a `-shm`, which is not a manifest item and is
+            // deleted here so the staged Garden holds exactly what was fetched.
             val stores = manifest.items.filter { it.kind == ItemKind.STORE }
             val deadStores = HashSet<String>()
             stores.forEachIndexed { i, item ->
                 onProgress(i, stores.size)
                 val f = RestoreStaging.targetFor(staging, item)
-                val dead = !f.isFile || SoilCrypto.probe(f) != SoilFileKind.Encrypted || !SoilCrypto.verifyPassphrase(f, proven)
+                val dead = !f.isFile || SoilCrypto.probe(f) != SoilFileKind.Encrypted || !SoilCrypto.verifyPassphraseReadOnly(f, proven)
+                File(f.path + SHM).delete()
                 if (dead) deadStores.add(item.name)
             }
             onProgress(stores.size, stores.size)
@@ -387,6 +394,7 @@ object RestoreEngine {
     }
 
     private const val WAL = "-wal"
+    private const val SHM = "-shm"
 
     private fun soilStem(name: String): String = name.removeSuffix(".soil")
 
@@ -438,7 +446,9 @@ object RestoreEngine {
         // Step 0 — a torn staging set (a file deleted between validate and now) must be caught
         // here, not by a rename that fails half-way through the install. The index is exempt
         // from the size rule: the key proof opened it, and SQLite's close checkpoints a WAL into
-        // the main file (and deletes the sidecar), so its listed size is no longer its size.
+        // the main file (and deletes the sidecar), so its listed size is no longer its size. The
+        // stores are NOT exempt: [pruneOrphans] verifies them read-only, which leaves a staged
+        // store and its `-wal` byte-for-byte what the manifest measured (H1).
         for (item in manifest.items) {
             val f = RestoreStaging.targetFor(staging, item)
             val torn = when (item.kind) {
