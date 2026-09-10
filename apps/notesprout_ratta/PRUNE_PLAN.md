@@ -7,7 +7,7 @@ the cross-session memory for the arc: read it whole at every phase start, togeth
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `FOCUS_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk pending) · P2 ⬜ · P3 ⬜ · P4 ⬜.**
+**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 ⬜ · P3 ⬜ · P4 ⬜.**
 Baseline before the arc: 1626 `:app` / 3033 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump, no schema change, no g-paper change, no new
 module, no new dependency. **The notebook's bottom-strip pager (`NotebookActivity.kt` /
@@ -330,8 +330,8 @@ Grouped by file set; each group is one commit-sized unit. Every deletion is grep
 Sonnet sweeps every `docs/*.md` sentence the phases touched (§ Where the code is, § Tests counts,
 § Traps), `docs/extensions.md` boundary audit if M8 added a row, `CLAUDE.md` (both) arc line,
 `RATTA_PLAN.md` header, memory. Fable runs the gates and freezes: all fourteen modules debug +
-release, full JVM suite, NUL scan, three release APKs signed + verified, the P1 / M7 walks
-confirmed by the user, then commit + push.
+release, full JVM suite, NUL scan, three release APKs signed + verified, the M7 walk confirmed by the
+user (the P1 walk was waived), then commit + push.
 
 ---
 
@@ -403,9 +403,10 @@ explanation and an `AskUserQuestion` never share one turn — explain, wait, the
   nothing pure changed, so no JVM test moved (1626 `:app`, all green). `:app` release compiles.
   Docs: `docs/restore.md` § The commit (Step 0), § Orphans (the read-only bullet), § Standing
   traps (never open a staged file read-write before Step 0), § Debug tooling (the probe row).
-  **Walk left to the user's hand** (below). No code review (not asked).
+  No code review (not asked). **The user's walk below was WAIVED by the user (2026-09-09) — the
+  `WalVerifyProbe` PASS is H1's whole pin; do not re-raise it at P4.**
 
-  **P1 user checklist (Nomad, `.dev` — the plan's H1 walk):**
+  **P1 user checklist (Nomad, `.dev` — the plan's H1 walk; waived, kept for the record):**
   1. Open the calendar, write a stroke on a day, back out to the library.
   2. Backup → local folder → run it now. In the picked folder's device subfolder, confirm a
      `com.symmetricalpalmtree.notesproutsn.ext.calendar.dev.db-wal` (any `<pkg>.db-wal`) sits
