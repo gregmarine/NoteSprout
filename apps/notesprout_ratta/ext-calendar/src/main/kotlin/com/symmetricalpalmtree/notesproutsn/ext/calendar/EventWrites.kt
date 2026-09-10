@@ -69,7 +69,10 @@ object EventWrites {
      *   reminders **and the note**. Changing the date in the editor therefore *moves* just that
      *   occurrence;
      * - **[Scope.FOLLOWING]** — the original ends the day before the occurrence and a fresh series
-     *   starts under [newId] with no inherited exceptions (they belonged to the truncated tail);
+     *   starts under [newId] with no inherited exceptions (they belonged to the truncated tail). A
+     *   COUNT rule the editor handed back **unchanged** carries the *remaining* count (the original's
+     *   minus the starts ahead of the split, [Recurrence.countBefore]), so "10 times" split at #5 is
+     *   4 + 6, not 4 + 10; a rule the person changed is theirs, count included;
      * - **[Scope.ALL]**, a non-recurring original, or a brand-new event — [editSeries], in place.
      */
     fun editWithScope(
@@ -92,7 +95,10 @@ object EventWrites {
             Scope.FOLLOWING ->
                 if (!occurrence.isAfter(original.startDate)) editSeries(original, edited, viewedDay, now, noteStatements)
                 else listOf(EventSql.truncateEvent(original.id, occurrence.minusDays(1), now)) +
-                    save(edited.copy(id = newId, exceptions = emptySet(), createdAt = now), now, noteStatements)
+                    save(
+                        edited.copy(id = newId, recurrence = remainingRule(original, edited, occurrence), exceptions = emptySet(), createdAt = now),
+                        now, noteStatements,
+                    )
 
             Scope.ALL -> editSeries(original, edited, viewedDay, now, noteStatements)   // unreachable
         }
@@ -135,6 +141,19 @@ object EventWrites {
         val anchored =
             if (untouched) edited.copy(startDate = original.startDate, endDate = original.endDate) else edited
         return save(anchored.copy(exceptions = exceptions), now, noteStatements)
+    }
+
+    /**
+     * The successor's rule for a FOLLOWING split: [edited]'s own, except that a COUNT rule handed
+     * back exactly as the editor prefilled it (the same rule object as [original]'s — a moved date
+     * is not a changed rule) keeps only the occurrences the split left, never fewer than one (the
+     * occurrence itself is one of the original's N starts, so the difference is always ≥ 1).
+     */
+    private fun remainingRule(original: Event, edited: Event, occurrence: LocalDate): RecurrenceRule? {
+        val rule = edited.recurrence ?: return null
+        val count = rule.endCount
+        if (rule != original.recurrence || rule.endMode != EndMode.COUNT || count == null) return rule
+        return rule.copy(endCount = (count - Recurrence.countBefore(rule, original.startDate, occurrence)).coerceAtLeast(1))
     }
 
     /** One occurrence out of a series: the exception row, and the parent stamped so a reader can

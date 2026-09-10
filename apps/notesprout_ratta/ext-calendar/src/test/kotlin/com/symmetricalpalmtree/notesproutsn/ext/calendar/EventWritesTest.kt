@@ -183,6 +183,60 @@ class EventWritesTest {
         assertEquals("new", EventWrites.editLandsUnder(Scope.FOLLOWING, series, edited, viewed, "new"))
     }
 
+    /** Every 7 days from Sep 2, ten times: Sep 2, 9, 16, 23, 30, Oct 7, 14, 21, 28, Nov 4. */
+    private val counted = series.copy(
+        recurrence = RecurrenceRule(Freq.DAILY, interval = 7, endMode = EndMode.COUNT, endCount = 10),
+        exceptions = emptySet(),
+    )
+
+    private fun successorRule(batch: List<Statement>): Triple<String, Cell, Cell> {
+        val columns = EventSql.COLUMNS.split(", ")
+        val row = batch.first { it.sql.startsWith("INSERT OR IGNORE INTO event (") }
+        return Triple(text(row.args[columns.indexOf("id")]), row.args[columns.indexOf("endMode")], row.args[columns.indexOf("endCount")])
+    }
+
+    @Test
+    fun editingThisAndFollowingKeepsTheRemainingCount() {
+        // Split at #5 (Sep 30): the head keeps 4 (UNTIL Sep 29), the successor gets the other 6 — 4 + 6 = 10.
+        val split = LocalDate.of(2026, 9, 30)
+        val edited = counted.copy(title = "Standup v2", startDate = split, endDate = split)
+        val batch = EventWrites.editWithScope(Scope.FOLLOWING, counted, edited, split, "new", now)!!
+        assertEquals("2026-09-29", text(batch[0].args[1]))
+        val (id, endMode, endCount) = successorRule(batch)
+        assertEquals("new", id)
+        assertEquals("COUNT", text(endMode))
+        assertEquals(Cell.Integer(6), endCount)
+    }
+
+    @Test
+    fun aMovedDateStillKeepsTheRemainingCount() {
+        // Moving the remaining occurrences a day later changes the anchor, not the rule: still 6 left.
+        val split = LocalDate.of(2026, 9, 30)
+        val edited = counted.copy(startDate = split.plusDays(1), endDate = split.plusDays(1))
+        val batch = EventWrites.editWithScope(Scope.FOLLOWING, counted, edited, split, "new", now)!!
+        assertEquals(Cell.Integer(6), successorRule(batch).third)
+    }
+
+    @Test
+    fun aChangedRuleKeepsTheCountTheUserTyped() {
+        val split = LocalDate.of(2026, 9, 30)
+        val retyped = counted.copy(
+            startDate = split, endDate = split,
+            recurrence = RecurrenceRule(Freq.DAILY, interval = 14, endMode = EndMode.COUNT, endCount = 10),
+        )
+        val batch = EventWrites.editWithScope(Scope.FOLLOWING, counted, retyped, split, "new", now)!!
+        assertEquals(Cell.Integer(10), successorRule(batch).third)
+    }
+
+    @Test
+    fun countBeforeCountsTheStartsAheadOfTheSplitIncludingRemovedOnes() {
+        val rule = counted.recurrence!!
+        assertEquals(0, Recurrence.countBefore(rule, anchor, anchor))
+        assertEquals(4, Recurrence.countBefore(rule, anchor, LocalDate.of(2026, 9, 30)))
+        // A date past the last start: all ten are behind it.
+        assertEquals(10, Recurrence.countBefore(rule, anchor, LocalDate.of(2027, 1, 1)))
+    }
+
     @Test
     fun aFollowingSplitAtTheFirstOccurrenceCollapsesToTheWholeSeries() {
         val edited = series.copy(title = "Renamed")

@@ -179,6 +179,19 @@ object Recurrence {
         return out
     }
 
+    /**
+     * How many occurrence starts of [rule] anchored at [anchor] fall **strictly before** [date] —
+     * what a FOLLOWING split subtracts from a COUNT rule so the successor carries the *remaining*
+     * count rather than restarting the whole one (arc 34 / M3). Exceptions are not passed and
+     * do not matter: a removed occurrence still spent one of the N slots, exactly as
+     * [occurrenceStartCovering] enumerates them. A COUNT rule enumerates its own N; any other
+     * rule is bounded at [EventRules.END_COUNT_RANGE]'s top, the most a count can ever be.
+     */
+    fun countBefore(rule: RecurrenceRule, anchor: LocalDate, date: LocalDate): Int {
+        val limit = if (rule.endMode == EndMode.COUNT) (rule.endCount ?: 0).coerceAtLeast(0) else EventRules.END_COUNT_RANGE.last
+        return generateStarts(rule, anchor, limit).count { it.isBefore(date) }
+    }
+
     // ── The same three, taking an event ──────────────────────────────────────
 
     /** [occursOn] for [event]. A one-off answers its own span, so this is a total predicate. */

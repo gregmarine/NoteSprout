@@ -7,7 +7,7 @@ the cross-session memory for the arc: read it whole at every phase start, togeth
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `FOCUS_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 🔄 (M1 ✅ + M2 ✅ 2026-09-09, both by Fable at the user's call; M3–M9 ⬜) · P3 ⬜ · P4 ⬜.**
+**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 🔄 (M1 ✅ + M2 ✅ + M3 ✅ 2026-09-09, all by Fable at the user's call; M4–M9 ⬜) · P3 ⬜ · P4 ⬜.**
 Baseline before the arc: 1626 `:app` / 3033 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump, no schema change, no g-paper change, no new
 module, no new dependency. **The notebook's bottom-strip pager (`NotebookActivity.kt` /
@@ -446,3 +446,20 @@ explanation and an `AskUserQuestion` never share one turn — explain, wait, the
   KDoc corrected — a Cancel invalidates no cached key. Docs: `docs/encryption.md` § The pure half
   (`beforeRekey` bullet), § Per file, the test table. Gates: 1635 `:app` tests (1630 + 5), all
   green; `:app` release compiles; NUL scan clean. No walk (JVM-pinned). Next: M3.
+- **2026-09-09 — P2 / M3 ✅ (Fable — again at the user's call).** Failing test first: four
+  `EventWritesTest` cases (compile-red on `Recurrence.countBefore`). `Recurrence.countBefore(rule,
+  anchor, date)` counts the starts strictly before a date over `generateStarts` (a COUNT rule
+  enumerates its own N, any other is bounded at `END_COUNT_RANGE.last`); **exceptions are not
+  passed** — a removed occurrence still spent a slot, exactly as `occurrenceStartCovering`
+  enumerates. `EventWrites.editWithScope(FOLLOWING)` saves the successor with
+  `remainingRule(original, edited, occurrence)`: a rule that is the same object the editor
+  prefilled (`edited.recurrence == original.recurrence`) and is COUNT gets
+  `endCount = original − countBefore(occurrence)` (≥ 1 by construction); anything else is the
+  person's own rule, count included. **One reading of the plan's "rule and anchor equal":** the
+  anchor condition was dropped — the successor's anchor can never equal the original's, and a
+  moved date is "something other than the recurrence", so a series moved a day later still gets
+  6 of 10 (`aMovedDateStillKeepsTheRemainingCount`); only a retyped rule keeps the typed count.
+  M4's "no inherited exceptions" assertion is untouched (its own item). Docs: `docs/calendar.md`
+  § og's three recurring scopes (the FOLLOWING bullet), the test table. Gates: 312 `:ext-calendar`
+  tests (308 + 4), all green; `:app` + `:ext-calendar` release compile; NUL scan clean. No walk
+  (JVM-pinned). Next: M4 (same function — carry the exceptions at/after the split).
