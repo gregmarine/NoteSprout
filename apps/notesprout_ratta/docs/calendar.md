@@ -133,25 +133,47 @@ ledgered bug (`BACKLOG.md`) because og's *canvas* changed height under the same 
 guard; here the page is the whole screen, the bars overlay it and the guard is 0 on Ratta, so the
 height a page is laid out at is the height it is drawn at.
 
-- **Month** — a day-of-week header band (`DOW_HEADER_DP` 40), then a 6×7 grid of **square** cells
-  sized from the content width (seven cells and six hairlines fit the width; only on a page too
-  short for six rows plus the header does the square shrink to fit the height instead — never on a
-  Nomad, but a store can travel), then a Notes band taking whatever height is left. Out-of-month
-  cells are grey and fully writable — there is no "outside" a pen cannot touch.
+**The grids are full page (arc 33 / F4).** `CalendarGeometry.month`/`week`/`day` take only
+`(widthPx, heightPx, density)` — the two inset parameters (`topInsetPx`/`bottomInsetPx`) that used
+to carry the screen's bar heights are **gone**, not passed as 0: `headerTop` / `cellsTop` /
+`rowsTop` are all `0` and every page's `bottom` is `heightPx` itself. A bar is never a layout
+input, because the two chrome bars are floating overlays a finger double-tap hides or shows — the
+ruling does not move when the chrome flips, only what covers it does.
+
+- **Month** — a day-of-week header band (`DOW_HEADER_DP` 40) starting at the page's own top, then a
+  6×7 grid of **square** cells sized from the content width (seven cells and six hairlines fit the
+  width; only on a page too short for six rows plus the header does the square shrink to fit the
+  height instead — never on a Nomad, but a store can travel), then a Notes band taking whatever
+  height is left down to the page's bottom edge. Out-of-month cells are grey and fully writable —
+  there is no "outside" a pen cannot touch.
 - **Week** — a 2×4 grid (Sun–Sat plus one spare eighth cell) sized over **Month's own grid area**:
   the same header height, hairline and six-row band that Month's grid occupies, halved into two
   rows, so the Notes band below it is Month's band to within the integer rounding of that halving
   (pinned as a range, not an exact match). The spare cell is blank paper, unlabeled, and hit-tests to
   null exactly like a hairline or a margin does — it is nobody's day.
-- **Day** — `DAY_ROWS` (24) half-hour rows for one half sharing the height between the bars
-  **evenly** (the height less 23 dividers, integer-divided by 24, never below 1 px) and a left
-  gutter (`DAY_GUTTER_DP` 80) holding the time labels. **No Notes band and no closing hairline**:
-  the remainder of the integer division — at most 23 px — goes to the last row (`rowHeight(i)`), so
-  `rowsBottom` is the bottom bar's top exactly and the bar's own 1 dp border closes the ledger. A
-  taller page is taller rows (the Manta's rows are taller than the Nomad's); a shorter page is
-  shorter rows, so the whole twelve hours always show above the bar. Until Z5b the rows were a
-  fixed 34 dp with a labeled "Notes" slack band below — the Manta's taller page turned that band
-  into a section, and the decision was that a day is a ledger, not a ledger over a note.
+- **Day** — `DAY_ROWS` (24) half-hour rows for one half sharing the **whole page height** evenly
+  (the height less 23 dividers, integer-divided by 24, never below 1 px) and a left gutter
+  (`DAY_GUTTER_DP` 80) holding the time labels. **No Notes band and no closing hairline**: the
+  remainder of the integer division — at most 23 px — goes to the last row (`rowHeight(i)`), so
+  `rowsBottom` is the page's own bottom edge exactly. A taller page is taller rows (the Manta's rows
+  are taller than the Nomad's); a shorter page is shorter rows, so the whole twelve hours always
+  fill the page. Until Z5b the rows were a fixed 34 dp with a labeled "Notes" slack band below — the
+  Manta's taller page turned that band into a section, and the decision was that a day is a ledger,
+  not a ledger over a note.
+
+**Nomad numbers, re-derived from the formulas (arc 33 / F4, not copied from a run):** a Day page's
+rows are 76 px each, pitch 78 (row + 2 px hairline), the last row taking the 2 px remainder; a
+Month page's `gridTop` is 77 (the 40 dp header plus its hairline at the Nomad's 1.875 density) and
+`notesBottom` is 1872 — the page's own height, not a bar's top.
+
+**Two consequences, stated plainly (decision 3, accepted — no migration, no per-page inset, no
+schema step).** First: calendar ink drawn before arc 33 sits **one bar height above** the ruling it
+was written on — the grid used to start under the top bar, now it starts at the page's top edge, so
+an old page's strokes read one bar-height low against the new lines. Nothing is moved or lost;
+hiding the chrome shows the ink exactly as drawn, against the grid it always had. Second: a Day
+page's first and last rows (12:00 AM / 11:30 AM, and their PM twins) and the Month/Week weekday
+header plus the first row's date numbers now live **under the shown bars** — hiding the chrome is
+how those cells are written in; a shown bar simply covers them, opaque, and the pen refuses there.
 
 **Today** is a ring around the day's number, drawn once by `CalendarTemplate.dayCell` (shared by
 Month and Week so the ring arithmetic exists exactly once) — **nothing selects**. There is no
@@ -167,12 +189,13 @@ AM/PM out of `CalendarDates.HALF_NAMES`.
 a coin flip drawn any other way, the standing trap this family has hit before. Every edge
 `CalendarGeometry` names is an `Int`.
 
-The template is a transparent `ARGB_8888` bitmap **baked at the page's own size**, under the two
-chrome bars' **measured** heights (`CalendarActivity.awaitLaidOut()` — never a dimen guess), and set
-on the paper as g-paper's page template: grid and ink scale and register together, so a store
-carried to a different screen still lines up. It is baked **once per** (page, day, page size, the two
-bars' measured heights) — `CalendarActivity.applyTemplate` keeps that `BakeKey` and the bitmap it
-produced, and a `showPage` whose key is unchanged (an undo or a redo on the showing page) reloads
+The template is a transparent `ARGB_8888` bitmap **baked at the page's own size** — the root view's
+measured width/height (`CalendarActivity.awaitLaidOut()`, reduced in F3/arc 33 to just those two,
+never a dimen guess) — and set on the paper as g-paper's page template: grid and ink scale and
+register together, so a store carried to a different screen still lines up. It is baked **once
+per** (page, day, page size) — `CalendarActivity.applyTemplate` keeps that `BakeKey` and the bitmap
+it produced; since arc 33 / F4 the key carries no bar heights (a chrome flip re-bakes nothing), and
+a `showPage` whose key is unchanged (an undo or a redo on the showing page) reloads
 the strokes and nothing else: no page-sized bitmap, no `setPageSize`/`setTemplate` repaints (each is
 its own EPD frame), the replaced bitmap recycled (the Y4 review's finding: an undo was paying for a
 full bake). A real navigation changes the key; `onResume` forces one only when the date has actually
@@ -759,14 +782,15 @@ every side but the one the content happened to fall short of.
 | Gesture | Action |
 |---|---|
 | Finger swipe (horizontal, either direction) | Steps the period, through the notebook's own `SwipeMath` guards — the same distance/velocity rule as a page flip |
-| Double-tap a Month or Week cell | Opens that day's Day page at AM (nothing on a Day page itself) |
+| Double-tap a Month or Week cell | Opens that day's Day page at AM (day-open stays, decision 2) |
+| Double-tap the Notes band (Month/Week) or anywhere (Day) | Hides/shows the chrome (arc 33 / F4) |
 | 2-finger stationary double-tap | Undo |
 | 3-finger stationary double-tap | Redo |
 | Long-press | Nothing — not offered |
 
 Double-tap detection is `PageGestures.Listener.onFingerDoubleTap` in `:sn-screen` — a **second,
 independent history** over the same qualifying bare taps `onFingerTap` (link follow, on the
-notebook) already fires on, added for this arc rather than folded into the single-tap path: both
+notebook) already fires on, added for arc 23 rather than folded into the single-tap path: both
 callbacks fire for a qualifying second tap, so a consumer that wants only one of them is never
 silently denied the other, and the notebook's own `onFingerTap` is byte-identical to what it was
 before this existed. The calendar overrides only `onFlipNext`/`onFlipPrevious` (swipe → step),
@@ -774,6 +798,20 @@ before this existed. The calendar overrides only `onFlipNext`/`onFlipPrevious` (
 tap on the calendar selects and does nothing — the wizard's call. Every gesture is pen-activity
 gated exactly as everywhere else in SN (`PageGestures.gateOpen()`), and a sequence that starts on
 chrome or from a stylus is thrown away whole.
+
+**Since arc 33 / F4 the double-tap routes by zone through pure `CalendarDoubleTap.decide(kind, x,
+y, date, month?, week?): Decision`** — `OpenDay(date)` / `Toggle` / `Nothing`. On Month and Week a
+cell hit answers `OpenDay` (unchanged); failing that, a tap inside the Notes band —
+`[notesTop, notesBottom)` over the page's **full width**, margins included — answers `Toggle`; the
+header, the side margins, a hairline and the spare Week cell all answer `Nothing`, exactly as a
+cell hit-test already refused them. On a Day page (no band, nothing to open) every tap answers
+`Toggle`. An unknown `kind` or a missing geometry (the caller passes only the one its `kind` needs)
+also answers `Nothing` rather than guessing. `Toggle` calls the base class's `toggleChrome()`
+(`InkScreenActivity`, F3's seam) — the calendar adds no new toggle plumbing of its own.
+`CalendarActivity.onFingerDoubleTap` runs the decision inside `runPageOp`, serialised against a
+flip's own `showPage`. Walk detail: a Month cell's centre is `77 + row·200 + 99` on the Nomad, and
+the hairline between two rows is `Nothing` by design — a tap that lands exactly on one does
+nothing, on purpose.
 
 ## Undo
 
@@ -867,6 +905,18 @@ unbinds and revokes the store in `finally`. Before Y4 the calendar's copy carrie
 `am start` has a null `callingPackage` and is refused before anything is inflated, logged as
 `refused caller (none)`. Both `ACTION_CALENDAR` and `ACTION_CALENDAR_SCREEN` are in the host's
 `<queries>` block (the arc-21 / W1 trap, avoided here).
+
+**Since arc 33 / F3 the launch Intent carries a FIFTH boolean, `ExtensionContract
+.EXTRA_CHROME_HIDDEN`** (absent = shown, no version gate, no floor — a compatible tail, not an API
+bump) — `ExtensionScreenEntry.open()` fills it in right after `decorateIntent`, entry-level, so
+every door carries it with no per-entry code. It comes back on **every** result Intent, whatever
+the result code — the first datum this seam's result has ever carried: `InkScreenActivity
+.finishWithHandoff` echoes `chromeToggle.hidden` on it (a bare `setResult` only on the rare path
+where the toggle was never built), and `ExtensionScreenEntry.onResult` reads it synchronously,
+right after `stack.pop`, before the launched coroutine — so the calendar → pad chain
+(`onClosed` → `scratchPad.open()`) sees the value the calendar just reported, and the host persists
+it to `ChromePrefs`. The extension itself writes nothing to disk for it; the boolean is device-local
+state the host owns.
 
 ## Both transfers
 
@@ -1046,15 +1096,18 @@ question the notebook's own pages answer with the same control. **Day exports bo
 then PM), because nobody asks to export half a Tuesday; a per-page exporter (the image exporter)
 then writes two files, `… AM.png` / `… PM.png`.
 
-**The render draws at the SCREEN's bar insets, not a full page.** `CalendarBars.topInsetPx` /
-`bottomInsetPx` answer one `toolbar_bar_thickness` row plus the new `calendar_bar_rule` hairline
-dimen — the two layouts' own dividers now reference it too, so the screen and the export agree by
-construction. This exists because the ink on a calendar page was **written** against the grid the
-*screen* drew under its top bar, not against a full-bleed grid: rendering at inset 0 (the plan's
-original call) put the grid one bar-height higher than the ink expected it, and the HV4 walk caught
-it directly — a word in the 13th's cell landed inside the 20th's. The exported page therefore
-carries blank bands top and bottom where the bars were, the same shape the ink-only page (template
-off) already had.
+**The render draws the full page (arc 33 / F4) — history first.** Arc 31 / HV4 drew at the
+*screen*'s bar insets, through `CalendarBars`, precisely so the export agreed with the inset screen
+the ink had been written against: the plan's original "insets 0" put the grid one bar-height higher
+than the ink expected it, and the HV4 walk caught it directly — a word in the 13th's cell landed
+inside the 20th's. Arc 33 / F4 removed the insets on **both** sides at once — the screen's grids
+went full page (§ The three pages above) and `CalendarRender` bakes with the same no-inset
+signatures — so the plan's original "insets 0" is now simply true, and **`CalendarBars` was
+deleted** (the `calendar_bar_rule` dimen stays — the layout's two bar hairlines still reference it).
+The lesson survives the history: the screen and the render must draw the same geometry, or the ink
+lands wrong; they now agree at zero rather than at a measured inset. A calendar PNG/PDF no longer
+carries the blank bar bands HV4 added — the exported page is the grid edge to edge, whatever the
+bars were doing on screen when it was written.
 
 `CalendarSession.outboundTarget` / `parkTarget` are cleared by `end()` (`InkTransferSession.clear`
 was made `open` for this); `CalendarService.render` / `outgoingTarget` are read-only against the
@@ -1149,7 +1202,9 @@ selection bar's show at lasso completion (and its re-anchor after a move, and it
 received placement — the same kind of frame at the same kind of boundary), the "Opening…" box's
 hide once the page lands, and a problem dialog at a pen-up or a chrome tap. **Arc 29 / LE3 adds
 one more, ledgered the same way as the pad's:** the eraser sub-bar's show/hide is a chrome frame
-at a deliberate tap, not pen-idle gated. The pager's title
+at a deliberate tap, not pen-idle gated. **Arc 33 / F4 adds the chrome-hide flip itself, the same
+exception 6 as every other paper screen's toggle** (`docs/notebook.md` § Frame-silence): a
+double-tap is a deliberate act, so the flip is never `whenPenIdle`-gated. The pager's title
 (`CalendarToolbar.setTitle`) and the view latches wait for `whenPenIdle` explicitly — **since Y4**
 `InkScreenActivity.whenPenIdle` is a one-line wrapper over `:sn-screen`'s `PenIdle.whenIdle`, the
 same gate the pad's screen calls, rather than a copy each screen kept for itself.
@@ -1180,7 +1235,7 @@ same gate the pad's screen calls, rather than a copy each screen kept for itself
 | `:extension-api` `ExtensionContract` | `ACTION_CALENDAR[_SCREEN]`, `API_VERSION` 9 since arc 31 / HV4 (7 before), the per-action `minApiVersion` map, the extras/result; since HV4 also `RENDER_GRID`/`INK`/`RING`/`MARKS`/`RENDER_ALL`, `RENDER_MAX_TARGETS`, `MIN_API_VERSION_FOR_CALENDAR_RENDER`, `EXTRA_CALENDAR_EXPORT_ENABLED`, `RESULT_CALENDAR_EXPORT`, `CALENDAR_RENDER_TIMEOUT_MS` |
 | `:ext-calendar` `RenderRequest` | arc 31 / HV4 — pure `render` argument checks + `pageSize` (stored else the host's) |
 | `:ext-calendar` `CalendarRender` | arc 31 / HV4 — the extension-side render pipeline: store open on the lent binder, `CalendarTemplate` by flag, `EventStore.marksFor`, g-paper's `StrokeRasterizer`, WEBP q100, `PageBundle.Writer` |
-| `:ext-calendar` `CalendarBars` | arc 31 / HV4 — the screen's bar insets as dimens (`toolbar_bar_thickness` + `calendar_bar_rule`), so the render agrees with what the screen drew |
+| `:ext-calendar` `CalendarBars` | arc 31 / HV4 — the screen's bar insets as dimens (`toolbar_bar_thickness` + `calendar_bar_rule`); **deleted arc 33 / F4** — the insets it carried are gone from the geometry, not zeroed (the `calendar_bar_rule` dimen itself stays, for the layout's own bar hairlines) |
 | `:ext-ink` `InkWire` | wire ⇄ paper, the extension-side twin of the host's `TransferCaps` |
 | `:ext-ink` `StrokeRows` / `StrokeBlob` | row → stroke decode (dropped-not-lost), the format-B encoder |
 | `:ext-ink` `StoreBatches` | splitting a write into `exec` batches |
@@ -1197,7 +1252,8 @@ same gate the pad's screen calls, rather than a copy each screen kept for itself
 | `:ext-calendar` `CalendarSchema` / `CalendarSql` | the calendar's own tables and SQL (pinned by `CalendarSqlTest`) — since Y4 the `stroke` table and its six statements are `:ext-ink`'s `InkSql` (`CalendarSql : InkDocument.StrokeSql by InkSql`) |
 | `:ext-calendar` `CalendarStore` | the store calls, on `:ext-ink`'s `InkStore` |
 | `:ext-calendar` `CalendarDocument` | the showing page in memory: target, mint/size bookkeeping, delegates ink to `InkDocument`; implements `:ext-ink`'s `InkPage` since Y4 |
-| `:ext-calendar` `CalendarGeometry` / `CalendarTemplate` | the three layouts' rects and hit-tests; the template painter |
+| `:ext-calendar` `CalendarGeometry` / `CalendarTemplate` | the three layouts' rects and hit-tests; the template painter; since arc 33 / F4 both take `(widthPx, heightPx, density)` only — no bar insets |
+| `:ext-calendar` `CalendarDoubleTap` | arc 33 / F4 — pure `decide(kind, x, y, date, month?, week?)` → `OpenDay` / `Toggle` / `Nothing`, the zone rule the double-tap listener runs inside `runPageOp` |
 | `:ext-calendar` `CalendarNavigation` | the pure anchor rule and every `Move` |
 | `:ext-calendar` `DayPickerModel` / `DayPickerDialog` | the picker's grids (pure) and its views |
 | `:ext-calendar` `CalendarToolbar` | the chrome, the fixed tools, the pager, both Send buttons, and (Y4) the three Tabler view latches and the calendar's own Scratch Pad button; since arc 29 / LE3 forwards `onEraserReTap` + `onToolTapped` to `:sn-screen`'s `PaperToolbar` and exposes `arm(tool)` for the sub-bar's pick; since arc 31 / HV4 the Send button is the **out-door** — picks Send / Export (`ic_download`) / a sheet for both by `sendEnabled`/`exportEnabled` |
@@ -1278,7 +1334,8 @@ same gate the pad's screen calls, rather than a copy each screen kept for itself
 | `ext-ink/InkSqlTest` | the `stroke` table and index DDL through the host's real DDL validator, `putStroke`'s idempotent text and format-B geometry, both deletes, all three reads keeping `"order"` quoted |
 | `ext-ink/InkTransferSessionTest` | chunks accumulating and only the last one placing, fresh ids minted with the wire's geometry, a placement changed mid-transfer refused and the whole inbound dropped, the stroke and point caps, a missing store and a store that fails mid-placement both answering the one `STORE_UNAVAILABLE` text, `recordInboundPageSize`'s one documented difference, parked chunks probed past the end as empty, `end`/a second `begin` clearing everything |
 | `ext-calendar/CalendarSqlTest` | the schema shape, every statement passes the real host validator, period/page are `OR IGNORE` never `REPLACE`, page updates, stroke rows match the pad's, state rows, every read statement |
-| `ext-calendar/CalendarGeometryTest` | hairline rounding and integer edges, Month cells square from the width with the Notes band taking the rest, dividers on integer edges, a short page shrinking cells rather than running under the bar, Month `hitTest` on and off the grid, Week cells as Month's quarter with Month's band, Week `hitTest` incl. the spare cell, Day rows sharing the height evenly with no band and the last row taking the remainder to the bar, a taller page growing the rows, a short Day page shrinking rows, `dayRowLabel`'s 12-hour text |
+| `ext-calendar/CalendarGeometryTest` | hairline rounding and integer edges, Month cells square from the width with the Notes band taking the rest, dividers on integer edges, a short page shrinking cells rather than running off the page, Month `hitTest` on and off the grid, Week cells as Month's quarter with Month's band, Week `hitTest` incl. the spare cell, Day rows sharing the whole page height evenly with no band and the last row taking the remainder to the page's bottom edge, a taller page growing the rows, a short Day page shrinking rows, `dayRowLabel`'s 12-hour text — swept arc 33 / F4 to the no-inset `(widthPx, heightPx, density)` signatures, every expected literal re-derived from the formulas, never copied from a run |
+| `ext-calendar/CalendarDoubleTapTest` | arc 33 / F4, 13 cases — Month/Week cell hit → `OpenDay`, the Notes band anywhere across the full width → `Toggle`, header/margins/hairlines/the spare Week cell → `Nothing`, Day → `Toggle` everywhere, an unknown `kind` or a missing geometry → `Nothing` |
 | `ext-calendar/CalendarNavigationTest` | first run onto today's Month, honouring any bookmark kind, the anchor landing on today/this-week on toggle, anchoring on a period's own first day when it doesn't hold today, re-anchoring on today when stepping back into a period that does, a toggle preserving the anchor's half, a toggle to the showing view doing nothing, Today and the clock's half, a double-tap opening AM and moving the anchor (and doing nothing on a Day page), a pick moving the anchor, Day stepping AM → PM → next morning; `landed` re-anchoring a replay's page (and answering null for the showing one) |
 | `ext-calendar/CalendarStoreTest` | `open` declares the schema, reads the bookmark and writes nothing; a bad bookmark reads as none; reading a missing page writes nothing; reading a day's other half finds the period but no page; reading an existing page is the join then the strokes; `saveState` is one batch of three; `mintRows` is period-then-page both `OR IGNORE`; `receive` on no rows mints at zero size in one batch; `receive` on an existing page numbers after the max and mints nothing; a mid-way placement failure drops exactly what it minted; every store failure reads as `StoreUnavailable`; a placement onto an existing page reads its header and max order, never a blob |
 | `ext-calendar/CalendarDocumentTest` | showing an empty month writes only the bookmark; the first stroke mints period and page ahead of itself in one batch; an existing page is never re-minted and keeps its own size; the other half of a day joins the existing period; a zero-size page learns the surface once and only once; a stroke drawn and undone before the debounce mints nothing; leaving a page flushes it after reading the next; a replay on another page navigates there first; a replay for a page never shown this showing is skipped |
@@ -1332,6 +1389,11 @@ total across the modules).
 `CalendarPaperTest`, `NotebookUndoTest`'s `PageReceived` case. **2945 tests total after HV5**
 (2941 after HV4), version stays `0.1.0-ratta` throughout.
 
+**Arc 33 "Focus" / F4 grew `:ext-calendar` 295 → 308** — `CalendarDoubleTapTest` (13 new);
+`CalendarGeometryTest` stays at 14, swept to the no-inset signatures. No other module's calendar
+tests changed (the host's `export/CalendarRenderPlan` etc. are untouched by the geometry sweep).
+**3033 tests total across the modules** after F4, version stays `0.1.0-ratta`.
+
 ## Traps
 
 - **`AppCompatButton`s with no `layout_width` inflate-crash under `Widget.Notesprout.TextButton` /
@@ -1381,12 +1443,20 @@ total across the modules).
 - **The auto-mode permission classifier can refuse a plain `adb install`** — hit three times in one
   Z5b session (plain, via the device-build-install skill, and by absolute path); the fix was the
   user running the install themselves with `!`, not a change to the tree.
-- **The plan's "insets 0" was wrong (arc 31 / HV4)** — a full-bleed grid at `(0, 0)` sits one
-  bar-height higher than ink written against the *screen's* grid, which starts under the top bar. The
-  first walk caught it directly (a word in the 13th's cell landed inside the 20th's); the fix is
-  `CalendarBars`, the screen's own insets, not zero. Any future render-from-a-showing-screen work in
-  this family should assume the screen's chrome insets are part of the geometry, not start from zero
-  and "fix it if the walk finds it."
+- **(Historical, superseded arc 33 / F4) The plan's "insets 0" was wrong at arc 31 / HV4** — a
+  full-bleed grid at `(0, 0)` sat one bar-height higher than ink written against the *screen's*
+  grid, which then started under the top bar. The first walk caught it directly (a word in the
+  13th's cell landed inside the 20th's); the fix at the time was `CalendarBars`, the screen's own
+  insets, not zero. The lesson outlived the fix: the screen and the render must draw the same
+  geometry, or the ink lands wrong. Arc 33 / F4 removed the insets on **both** sides at once — the
+  screen's grids went full page too — so "insets 0" became simply true and `CalendarBars` was
+  deleted; the two now agree at zero rather than at a measured inset.
+- **`CalendarActivity.awaitLaidOut()` used to wait on both bar heights being `> 0`** (arc 33
+  trap 3) — a calendar launched with the chrome extra already `hidden` would `GONE` its bars
+  before their first layout, so a height that was never going to become positive left the screen
+  hanging on "Opening…" forever. Reduced in F3 to the root view's width/height only, before the
+  calendar ever reads the extra — correct anyway once F4 stopped the geometry from reading the
+  bars at all. A hidden launch now lays its full-page grid under bars that are `GONE` at height 0.
 - **A twelfth 62 dp button overflows the Nomad's calendar bar** (arc 31 / HV4) — 11 × 62 + margins
   = 726 of 749 dp with every extension installed. Export rides the existing Send button rather than
   adding one, the same math that kept the lasso eraser (arc 29) off a fourth button of its own.

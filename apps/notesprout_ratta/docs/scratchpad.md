@@ -85,6 +85,18 @@ pager, the inserts and the delete confirm, and the head of `consumeReceived`.
 | Selection | Smart lasso + scribble erase, armed before the listener attaches. The floating bar is Send selection (with a notebook behind) then Delete — Delete last, as on the notebook's bar. |
 | Undo | Pad-level and **in memory**: it survives page turns and dies with the screen. |
 
+**Since arc 33 / F3 both bars are floating overlays over full-bleed paper** (they already were),
+and **a single-finger double-tap hides / shows both of them at once.** `InkScreenActivity.
+initChrome()` builds the one `ChromeToggle` (`:sn-screen`) over `listOfNotNull(topBarView,
+bottomBarView)` — `beforeHide = hideEraserBar`, `afterLayout = pushExclusions` — from
+`ExtensionContract.EXTRA_CHROME_HIDDEN` on the launch Intent (absent = shown), before the first
+layout; `toggleChrome()` (guarded `opened && !closing`) is the pad's `onFingerDoubleTap`. The band
+between the bars is pure `ChromeBand.of(root.height, top.asBar(bottom), bottom.asBar(top))` — a
+hidden bar contributes the root edge, and (trap 2) a **shown** bar that is not yet laid out
+withholds the band entirely, so a floating bar refuses to show until it can be placed correctly.
+The pad **persists nothing**: it is handed the flag on the way in and echoes its final state on the
+way out (below); the one global, persisted `ChromePrefs` boolean lives on the host.
+
 **The caller check is the first statement in `onCreate`**, before anything is inflated. The screen is
 exported (the host launches it by action) and only a `startActivityForResult` from the host package
 with a matching signature gets in — a plain `am start` has a null `callingPackage` and is refused.
@@ -368,6 +380,18 @@ the tap and the open runs only once its frame is on the glass: a **cold** open m
 the Nomad (SQLCipher's KDF creating the store) against 114 ms warm, and a tap with no answer for
 three seconds reads as a tap that missed.
 
+**Since arc 33 / F3 the launch and its result Intent also carry one shared chrome flag**
+(`ExtensionContract.EXTRA_CHROME_HIDDEN`, absent = shown, no version gate, no floor moved — a
+compatible tail, the fifth boolean on this seam and the first datum on its **result**). It is put
+on right after `decorateIntent` by `ExtensionScreenEntry.open()` — entry-level, so every door on
+both hosts (library and notebook) carries it with no per-entry code — and it is read synchronously
+right after `stack.pop`, at the top of `onResult`, before the launched coroutine, via pure
+`extension/ChromeResult.read(Intent?)` (present → its value, absent → null — never written). The
+pad's own `finishWithHandoff` echoes the flag on **every** result Intent whatever the result code;
+a plain `am start` or a failed open (the toggle never built) answers with no data, and the host
+writes nothing. A pad killed under a live host → `RESULT_CANCELED` with no data → the pref
+unchanged.
+
 ## What the pad is not
 
 - **It opens no `.soil`.** It has no notebook, no page rows, no index. Its ink is its own.
@@ -387,7 +411,9 @@ move, and its show over a received placement), the "Opening…" box's hide when 
 problem dialog at a pen-up or a chrome tap. **Arc 29 / LE3 adds one more, ledgered the same way:**
 the eraser sub-bar's show/hide is a chrome frame at a deliberate tap (the re-tap that opens it, the
 pick or outside contact that closes it) — the notebook's floating-bar rule, not pen-idle gated.
-**Since arc 23 / Y4 the gate itself is `:sn-screen`'s
+**Arc 33 / F3 adds no new exception either** — the chrome double-tap rides the notebook's own
+exception 6 (a deliberate act, never `whenPenIdle`; `isPenActive` counts hover) in scratch-pad
+form, exactly as the eraser sub-bar did before it. **Since arc 23 / Y4 the gate itself is `:sn-screen`'s
 `PenIdle.whenIdle`** (`InkScreenActivity.whenPenIdle` is the one-line wrapper both screens call) —
 one frame-silence gate written once rather than the four copies that had grown across the pad's and
 the calendar's toolbars and screens. Host-side, the pad button's overlay rides the C1 exception: the
@@ -408,17 +434,20 @@ same act as the Contents and Recents buttons.
 | `:ext-ink` `InkWire` | wire ⇄ paper on the extension side (arc 11's `ScratchInk`, shared since arc 23 / Y1) |
 | `:ext-ink` `InkStore` / `StoreBatches` / `StrokeReadPlan` / `StrokeRows` | the shared store base (run/compensated/guard/planned-stroke-read), batch splitting, ranged-read planning, row → stroke decode |
 | `:ext-ink` `InkDocument` / `InkAction` / `StoreUnavailable` / `PageInk` | the shared page-in-memory + op log + `flushUntilClean`, the four stroke-level undo actions, the one store-failure type, the stored-page shape |
-| `:ext-ink` `InkSql` / `InkPage` / `InkTransferSession` / `InkScreenActivity` | arc 23 / Y4 — the shared stroke SQL/DDL, the ink-page contract a consumer's document implements, the shared transfer-session base, and the shared tier-2 screen skeleton — one copy for the pad and the calendar; since arc 29 / LE3 `InkScreenActivity` also owns the whole eraser sub-bar lifecycle (toggle/show/hide, outside-contact dismissal, `onLassoErased`) for both |
+| `:ext-ink` `InkSql` / `InkPage` / `InkTransferSession` / `InkScreenActivity` | arc 23 / Y4 — the shared stroke SQL/DDL, the ink-page contract a consumer's document implements, the shared transfer-session base, and the shared tier-2 screen skeleton — one copy for the pad and the calendar; since arc 29 / LE3 `InkScreenActivity` also owns the whole eraser sub-bar lifecycle (toggle/show/hide, outside-contact dismissal, `onLassoErased`) for both; **since arc 33 / F3 it also owns `chromeToggle` / `initChrome()` / `toggleChrome()` / `chromeBand()` and the `finishWithHandoff` echo, once, for both** |
 | `:sn-screen` `FloatingSelectionBar` | the row-of-buttons primitive `InkSelectionBar` places |
 | `:sn-screen` `InkSelectionBar` | the ONE Send-then-Delete floating bar (arc 23 / Y4, replacing `ScratchSelectionToolbar` and the calendar's `CalendarSelectionToolbar`), built on `FloatingSelectionBar` |
 | `:sn-screen` `EraserBar` / `AnchoredBar` | arc 29 / LE2–LE3 — the Point · Lasso sub-bar and its placement primitive (`AnchoredBar` moved here from `:app` at LE2), one implementation shared by the notebook, the sticky editor, the pad and the calendar; see [`docs/sn-screen.md`](sn-screen.md) |
 | `:sn-screen` `PenIdle` | the frame-silence gate (arc 23 / Y4) — `whenIdle` / `releaseRenderIfIdle`, shared by both toolbars and both activities |
+| `:sn-screen` `ChromeBand` / `ChromeToggle` | arc 33 / F1, shared by all four paper screens — the pure floating-bar band (`Bar(shown, edge, laidOut)`, a shown-but-unlaid bar withholds the band) and the one flip order (`releaseRender` → `beforeHide` → `GONE`/`VISIBLE` → `doOnNextLayout { afterLayout() }`); see [`docs/sn-screen.md`](sn-screen.md) |
 | `:extension-api` `IScratchPad.aidl` | `begin` · `receiveInk` · `takeOutgoing` · `end` |
-| `WireStroke` / `InkBundle` / `InkChunks` / `ExtensionContract` | the wire types, the chunker, the caps |
+| `WireStroke` / `InkBundle` / `InkChunks` / `ExtensionContract` | the wire types, the chunker, the caps — since arc 33 / F3 also `EXTRA_CHROME_HIDDEN` |
 | `:app` `HeldInkClient` | the held bind, `open` / `send` / `drainOutgoing` / `finish`, once, shared with the calendar since arc 23 / Y4 — `HeldInkPoint` is the per-point names/budgets interface, `DrainedInk` the one drained-result class |
 | `:app` `ScratchPadClient` | thin on `HeldInkClient` since Y4 — its companion `Point` is a `HeldInkPoint<IScratchPad, Int>` naming the pad's two actions, two extras and three budgets (`SETTLE_TIMEOUT_MS` new with the unification) |
 | `:app` `TransferCaps` | the host's caps, chunking, sanitize, and its own wire ⇄ paper twin |
-| `:app` `ExtensionScreenEntry` | both entry doors, the busy guard, the overlay, both transfers' host half, once, shared with the calendar since Y4 — `InkSend` is the one outbound-ink class, `EntryWording` the four strings |
+| `:app` `data/prefs/ChromePrefs` | arc 33 / F1 — the one global, persisted `hidden` boolean (`SnapPrefs`' shape), shared by all four paper screens |
+| `:app` `extension/ChromeResult` | arc 33 / F3, pure — `read(Intent?)`: present → its value, absent → null; read synchronously at the top of `ExtensionScreenEntry.onResult` |
+| `:app` `ExtensionScreenEntry` | both entry doors, the busy guard, the overlay, both transfers' host half, once, shared with the calendar since Y4 — `InkSend` is the one outbound-ink class, `EntryWording` the four strings; since arc 33 / F3 also puts `EXTRA_CHROME_HIDDEN` on the launch (right after `decorateIntent`) and reads `ChromeResult` off the result (right after `stack.pop`, before the launched coroutine) |
 | `:app` `ScratchPadEntry` | thin on `ExtensionScreenEntry` since Y4 — its registry lookup, its `EntryWording` and its send result code |
 | `:app` `TransferSelection` | the pure ink-only, writing-order rule both lasso sends obey (arc 23 / Y4) — `sendable(selection, live)` |
 | `:app` `NotebookActivity.sendSelectionToExtension` | the one gate both lasso sends pass (arc 23 / Y4) — `TransferSelection.sendable` then `TransferCaps.withinLimits`, before any bind |
@@ -442,3 +471,8 @@ exactly as it was, now pinning the pad's own delegation rather than its own stro
 **Arc 29 / LE3 added no new pure piece here** — the eraser sub-bar lifecycle is structural
 (`InkScreenActivity` gains methods, not arithmetic), so the suite stayed at `1472` `:app` /
 `2832` total across the modules.
+
+**Arc 33 / F1 + F3 added `ChromeBandTest` (`:sn-screen`, 12) and `ChromeResultTest` (`:app`, 4)** —
+the pad itself gained no new pure piece (`initChrome`/`toggleChrome` are structural, like the
+eraser sub-bar before them); see `FOCUS_PLAN.md` for the arc's full numbers (`3020` across the
+modules at F3).

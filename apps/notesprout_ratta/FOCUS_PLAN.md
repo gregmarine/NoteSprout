@@ -7,7 +7,13 @@ cross-session memory for the arc: read it whole at every phase start, together w
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `RESUME_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — F1 ✅ (2026-09-09) · F2 ✅ (2026-09-09) · F3 ✅ (2026-09-09) · F4 ✅ (2026-09-09) · F5 ⬜.**
+**Status: ✅ ARC COMPLETE + FROZEN 2026-09-09 — F1 ✅ · F2 ✅ · F3 ✅ · F4 ✅ · F5 ✅ (all 2026-09-09).** The
+references are `docs/notebook.md` (§ Layout, § Gestures, § Close & lifecycle, § Frame-silence),
+`docs/calendar.md` (§ The three pages, § Gestures, § Export, § Traps), `docs/scratchpad.md`
+(§ The screen, § Entry points), `docs/objects.md` (§ Sticky notes), `docs/sn-screen.md`
+(`ChromeBand` / `ChromeToggle` / the `rectOf` rule) and `docs/extensions.md` (boundary row 50);
+this file is the ledger. A fresh user decision, not a backlog item; no next arc is planned — the
+user decides.
 Baseline before the arc: 1606 `:app` / 2987 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump (one compatible Intent extra), no schema
 change, no g-paper change, no new module.
@@ -363,7 +369,7 @@ once; (2) Day: write in the first row hidden, show → the bar covers it.
 **Questions at phase start:** none expected; the Day page's first and last rows living under the
 shown bars is decision 2's consequence — say it in the Outcome.
 
-### ⬜ F5 — Docs, ledger, freeze (Sonnet docs fan-out ≤ 5 · Fable read-back, ledger, CLAUDE.md, memory · no code)
+### ✅ F5 — Docs, ledger, freeze (Sonnet docs fan-out ≤ 5 · Fable read-back, ledger, CLAUDE.md, memory · no code)
 
 D5 as written. **Gates:** the full JVM run (≈ 2987 + the arc's additions), all modules debug +
 release, NUL scan of every file the arc touched. **Question at phase start:** `/code-review` on
@@ -621,3 +627,47 @@ added — a calendar PNG / PDF is the full grid edge to edge.
 rows fill the page to the bottom bar") — prose only, the painter reads geometry values; `docs/
 calendar.md`, `docs/extensions.md` and `HARVEST_PLAN.md`'s ledger still describe `CalendarBars` and
 the inset trap as current (the ledger stays as history; the two docs get F5's rewrite).
+
+### F5 ✅ 2026-09-09 — Docs, ledger, freeze
+
+**Phase-start question:** `/code-review` on the arc range — **no** (the user's call, matching every
+arc since 29; do not re-raise).
+
+**Docs (Sonnet fan-out of four, Fable read-back; no code).** `docs/notebook.md` — § Collaborators
+(`DoubleTapToggleRule`, `ChromePrefs` rows), § Layout (the bars as floating overlays over full-bleed
+paper, `ChromeToggle`'s one flip order, GONE never INVISIBLE, which contextual bars survive a hide
+and which button-anchored popups come down with their bar, a shown bar covers and refuses, trap 1
+on `rectOf`, the snap margin deliberately not visibility-aware, pure `chromeBand()` and trap 2,
+`ChromePrefs` device-local), § Gestures (the row tightened + the collision rule's paragraph —
+escrow order, two-deep hit history, timing-free), § Close & lifecycle (the `onResume` re-sync
+before `resumeDrawing` and its synchronous write side in `ExtensionScreenEntry.onResult`),
+§ JVM tests (`DoubleTapToggleRuleTest` 8, `ChromeBandTest` 12). `docs/sn-screen.md` — `ChromeBand`
+/ `ChromeToggle` rows, the promoted `rectOf` visibility rule, 69 → 81, four consumers not two.
+`docs/calendar.md` — § The three pages rewritten full page (insets gone not zeroed, the Nomad
+numbers re-derived, the two consequences stated plainly), the bake paragraph (`awaitLaidOut` root
+only, `BakeKey` without the bars), § Gestures (a Toggle row + `CalendarDoubleTap.decide`'s zone
+rule and the cell-centre walk detail), § The two doors (the fifth boolean + the first result
+datum), § Export (HV4's inset render as history, `CalendarBars` deleted, edge-to-edge exports),
+§ Frame silence, § Where the code is, § Tests (295 → 308), § Traps (HV4's inset bullet marked
+historical, trap 3 the `awaitLaidOut` hang added). `docs/scratchpad.md` — § The screen
+(`initChrome`, the pad persists nothing), § Entry points (the extra in and out, the killed-pad
+case), § Frame silence, § Where the code is, § Tests. `docs/objects.md` — decision 3's row, the
+`StickyDefaults` / `StickyPageRects` / layout rows, the data-model minting line, § Sticky notes
+(full-bleed layout, the toggle, full-window content, old notes top-left with `offPage` bands, the
+accepted one-bar shift), § Tests. `docs/extensions.md` — the scratch-pad point's wire types (three
+booleans), tier-2 recipe item 7 (honour on launch, echo on every result), the calendar point's
+fourth and fifth booleans + the first result datum, § Render rewritten ("Why insets, then not —
+HV4 and F4"), **boundary audit row 50**. `docs/export.md` — § Traps recorded's HV4 inset trap
+marked history. `CalendarTemplate.kt` — the two stale KDoc lines (prose only, compiles). One
+read-back fix by Fable: notebook.md had listed the eraser sub-bar among the bars that keep working
+while hidden — it is button-anchored and comes down with the bar. Both `CLAUDE.md`, `RATTA_PLAN.md`
+header, this file's status, memory.
+
+**Gates:** full JVM run **3033** (`:app` 1626 · `:ext-calendar` 308 · `:sn-screen` 81 ·
+`:extension-api` 232 · the rest unchanged), all fourteen modules debug + release (22 APKs), NUL scan
+of every file the arc touched clean.
+
+**Final numbers:** 1626 `:app` / 3033 JVM tests across the modules (from 1606 / 2987), `API_VERSION`
+9 (one compatible Intent extra, no bump), fourteen modules, g-paper 0.1.28, version `0.1.0-ratta`.
+No point, no schema change, no code review. **Arc 33 is complete and frozen; arcs 1–33 are all
+frozen. The next arc, if any, is a fresh user decision.**

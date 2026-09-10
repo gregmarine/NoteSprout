@@ -197,12 +197,16 @@ skill (`.claude/skills/device-build-install/SKILL.md`) — invoked automatically
   missing target dropped; host-only, no point, no API bump, no schema change, no code review.
   **Arcs 1–32 are all complete and frozen, and `apps/notesprout_ratta/PARITY_BACKLOG.md` is
   closed — every item done.**
-  **Arc 33 "Focus" is IN PROGRESS (wizard locked 2026-09-09; F1–F4 ✅, F5 ⬜, a fresh user decision, not
-  a backlog item)**: a single-finger double-tap hides / shows all chrome on the four paper
-  screens, full-bleed paper with floating bars everywhere (the sticky editor restructured),
-  full-page calendar grids, one global persisted flag handed to the pad and calendar as a
-  compatible Intent extra; read the standalone `apps/notesprout_ratta/FOCUS_PLAN.md` (not
-  `RATTA_PLAN.md`) for any work on it.
+  **Arc 33 "Focus" is COMPLETE + FROZEN (F1–F5 landed 2026-09-09; a fresh user decision, not a
+  backlog item)**: a single-finger double-tap hides / shows all chrome on the four paper screens,
+  full-bleed paper with floating bars everywhere (the sticky editor restructured), full-page
+  calendar grids (`CalendarBars` deleted, old calendar ink one bar higher — accepted), one global
+  persisted flag handed to the pad and calendar as the compatible `EXTRA_CHROME_HIDDEN` tail both
+  ways; the references are `apps/notesprout_ratta/docs/notebook.md` § Layout / § Gestures,
+  `docs/calendar.md`, `docs/scratchpad.md`, `docs/objects.md`, `docs/sn-screen.md` and
+  `docs/extensions.md` row 50; read the standalone `apps/notesprout_ratta/FOCUS_PLAN.md` (not
+  `RATTA_PLAN.md`) for any work on it — no code review, 1626 `:app` / 3033 tests. **Arcs 1–33 are
+  all complete and frozen.**
   **No NINTH extension point
   and no other arc without another user decision. Read `apps/notesprout_ratta/RATTA_PLAN.md`
   first for ANY other work there** — it holds the working protocol, model recipe, standing

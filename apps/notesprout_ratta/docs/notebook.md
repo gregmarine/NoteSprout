@@ -65,6 +65,8 @@ deliberate differences are listed at the end.
 | `InsertBar` (arc 28 / H1, D4) | the `btnInsert` sub-bar: Sticky · Text · Rectangle · Ellipse · Triangle · Line · Arrow · Star, placed by `AnchoredBar`; a command, not a tool — lands the new object selected and remembers nothing between openings |
 | `SelectionModes` (arc 28 / H2, D5) | pure `classify()` — the `when` that decides `SelectionMode.TEXT`/`SHAPE`/`STICKY`/`MIXED` from a selection's content, pulled out of the activity so the table is testable |
 | `PageObjects` (arc 28 / H1) | the three renderers (`textRenderer`/`shapeRenderer`/`stickyRenderer`) + their working copies, held together as one small view-model beside the activity; draw order and the repaint are the caller's (D8) |
+| `DoubleTapToggleRule` (arc 33 / F1) | pure: whether a finger double-tap toggles the chrome, from a two-deep hit history fed by `onFingerTap` (`tapped(hit)`) and consumed by `onFingerDoubleTap` (`shouldToggle()`) — see [Gestures](#gestures) below |
+| `data/prefs/ChromePrefs` (arc 33 / F1) | `sn_chrome` / `hidden`, `SnapPrefs`'s shape — the one global persisted chrome-hidden flag shared by all four paper surfaces |
 
 ## Layout (`activity_notebook.xml`)
 
@@ -104,6 +106,45 @@ The "Recognizing…" box (`overlay_recognizing.xml`, N2) is **not** part of this
 library's tap-time overlay it is inflated at runtime into `android.R.id.content` (`RecognizingOverlay`,
 cached per Activity), which lands it as a sibling above the whole `activity_notebook.xml` tree
 without owning a spot in it.
+
+**The top bar and the bottom strip are floating overlays over full-bleed paper, and a single-finger
+double-tap on bare paper hides or shows both together** (arc 33 / F1). The root has always been a
+`FrameLayout` with `paperContainer` first and the bars as later siblings — this arc did not
+restructure the notebook's layout, only put a gesture behind the bars it already had. `ChromeToggle`
+(`:sn-screen`, shared with the sticky editor, the scratch pad and the calendar) owns the one flip
+order: `paper.releaseRender()` (skipped on the `onCreate` call, since nothing is on the glass yet) →
+hiding only: `beforeHide()` — the lasso popup, the tags popup, the Insert bar and the eraser sub-bar
+all come down, because the button they hang from is about to go — → every bar `View.GONE` /
+`View.VISIBLE`, **never `View.INVISIBLE`** (an attached Ratta paper view keeps the pen claimed
+whatever a sibling's visibility, so an `INVISIBLE` bar would both keep its rect *and* still block
+the pen under it) → `root.doOnNextLayout { pushExclusions() }`, one binder call per flip rather than
+per event. The contextual floating bars — the selection toolbar and its H1–H6 sub-row, the lasso
+popup it anchors, the transform bar — **keep working while the chrome is hidden**: a lasso is a
+deliberate act with nothing else to answer it, so nothing about hiding the top bar and bottom strip
+touches them. The eraser sub-bar, the tags popup and the Insert bar hang from a bar button, so they
+come down with the bar and cannot be opened again until the chrome is shown.
+
+A **shown** bar covers whatever ink sits beneath it (its background is opaque `paperWhite`) and the
+pen refuses to ink under it — `pushExclusions()`'s existing exclusion rect — while a page written
+under where the bar sits, with the chrome hidden, shows and inks freely; nothing is redrawn, moved,
+or re-templated by the flip. **Trap 1:** a `GONE` view keeps its last measured width and height, so
+`PaperToolbar.rectOf` (which the notebook's own `rectOf` now delegates to) refuses any non-`VISIBLE`
+view before it ever reads a size — without that check a hidden bar would keep excluding ink and
+swallowing gestures exactly where it used to sit. The snap margin (`paper.snapMarginPx`, arc 9) is
+**deliberately not visibility-aware** — it keeps reading `topBar.height` whether the bar is shown or
+`GONE`, because a `GONE` bar's last laid-out height *is* the "one toolbar" margin an object must
+clear whether the chrome is up or down when it was snapped.
+
+`chromeBand()` is now pure: `ChromeBand.of(root.height, topBar.asBar(bottom), bottomStrip.asBar(top))`
+(`:sn-screen`) — a hidden bar contributes the root's own edge instead of withholding the band, which
+is what the pre-arc `chromeBand()` did whenever either bar's height read 0 (**trap 2**: exactly what a
+`GONE` bar reports, so every floating bar built on the band would have silently refused to show at
+all while the chrome was hidden).
+
+**Persistence.** `ChromePrefs` (`data/prefs/`, `sn_chrome` / `hidden`, `SnapPrefs`'s shape exactly)
+holds **one global boolean**, default shown, shared by all four paper surfaces — "give me the whole
+page" is a way of working, not a property of a page or a notebook. It is device-local: never backed
+up, never restored, and not in the index or any `.soil`.
 
 ## Toolbar — fixed tools (P1)
 
@@ -1176,7 +1217,7 @@ paper is full-bleed and the chrome is two thin bars.
 | 1-finger vertical swipe ↓ | open the Contents (C1 — silent while the notebook has no heading) |
 | 1-finger vertical swipe ↑ | walk back the link trail (K4 — silent while the trail is empty; [`docs/links.md`](links.md)) |
 | 1-finger tap on a link | follow it (K4 — finger only, never stylus; the escrowed inverse-recogniser tap below) |
-| 1-finger double-tap on bare paper | **hide / show all chrome** (arc 33 / F1 — the top bar and the bottom strip go `GONE` together and come back on the next pair; a pair where either tap hit a sticky or a link is that tap's act, never a toggle — `DoubleTapToggleRule`; the flag is global and persisted, `ChromePrefs`) |
+| 1-finger double-tap on bare paper | **hide / show all chrome** (arc 33 / F1 — the top bar and the bottom strip go `GONE` together and come back on the next pair; a pair where either tap hit a sticky or a link is that tap's act, never a toggle — `DoubleTapToggleRule`; the flag is global and persisted, `ChromePrefs`; guarded `opened && !closing`, the same shape every other gesture handler uses) |
 | 2-finger horizontal swipe ← / → | insert a page after / before this one |
 | 2-finger vertical swipe ↓ | open the **Recents** (T1 — its upward twin is unassigned) |
 | 2-finger stationary double-tap | undo |
@@ -1229,6 +1270,19 @@ notebook's own detectors must yield to it the same way.
 runs first inside `onFingerTap`, because the icon draws above the link layer (D8): a note dropped
 over a link is what the finger is on, and a hit opens `StickyEditorActivity`. Stylus taps stay ink,
 the same rule a link follow has always had.
+
+**The chrome toggle's collision rule (arc 33 / F1).** `PageGestures` posts the second tap's
+`onFingerTap` escrow before it evaluates the double, so both taps of a pair have already been
+answered — sticky opened, link followed, or neither — by the time `onFingerDoubleTap` fires.
+`DoubleTapToggleRule` keeps that answer as a **two-deep hit history** (`tapped(hit)` from every
+`onFingerTap`, `shouldToggle()` consumed by the double) and toggles **iff neither tap hit** a sticky
+icon or a link: a note or a link tapped twice is what the finger meant, never a chrome flip, and a
+link followed on the first tap must never toggle the page it just navigated to. The rule is
+timing-free — a double that somehow arrives with fewer than two taps recorded is refused, so the
+worst case is one missed toggle, never a wrong one. Like every other finger gesture the toggle rides
+`PageGestures.gateOpen()` and its escrow: a stylus tap, a sequence starting on chrome, or a
+stand-down drops it at `ACTION_DOWN`, and it is never `whenPenIdle`-gated on top of that — `isPenActive`
+counts hover, so idle-gating would hold the flip back long after the tap that asked for it.
 
 **Deliberate delta from Paper v0:** no BOOX `ACTION_CANCEL` special case. On BOOX the Onyx SDK
 intercepts 3-finger touches and cancels the sequence, so the reference counted an armed, stationary
@@ -1556,8 +1610,16 @@ has no entry to update, and `refreshToPage` finds no index and stays put.
 - `onResume` → **`stack.markTop(stackToken)` first** (arc 32 / RS1 — resumed means the top of the
   surface stack, so whatever entry stood above this one has closed; guarded on `::stack.isInitialized`
   because an `IndexGuard` bounce still gets this callback with nothing attached; runs **after** every
-  result callback, which is why an extension entry's own pop always precedes it), then
-  `paper.resumeDrawing()`.
+  result callback, which is why an extension entry's own pop always precedes it), then **the chrome
+  re-sync** (arc 33 / F1): `if (chromeToggle.hidden != chromePrefs.hidden) chromeToggle.apply(chromePrefs.hidden,
+  initial = true)` — the pad or the calendar may have flipped the persisted flag while this screen
+  was stopped, and `apply(…, initial = true)` skips the render release since nothing is on the glass
+  yet. This runs **before** `paper.resumeDrawing()`. The write side of the same handoff is
+  synchronous, not `onResume`-timed: `ExtensionScreenEntry.onResult` reads the result Intent's
+  `EXTRA_CHROME_HIDDEN` and writes `ChromePrefs` right at the top of `onResult`, before the launched
+  coroutine — ActivityResult callbacks run **before** `onResume`, so by the time this re-sync runs
+  the preference already reflects whatever the extension screen reported. The sticky editor carries
+  the identical re-sync before its own `resumeDrawing()`.
 - `onStop` (not closing) → app-scoped: `CoverSnapshot` + `saveLastOpened` (cheap durability point).
 - Toolbar back / system back → **`backPressed()`** (K4 — in a via-link notebook both Backs walk
   the link trail first, exactly like a swipe-up; only an empty trail falls through to `close()`) →
@@ -1914,6 +1976,17 @@ matching the page exactly, every non-positive argument refused) and `NotebookUnd
 apart from `Page` / `PagePasted` / `PageErased` the same way every other transfer-shaped kind is.
 No `NotebookSession.receivePage` test, for `PageErased`'s reason above: it opens a real Room DB.
 `:app` **1487 → 1564** over the arc's six phases; **2847 → 2945** across every module.
+
+**Arc 33 "Focus", the notebook's own half:** `DoubleTapToggleRuleTest` (8) covers the collision rule
+— both taps missing toggles, either tap hitting refuses it, a lone tap recorded (never two) refuses,
+and the history is consumed by a decision rather than read twice. `:sn-screen` gained
+`ChromeBandTest` (12, `notebook/ChromeBand` — a hidden bar's edge, a shown-but-unlaid bar
+withholding the band, `rootHeight` 0, an empty or inverted range, both bars hidden at once) — the
+shared piece four screens now build on, `ChromeToggle` and the `rectOf` visibility check among them.
+No `NotebookActivity`-level test: the toggle wiring, the collision rule's consumption and the
+`onResume` re-sync were walked on the Nomad instead, the same reason `NotebookSession`-touching
+features always are. `:app` **1606 → 1614** at F1 (the arc's own notebook phase); `:sn-screen`
+**69 → 81**; **3007 → 3033** across every module by the arc's close (F1's own count was 3007).
 
 ## Deliberate differences from Paper v0
 

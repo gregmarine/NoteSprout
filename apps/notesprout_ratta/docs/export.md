@@ -1177,17 +1177,23 @@ reported honestly, because the delete is best-effort.
   `pageCount` bounds check will not catch (the rect, not the page number, is wrong) — the trap
   surfaced while writing `Endnotes.plan`, which is why `contentSize` runs first and every `Link` in
   the plan is built from its already-clamped `w`/`h`.
-- **A calendar render's insets are the screen's own bar insets, not zero** (arc 31 / HV4). The
-  design's phase-start plan called for rendering at insets 0 — a full-page grid, ink drawn edge to
-  edge. The first Nomad walk showed the ink landing one bar-height low against that full-page grid:
-  the ink was written against the grid the calendar **screen** actually drew, which sits under the
-  top bar, not against a grid starting at the page's own top edge. The fix renders at **the screen's
-  bar insets** (`CalendarBars`: `toolbar_bar_thickness` plus the new `calendar_bar_rule` hairline
-  dimen, which the layout's own two hairlines now reference too, so the screen and the render can
-  never drift apart again) — the exported page carries blank bands where the bars were, matching
-  what a person actually wrote on. A render seam built from "the page is the whole bitmap" without
-  re-checking what coordinate space the ink itself was captured in will reproduce this the next time
-  a screen-owning extension grows a render call.
+- **HISTORY, superseded by arc 33 / F4 — a calendar render's insets are the screen's own bar
+  insets, not zero** (arc 31 / HV4). The design's phase-start plan called for rendering at insets 0
+  — a full-page grid, ink drawn edge to edge. The first Nomad walk showed the ink landing one
+  bar-height low against that full-page grid: the ink was written against the grid the calendar
+  **screen** actually drew, which sat under the top bar, not against a grid starting at the page's
+  own top edge. HV4's fix rendered at **the screen's bar insets** (`CalendarBars`:
+  `toolbar_bar_thickness` plus a `calendar_bar_rule` hairline dimen, which the layout's own two
+  hairlines also referenced, so the screen and the render could never drift apart) — the exported
+  page carried blank bands where the bars were, matching what a person actually wrote on. **Arc 33
+  / F4 removed the insets from `CalendarGeometry` on both sides and deleted `CalendarBars`** — the
+  screen's own grid is full page now, under floating bars that come and go on a double-tap, so
+  there is no longer a screen-drawn inset for the render to match: a calendar render is the
+  full-page grid edge to edge, on screen and in every export alike. The `calendar_bar_rule` dimen
+  stays for the layout's bar hairlines. The trap as HV4 found it is kept here because the lesson
+  survives the fix it produced: a render seam built from "the page is the whole bitmap" without
+  re-checking what coordinate space the ink itself was captured in will reproduce this the next
+  time a screen-owning extension grows a render call against chrome that is not always there.
 - **A twelfth top-bar button does not fit the Nomad** (arc 31 / HV4, the arc-29 lesson re-applied).
   With Send and the pad's own button both showing, the calendar bar was already at eleven 62 dp
   buttons plus margins — 726 of the Nomad's 749 dp — so growing a Send/Export pair as two separate

@@ -915,10 +915,17 @@ interface IScratchPad {
 }
 ```
 
-Every byte of ink crosses through these methods. **Nothing rides the Intent** but two booleans:
-`EXTRA_SCRATCH_SEND_ENABLED` (opened from a notebook, so the pad shows Send) and
+Every byte of ink crosses through these methods. **Nothing rides the Intent** but three booleans:
+`EXTRA_SCRATCH_SEND_ENABLED` (opened from a notebook, so the pad shows Send),
 `EXTRA_SCRATCH_OPEN_RECEIVED` (opened right after a `receiveInk`, so the pad opens on the received
-page with the strokes selected).
+page with the strokes selected) and, since arc 33 / F3, `ExtensionContract.EXTRA_CHROME_HIDDEN` —
+whether the host's paper screens currently hide their chrome, put by `ExtensionScreenEntry.open()`
+right after `decorateIntent` rather than by any per-point code (see the boundary audit's row for
+it). The **same** key rides the result Intent back, on any result code — the pad's echo of the
+chrome state it was left in, read by `ExtensionScreenEntry.onResult` and persisted before anything
+else runs. No content, no id, no path — the shape of every other boolean here — and no version
+gate or floor: an extension that predates it ignores the launch extra and returns a result with no
+data, and the host writes nothing.
 
 ### The wire types
 
@@ -1103,7 +1110,7 @@ to happen — and, **since arc 23 / Y4, a base class the paper-hosting points sh
    `startActivity` — `am start` from a shell included — leaves `callingPackage` null and is refused.
    Which means the host **must** launch it with an `ActivityResultLauncher`; that is what sets it.
 3. **The core launches it only after `begin(store)` has succeeded** on the held bind, and only
-   through the Intent the client returned. Two booleans ride it and nothing else.
+   through the Intent the client returned. A handful of booleans ride it and nothing else.
 4. **The result comes back on the bind that is still held** — drain first, `finish()` after.
 5. **The caller's `onDestroy` calls `finish()` too**, as the backstop for a caller destroyed while
    the screen is up: a bind must not outlive the screen that opened it even when the result never
@@ -1113,6 +1120,14 @@ to happen — and, **since arc 23 / Y4, a base class the paper-hosting points sh
    tap, where the open can still fail with nothing on the glass — and pops it synchronously at the
    top of `onResult` and in `close()`. This is bookkeeping for a cold-launch reopen (see the
    boundary audit's row 49); it adds no step the extension can observe.
+7. **Since arc 33 / F3, the screen honours `EXTRA_CHROME_HIDDEN` on launch and echoes it on every
+   result.** A tier-2 paper screen is one of the host's paper screens too, so the person's
+   double-tap-to-hide way of working follows it there and back: the screen applies the flag as its
+   initial chrome state (`InkScreenActivity.initChrome()`), lets its own double-tap flip it, and
+   sets it on the result Intent whatever the result code — `finishWithHandoff` — right beside
+   `onResult`'s `stack.pop` in the recipe above, before the launched coroutine that chains into the
+   next door (the calendar → pad handoff needs the value the calendar just reported). A screen with
+   no paper at all (the tag manager) has no chrome to hide and takes no part in this.
 
 **Two paper surfaces, one EPD pipeline.** The screen-owning point's real cost is not the Activity,
 it is the firmware ink session. The caller releases (`releaseForHandoff()`) immediately before the
@@ -1781,7 +1796,16 @@ from the notebook, so the calendar shows its Send buttons) and `EXTRA_CALENDAR_O
 strokes selected). **Since Y4 there is a third**, `EXTRA_CALENDAR_SCRATCH_PAD_AVAILABLE` — a
 trusted pad is installed, so the calendar shows its own Scratch Pad button — set by
 `ExtensionScreenEntry`'s new `decorateIntent` hook rather than by the calendar itself discovering
-the pad (discovery stays the host's, an extension never queries for another). The button's tap
+the pad (discovery stays the host's, an extension never queries for another). **Since HV4 there is
+a fourth**, `EXTRA_CALENDAR_EXPORT_ENABLED` (see `docs/export.md` § Calendar mode). **Since arc 33
+/ F3 there is a fifth**, `ExtensionContract.EXTRA_CHROME_HIDDEN` — whether the host's paper screens
+currently hide their chrome, put by the shared `ExtensionScreenEntry.open()` rather than by
+per-point code (§ the scratch-pad point's wire types above; the boundary audit has its own row).
+It is also the **first datum ever carried back on this seam's result Intent**: the calendar echoes
+the chrome state it was left in on the same key, on any result code, and
+`ExtensionScreenEntry.onResult` reads and persists it before anything else runs — before the
+launched coroutine that chains into the pad, so the calendar → pad handoff hands the pad the value
+the calendar just reported. The button's tap
 answers with a fourth result code, `RESULT_CALENDAR_OPEN_SCRATCH_PAD`, alongside `RESULT_CALENDAR_SEND`
 and `RESULT_CANCELED` — it carries no data of its own, only a request that the host walk a door the
 calendar cannot walk itself (an extension screen refuses any caller but the host).
@@ -2042,9 +2066,9 @@ against `MAX_DIMENSION_PX` rather than trusted), an unminted one takes the host'
 `heightPx`. `CalendarRender` (internal, off the Binder thread's own g-paper-free path) does the
 rest per target: `CalendarStore.open()` on the **lent** binder (the host's gate refuses a query
 before the schema is declared) → `readPage`/`readHeader` by whether ink was asked for → a white
-RGB_565 ground → the ruling from `CalendarTemplate` **at the screen's own bar insets**
-(`CalendarBars.topInsetPx`/`.bottomInsetPx`, built from `toolbar_bar_thickness` + the new
-`calendar_bar_rule` dimen, with `today` now **nullable** so a ring-less render is legal) → marks
+RGB_565 ground → the ruling from `CalendarTemplate` **at the full page** (arc 33 / F4 — the
+screen's own grid is full page under floating bars, so the render agrees with it; `today` is
+**nullable** so a ring-less render is legal) → marks
 from `EventStore.marksFor(GridMarks.rangeOf(target))` only when both `RENDER_MARKS` and
 `RENDER_GRID` are asked for → the ink through g-paper's own public `StrokeRasterizer.draw` — the
 same door the host's own endnote bake already uses, so ink on a calendar file is pixel-identical to
@@ -2053,14 +2077,19 @@ that is not an argument fault becomes the seam's one text, `IllegalStateExceptio
 failed")`; the store gone is `IllegalStateException("store unavailable")`, the pad's exact wording.
 Never a path, a stroke or an event title crosses in a message or a log line.
 
-**Why insets, not a full page.** `ICalendar.aidl`'s own comment still describes "insets 0, a
-full-page ruling" — the plan's original call (D4) — but the first Nomad walk found the ink sitting
-one bar-height low against a grid drawn at inset 0: the ink on a page was written against the grid
-the *screen* drew, which starts under the top bar, so a word in the 13th's cell landed across the
-20th's. `CalendarBars` is HV4's fix, landed before the freeze rather than as a follow-up: the
-rendered page carries the same blank bands top and bottom that the ink-only page (template off)
-already had, and a re-walk after the fix confirmed the header row and a known event both land where
-the screen shows them.
+**Why insets, then not — HV4 and F4.** `ICalendar.aidl`'s own comment describes "insets 0, a
+full-page ruling" — the plan's original call (D4) — but at HV4 the first Nomad walk found the ink
+sitting one bar-height low against a grid drawn at inset 0: the ink on a page was written against
+the grid the *screen* drew, which then sat under the top bar, so a word in the 13th's cell landed
+across the 20th's. HV4's fix was `CalendarBars`, rendering at the screen's own bar insets so the
+render agreed with what the screen actually drew: the rendered page carried the same blank bands
+top and bottom that the ink-only page (template off) already had, and a re-walk after the fix
+confirmed the header row and a known event both landed where the screen showed them. **Arc 33 /
+F4 changed the other side of that agreement instead of keeping it**: the screen's own grid went
+full page (insets removed, chrome turned into floating overlays a double-tap can hide), so the
+inset the render was matching no longer exists on the screen either — `CalendarBars` is deleted,
+`ICalendar.aidl`'s comment is simply true again, and a render is the full-page grid edge to edge,
+on screen and in every export alike.
 
 **The Export screen's calendar mode (host, HV4).** `EXTRA_CALENDAR_EXPORT_ENABLED` is the screen
 Intent's fourth boolean — `CalendarEntry`'s `decorateIntent` sets it only when this calendar
@@ -2433,6 +2462,7 @@ and grows no contract, so it is one row rather than a run, the same shape as row
 | 47 | **The store handle a `render` call rides is a lease during an ordinary call, and the held showing's own binder during a showing — never a second one minted alongside it.** `CalendarClient.render` (the Export screen's call, off any showing) opens its own binder through the new `ExtensionStores.lease` and revokes it in `finally`, the tag manager's and the cloud point's own shape; `HeldInkClient.renderPaper` (called *during* a showing, HV5) passes the **same** `ExtensionStoreBinder` the held bind already lent at `open()` — the extension's own `CalendarStore.open()` on that binder documents that a render leaves the showing's session untouched, and `finish()` still revokes exactly once. | `ExtensionStoreLease.kt` (`ExtensionStores.lease`), `CalendarClient.render`, `HeldInkClient.renderPaper`, `CalendarService.render` |
 | 48 | **The calendar screen's Intent grows a fourth boolean, and it gates a door rather than carrying content.** `EXTRA_CALENDAR_EXPORT_ENABLED` is set by `CalendarEntry`'s `decorateIntent` only when this calendar declares `apiVersion >= MIN_API_VERSION_FOR_CALENDAR_RENDER` **and** the host finds at least one installed exporter — both are IO the entry already runs in its own coroutine, and neither is the calendar's business to know about itself. `RESULT_CALENDAR_EXPORT` carries no target of its own: the page it means is read separately, with `outgoingTarget()`, on the bind that is still held — the same reason `RESULT_CALENDAR_SEND` never carries ink on the Intent either. | `ExtensionContract.EXTRA_CALENDAR_EXPORT_ENABLED`/`.RESULT_CALENDAR_EXPORT`, `CalendarEntry.decorateIntent`, `ExtensionScreenEntry.onResult` (the `resultExport` arm) |
 | 49 | **A cold-launch reopen of an extension screen goes through the host's existing entry class, never a rebuilt Intent, and nothing new crosses any seam.** The surface stack it replays from is host prefs (`sn_view_state` key `surfaceStack` — surface names, a notebook id and a via-link flag, nothing else); no extension ever reads or writes it, and no extension is ever told a restore is happening — the entry's `open()` call the reopen makes is indistinguishable from a tap's. `EXTRA_RESUME_ABOVE` is a host-internal extra on the host's own `NotebookActivity` Intent, consumed once on a cold create; it never rides an extension screen's Intent, and an extension screen's Intent still carries nothing but what rows 1–48 already allow. The reopen awaits the entry's own `discovered()` — a fresh service discovery and trust re-check, the same `discover` path a tap uses — before calling `ExtensionScreenEntry.open()` / `DocumentEditorEntry.open()`: the same held bind (`begin()`), the same store lease, the same `HostCallerCheck`-guarded launch through an `ActivityResultLauncher`, the same `beforeLaunch` EPD handoff, and the same pop at the top of `onResult` — with no `InkSend`, because a restore has nothing to send. A screen whose service is missing, untrusted, or below its floor is dropped host-side before any bind, logged as one `Slog.d` naming the surface, never an id. The extension lands on its own persisted position (the calendar's `state`, the pad's `current`, the editor's `caret`) exactly as it does after a tap, so no position crosses either. The document editor reopens through `documentEntry.open()` directly, with no `DocumentSeedFlow` — a restore mints and stages no recognized text. | `data/prefs/SurfaceStack.kt` (`SurfaceStack`/`SurfaceStackCodec`), `library/ReplayPlan.decodeAbove`, `NotebookActivity.replayAbove`/`.openPadOverCalendar`/`EXTRA_RESUME_ABOVE`, `LibraryActivity.replayLibraryLevel`, `ExtensionScreenEntry.discovered`/`.open`/`.onResult`, `DocumentEditorEntry.discovered`/`.open` |
+| 50 | **One boolean about the person's own way of working, both directions, no version gate and no floor.** `EXTRA_CHROME_HIDDEN` (arc 33 / F3) rides the pad's and the calendar's launch Intent — whether the host's paper screens currently hide their chrome, absent = shown — and rides the **same key** back on the result Intent, on any result code, as the screen's echo of the chrome state it was left in. No content, no id, no path, no secret — the shape every other boolean on this seam already keeps. `ExtensionScreenEntry.open()` puts it right after `decorateIntent`, entry-level, so every door on both hosts carries it with no per-point code; `ExtensionScreenEntry.onResult` reads it with pure `ChromeResult.read` synchronously, right after `stack.pop` and before the launched coroutine, and persists it to the host's own `ChromePrefs` — the extension never writes it anywhere. A missing key on the result (a killed process, an extension that predates the extra) writes nothing: the flag the person set stands. The extension itself persists nothing either; `InkScreenActivity.initChrome()` only applies it as the screen's starting chrome state and `finishWithHandoff` only echoes whatever `ChromeToggle.hidden` currently is. | `ExtensionContract.EXTRA_CHROME_HIDDEN`, `ExtensionScreenEntry.open`/`.onResult`, `extension/ChromeResult.read`/`.decode`, `data/prefs/ChromePrefs`, `ink/InkScreenActivity.initChrome`/`.finishWithHandoff` |
 
 **One recorded asymmetry.** The host forces inbound colour to opaque black; the extension does not
 force it on the ink the host sends. That is not an oversight and not a hole: SN's ink is fixed

@@ -96,9 +96,9 @@ object CalendarTemplate {
     }
 
     /**
-     * The Week page: two rows of four cells starting at the top inset, the eighth cell left blank
-     * and unlabeled (it is not a day — nothing is written about it), and the same Notes band Month
-     * closes with. All seven days are "in month": a week page has no outside.
+     * The Week page: two rows of four cells starting at the top of the page, the eighth cell left
+     * blank and unlabeled (it is not a day — nothing is written about it), and the same Notes band
+     * Month closes with. All seven days are "in month": a week page has no outside.
      */
     fun week(
         g: CalendarGeometry.Week,
@@ -142,8 +142,10 @@ object CalendarTemplate {
     /**
      * The Day page for one [half]: 24 half-hour rows across the full page width, their time labels
      * in the left gutter and the gutter's own hairline running the rows' height. **No Notes band and
-     * no closing hairline** — the rows fill the page to the bottom bar, whose own top border closes
-     * the ledger (Z5b, 2026-09-04).
+     * no closing hairline** — the rows fill the page to its own bottom edge (Z5b, 2026-09-04; the
+     * bars are floating overlays since arc 33 / F4, never a layout input: a shown bottom bar simply
+     * floats over the last rows and its own top border closes the ruling visually, while hidden the
+     * last row's bottom edge *is* the page edge).
      *
      * There is no header band: the page's title in the chrome already names the date and the half.
      *

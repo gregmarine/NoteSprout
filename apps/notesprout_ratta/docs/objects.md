@@ -46,7 +46,7 @@ The arc-range `/code-review high` planned for H6 was **waived by the user** at t
 |---|---|---|
 | 1 | Sticky editor's home | A core Activity in `:app` — `StickyEditorActivity`, its own g-paper surface, same process as the notebook. No ninth point, no seam crossing, one `SoilWriter`. |
 | 2 | Sticky create / open flow | The Insert bar's Sticky inserts a 72 dp square icon at page centre, records the undo, and opens the editor immediately. On close from an initial create the icon lands **selected under the lasso**. Reopen later with a **finger tap** (stylus taps stay ink). |
-| 3 | Sticky editor screen | Full-screen, notebook's tools plus paste. **As walked**: top bar `[←] [pen] [eraser] [lasso]`, a centred "Sticky Note" title, paper **below** the bar (not full-bleed) — the **✓ button was dropped** on the H5 walk (Back already saves-and-closes; there is no cancel, every stroke is already a row). Lasso bar Snap · Copy · Cut · Delete. Pastes from / copies to the global clipboard. |
+| 3 | Sticky editor screen | Full-screen, notebook's tools plus paste. **As walked**: top bar `[←] [pen] [eraser] [lasso]`, a centred "Sticky Note" title — the **✓ button was dropped** on the H5 walk (Back already saves-and-closes; there is no cancel, every stroke is already a row). Lasso bar Snap · Copy · Cut · Delete. Pastes from / copies to the global clipboard. **Restructured arc 33 / F2**: the paper went full-bleed under the floating top bar, matching the other three paper screens (§ Sticky notes, below). |
 | 4 | Sticky export | PDF endnotes, og's treatment: an endnote page per note after the last page, caption `Note N — from page P`, two-way PDF link annotations. Text export excludes sticky content; `.soil` export carries the rows verbatim. |
 | 5 | Text object creation | Both paths: lasso bar **Text** recognizes ink via `HeadingConvert.run(multiLine = true)` (failure creates nothing), and the Insert bar's **Text** inserts empty + opens `TextEditDialog` at once (Cancel/blank Save removes it). |
 | 6 | Text edit dialog | A plain markdown `AppCompatEditText`, Save / Cancel, blank Save = delete. Renders through `:markdown` at 24 sp black, multi-line, wrapped to the page-capped width. A stylus tap on a lone selected text opens it. |
@@ -87,7 +87,8 @@ Star point count came up as an H4 phase-start question and was **fixed at 5** (`
 | `notebook/StickyEditorTransfer.kt` | Process-local singleton: stage/take-once/leave/clear, the `Sink` bound to the notebook's `SoilWriter` |
 | `notebook/StickyInk.kt` | Pure in-editor undo actions: `Drew`/`Erased(indexed)`/`Moved`/`Pasted` |
 | `notebook/StickyClip.kt` | Pure: copy = stroke rows parented to the sticky id; paste = stroke rows only, `leftOut` measured against what was dropped |
-| `notebook/StickyDefaults.kt` | Pure: 72 dp icon size; `contentSize` computed by the notebook from window minus its own top bar |
+| `notebook/StickyDefaults.kt` | Pure: 72 dp icon size; `contentSize(windowW, windowH)` computed by the notebook — the whole window since arc 33 / F2, the `topBarPx` parameter removed (not zeroed) now that the editor's paper is full-bleed |
+| `notebook/StickyPageRects.kt` | Arc 33 / F2, pure: `offPage(pageW, pageH, viewW, viewH): List<Band>` — the band(s) an older, shorter note leaves over in the full-bleed view (below full-width, right page-height, never overlapping); `Band.toRect()` is the one Android line |
 | `notebook/InsertBar.kt` | `InsertBar.Kind` (8 values), `shapeType(kind)` routing, the floating sub-bar (`AnchoredBar` recipe) |
 | `notebook/SelectionModes.kt` | `SelectionModes.classify` — the pure `when` deciding `SelectionMode` from a selection's contents |
 | `notebook/PageObjects.kt` | The three renderers + working copies (`texts`/`shapes`/`stickies`), a view-model beside the activity |
@@ -115,7 +116,7 @@ Star point count came up as an H4 phase-start question and was **fixed at 5** (`
 | `ext-pdf/.../pdf/PdfAssembly.kt` | Reads the trailer, adds `PDAnnotationLink`+`PDActionGoTo`+`PDPageFitDestination` per link before `protect()` |
 | `sn-screen/.../notebook/FloatingSelectionBar.kt` | `buttonAt` — lets a bar (the sticky editor's lasso bar) query a button's own state (the Snap latch) |
 | `res/layout/activity_notebook.xml` | `btnInsert` after `btnLasso` |
-| `res/layout/activity_sticky_editor.xml` | The editor's top bar (`[←] [pen] [eraser] [lasso]` + centred title) over a below-the-bar `paperContainer`, plus a floating `selectionBar` |
+| `res/layout/activity_sticky_editor.xml` | Root `FrameLayout` since arc 33 / F2: `paperContainer` full-bleed first child, `topBar` (`[←] [pen] [eraser] [lasso]` + centred title) `layout_gravity="top"` as a later sibling, `selectionBar` / `eraserBar` last — a later `match_parent` sibling sits on top in a `FrameLayout` |
 | `res/drawable/ic_sticker_2.xml` | og's Tabler `sticker-2`, given a white silhouette fill as its first path so the template never bleeds through |
 
 Every pure piece above (`TextRows`, `ShapeRows`/`ShapeFlags`/`ShapeGeometry`, `StickyRows`/
@@ -189,8 +190,8 @@ AABB**, not the rotated outline — og's accepted caveat.
 | children | `stroke` rows with `parentId = <sticky id>`, geometry in **local content px**, `(0,0)` at the content's top-left |
 
 `contentW × contentH` is minted **once, at creation, by the notebook** — the creating device's
-editor paper area (window minus the notebook's own measured top bar, `StickyDefaults.contentSize`)
-— and never rewritten. The editor calls `setPageSize(contentW, contentH)` on every open, so a note
+window (`StickyDefaults.contentSize`; the whole window since arc 33 / F2, when the editor's paper
+went full-bleed under a floating bar) — and never rewritten. The editor calls `setPageSize(contentW, contentH)` on every open, so a note
 authored on a Nomad opens registered correctly on a Manta (the notebook's own foreign-page rule). A
 sticky's drag rewrites **one row** (unlike a link, whose page-absolute children all move); only
 `stroke` rows may be a sticky's children.
@@ -345,15 +346,42 @@ under the lasso (`armLassoForLanding()` + `selectAsSticky`) so it can be dragged
 
 **`StickyEditorActivity`** — as built, not as originally sketched: `exported="false"`, launched by
 `NotebookActivity` through an `ActivityResultLauncher`. Top bar `[←] [pen] [eraser] [lasso]` with a
-centred **"Sticky Note"** title (`activity_sticky_editor.xml`); paper sits **below** the bar, sized
-exactly to the note's content area (not full-bleed under it) — the note's content size *is* the
-paper area, so the bar needs no exclusion rect of its own; only the floating selection bar does.
+centred **"Sticky Note"** title (`activity_sticky_editor.xml`). **Since arc 33 / F2 the paper is
+full-bleed** — root `FrameLayout`, `paperContainer` the first child, `topBar` a later
+`layout_gravity="top"` sibling, `selectionBar` / `eraserBar` last (the later-sibling-sits-on-top
+trap) — matching the notebook, the pad and the calendar: a shown bar's opaque `paperWhite` covers
+the ink beneath it and the pen refuses there by exclusion, exactly as any other floating bar.
 **Back saves-and-closes; there is no ✓** — the original design had one, but the H5 walk dropped it
 ("Back already does the one thing a ✓ would") and put the title in its place. Fixed tools: pen ·
 eraser · lasso, 2/3-finger undo/redo over an in-memory `StickyInk` stack, lasso bar Snap · Copy ·
 Cut · Delete (the lasso button carries the clipboard mark, `FloatingSelectionBar.buttonAt` letting
 the bar query its own latch state). Pen-tap paste via `StickyClip`. No shapes, text or stickies
 inside a note — only `stroke` rows may be a sticky's children.
+
+**A single-finger double-tap hides / shows the top bar (arc 33 / F2)** — the same gesture as the
+other three paper screens, over the same shared pieces: `chromeToggle` (`:sn-screen`'s
+`ChromeToggle`) over `listOf(topBar)`, `beforeHide = { hideEraserBar() }`,
+`afterLayout = ::pushExclusions`; `chromeBand()` = `ChromeBand.of(root.height,
+topBar.asBar(bottom), null)` feeding `EraserBar.bandBottom` and `FloatingSelectionBar.band`;
+`apply(prefs.hidden, initial = true)` is applied right after the (now `root`-level) layout
+listener, and the `onResume` re-sync runs before `resumeDrawing()` — another screen may have
+flipped the one global, persisted `ChromePrefs` flag in the meantime. `pushExclusions()` is
+`rectOf(topBar)` + the two floating bars (root → paper px) + the off-page bands below (already
+paper px, taken from the `pageW`/`pageH` `showNote` captured). No collision rule is needed here —
+unlike the notebook, nothing else answers a finger tap on this screen.
+
+**A new sticky's content is the full window** (`StickyDefaults.contentSize(windowW, windowH)` —
+the `topBarPx` parameter was **removed, not zeroed**: the note's content is the whole window, not
+"window minus a bar"). **An existing (pre-arc-33) sticky lays out top-left** in the full-bleed
+view at the size it was authored, with the band below its page — and, if it is narrower than the
+window, the band to its right too — blocked from ink by pure `StickyPageRects.offPage(pageW,
+pageH, viewW, viewH): List<Band>` (below full-width, right page-height, never overlapping;
+`Band.toRect()` is the one Android line — `android.graphics.Rect` is a stub under
+`isReturnDefaultValues`, which is why the pure type the rule is tested through is `Band`, not
+`Rect`). g-paper leaves the area beyond the page white **and writable**, so this exclusion is the
+only thing keeping ink inside the note. **Consequence, accepted like the calendar's (decision 5's
+twin of decision 3):** an old note's ink sits one bar height higher than the ruling it was
+authored against — nothing is moved or lost, hiding the chrome shows it plainly.
 
 **Since arc 29 / LE2 the eraser has two kinds here too**, reached the same way as the notebook's own
 bar: a second tap on the armed eraser opens `:sn-screen`'s `EraserBar` (Point · Lasso) — the last
@@ -646,6 +674,10 @@ the rows verbatim, encrypted or not as the notebook already is.
 **2830 tests across all modules at H6, all green; `:sn-screen` 69.** Every phase's tests were pure
 Kotlin/JVM except where `StaticLayout`/`PaperView`/a real Binder made that impossible — those paths
 were walked by hand on the Nomad instead, never left untested by any means.
+
+**Arc 33 / F2** added `StickyPageRectsTest` (8, new) and rewrote `StickyDefaultsTest` (still 10)
+for the full-window `contentSize(windowW, windowH)` signature — see `FOCUS_PLAN.md` for the rest
+of that arc's numbers (`:app` 1614 → 1622 at F2).
 
 ## Related
 
