@@ -1689,8 +1689,8 @@ class NotebookActivity : AppCompatActivity() {
             headingRenderer.headings = liveHeadings.values.toList()
         }
         if (links.isNotEmpty()) {
-            // A link wrapping a sticky is deferred too ([recordWithStickies]): the note's content
-            // must be read before LinkStore.remove takes it down with the link.
+            // A link wrapping a sticky goes down in [recordWithStickies] instead — queued there on
+            // the spot too, by a job that reads the note's content ahead of its own delete.
             session.links.remove(links.filter { it.stickies.isEmpty() })
             links.forEach { liveLinks.remove(it.id) }
             linkRenderer.update(liveLinks.values.toList())
@@ -1698,8 +1698,9 @@ class NotebookActivity : AppCompatActivity() {
         val stickies = pageObjects.stickiesIn(objs.stickyIds)
         if (!objs.isEmpty) {
             // Texts and shapes go down here, with everything else. **The sticky rows do not** —
-            // see [recordWithStickies]: their content has to be read before it is deleted, and
-            // that read suspends. What happens here is the whole of what the eye sees.
+            // see [recordWithStickies]: their content has to be read before it is deleted (the
+            // undo snapshot), which the store does inside the delete's own job, queued there on
+            // the spot. What happens here is the whole of what the eye sees.
             session.texts.erase(objs.textIds)
             session.shapes.erase(objs.shapeIds)
             pageObjects.drop(objs)
@@ -1734,16 +1735,22 @@ class NotebookActivity : AppCompatActivity() {
     }
 
     /**
-     * Record the one entry a delete deserves — and, when a sticky went with it, finish the sticky
-     * half first.
+     * Delete the sticky half of an erase and record the one entry the whole act deserves.
      *
      * A sticky's undo snapshot has to carry its **content** (`StickyStore.restore` revives the
      * snapshot's `childIds`, and an icon alone would come back as an empty note), and that read
-     * suspends — which a g-paper callback does not. So with a sticky in the act the row delete and
-     * the entry both move into one page op, in the only order that works: drain the writer, read
-     * the children, *then* soft-delete them. It is still **one gesture, one entry** — the entry is
-     * simply recorded a beat later, and nothing repaints from here either way (the page already
-     * lost the icon in the caller's own frame).
+     * suspends — which a g-paper callback does not. So the sticky rows (and a link wrapping one —
+     * `LinkStore.remove` takes the note's content down with the link, and `LinkStore.restore` can
+     * only revive what the snapshot names) go through `removeWithContent`: **the delete is queued
+     * on the spot, in writer order**, and the job reads the content ahead of its own soft-delete
+     * and hands the snapshot back. Only the *record* waits for it. It is still **one gesture, one
+     * entry** — the entry is simply recorded a beat later, and nothing repaints from here either
+     * way (the page already lost the icon in the caller's own frame).
+     *
+     * Before arc 34 / M6 the delete itself sat inside a page op with a drain and the reads ahead
+     * of it — and a page op is skipped under `closing`, so an erase while another op held the
+     * mutex, followed by Back, never deleted the rows and the sticky came back on the next open.
+     * Nothing here goes through [runPageOp] any more; the record needs no lock.
      *
      * With no sticky in the act nothing is deferred at all: [entry] is recorded on the spot, which
      * is every erase and every delete in the app until H5 puts a sticky on a page.
@@ -1753,20 +1760,16 @@ class NotebookActivity : AppCompatActivity() {
         links: List<PageLink>,
         entry: (stickies: List<PageSticky>, links: List<PageLink>) -> Action,
     ) {
-        // A link that wraps a sticky is in the same boat: `LinkStore.remove` takes the note's
-        // content down with the link, and `LinkStore.restore` can only revive what the snapshot
-        // names — so its stickies are read whole first, and only then is the link removed.
-        val deferredLinks = links.filter { it.stickies.isNotEmpty() }
-        if (icons.isEmpty() && deferredLinks.isEmpty()) { undo.record(entry(emptyList(), links)); return }
-        runPageOp {
-            session.store.drain()
-            val full = icons.map { session.stickies.withContent(it) }
-            val fullLinks = links.map { l ->
-                if (l.stickies.isEmpty()) l
-                else l.copy(stickies = l.stickies.map { session.stickies.withContent(it) })
-            }
-            session.stickies.remove(full.map { it.id })
-            session.links.remove(fullLinks.filter { it.stickies.isNotEmpty() })
+        val wrapping = links.filter { it.stickies.isNotEmpty() }
+        if (icons.isEmpty() && wrapping.isEmpty()) { undo.record(entry(emptyList(), links)); return }
+        // Both queued now, before any suspension — a Back tap after this line cannot un-queue them.
+        val stickySnapshot = session.stickies.removeWithContent(icons)
+        val linkSnapshot = session.links.removeWithContent(wrapping)
+        lifecycleScope.launch {
+            // A cancelled deferred (writer closed) ends this quietly: no delete ran, so no entry.
+            val full = stickySnapshot.await()
+            val fullWrapping = linkSnapshot.await().associateBy { it.id }
+            val fullLinks = links.map { l -> fullWrapping[l.id] ?: l }
             undo.record(entry(full, fullLinks))
         }
     }
@@ -2286,14 +2289,14 @@ class NotebookActivity : AppCompatActivity() {
             headingRenderer.headings = liveHeadings.values.toList()
         }
         if (links.isNotEmpty()) {
-            // A link wrapping a sticky is deferred with the stickies — see [recordWithStickies].
+            // A link wrapping a sticky goes down with the stickies — see [recordWithStickies].
             session.links.remove(links.filter { it.stickies.isEmpty() })
             links.forEach { liveLinks.remove(it.id) }
             linkRenderer.update(liveLinks.values.toList())
         }
         if (!objs.isEmpty) {
             // The sticky rows are deliberately not deleted here — [recordWithStickies] does that,
-            // after it has read the content the undo snapshot needs (the read suspends).
+            // on the spot, by a job that reads the content the undo snapshot needs ahead of it.
             session.texts.erase(objs.textIds)
             session.shapes.erase(objs.shapeIds)
             pageObjects.drop(objs)

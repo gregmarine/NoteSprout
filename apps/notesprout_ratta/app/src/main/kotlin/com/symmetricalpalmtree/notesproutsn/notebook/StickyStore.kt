@@ -4,6 +4,8 @@ import com.symmetricalpalmtree.gpaper.core.model.Stroke
 import com.symmetricalpalmtree.notesproutsn.core.Slog
 import com.symmetricalpalmtree.notesproutsn.data.soil.SoilDao
 import com.symmetricalpalmtree.notesproutsn.data.soil.SoilSchema
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
 
 /**
  * `sticky_note` rows and their content children (arc 28 / H1), through the session's single
@@ -63,6 +65,40 @@ class StickyStore(
             }
             Slog.d(TAG) { "remove ${ids.size}" }
         }
+    }
+
+    /**
+     * [remove] that also hands back the **undo snapshot** — each icon with its content read in the
+     * same job, *ahead of* the soft-delete, in one transaction (arc 34 / M6). The delete is queued
+     * on the spot, in writer order, so a caller inside a g-paper callback needs no page op, no
+     * drain and no suspending read of its own: an erase-then-Back still lands the delete (the old
+     * shape read the content under a page op that `closing` skips, and the rows came back on the
+     * next open). The deferred completes on the writer; a closed writer **cancels** it, since a
+     * delete that will never run deserves no undo entry.
+     */
+    fun removeWithContent(icons: List<PageSticky>): Deferred<List<PageSticky>> {
+        val out = CompletableDeferred<List<PageSticky>>()
+        if (icons.isEmpty()) { out.complete(emptyList()); return out }
+        val accepted = writer.enqueue {
+            try {
+                val now = System.currentTimeMillis()
+                val full = ArrayList<PageSticky>(icons.size)
+                transact {
+                    for (icon in icons) {
+                        val children = dao.childrenOfType(icon.id, SoilSchema.TYPE_STROKE)
+                        full += icon.copy(strokes = children.mapNotNull { StrokeRows.toStroke(it) })
+                        (children.map { it.id } + icon.id).chunked(ID_CHUNK).forEach { dao.softDelete(it, now) }
+                    }
+                }
+                Slog.d(TAG) { "removeWithContent ${icons.size}" }
+                out.complete(full)
+            } catch (e: Exception) {
+                out.completeExceptionally(e)
+                throw e
+            }
+        }
+        if (!accepted) out.cancel()
+        return out
     }
 
     /** Undo of [remove] / redo of a paste: revive each icon row in place (or insert the snapshot

@@ -1381,13 +1381,20 @@ table above) instead of a boolean or an extra field on `ScribbleErased` — the 
 the arm, so the standing trap from H1 held again: a kind either replays both directions or the
 build fails. `NotebookUndoTest` gained the case both ways.
 
-**A sticky's delete snapshot suspends (arc 28 / H5).** `StickyStore.withContent` — the read
-`Deleted`/`ScribbleErased` need before the row goes — is a suspending call, and g-paper's delete
-callback is not. `NotebookActivity.recordWithStickies` is the one seam: with a sticky (loose, or
-wrapped in a link that holds one) in the act, it drains the writer, reads every wrapped note's
-content, *then* soft-deletes and records the entry — still **one gesture, one undo entry**, just
-recorded a beat later. With no sticky in the act the entry is recorded on the spot, exactly as every
-erase and delete was before H5.
+**A sticky's delete snapshot suspends (arc 28 / H5; the delete made synchronous arc 34 / M6).**
+The content read `Deleted`/`ScribbleErased` need before the row goes is a suspending call, and
+g-paper's delete callback is not. `NotebookActivity.recordWithStickies` is the one seam: with a
+sticky (loose, or wrapped in a link that holds one) in the act, it calls
+`StickyStore.removeWithContent` / `LinkStore.removeWithContent` **on the spot** — each queues one
+writer job, in writer order, that reads the note's content *ahead of its own soft-delete* in one
+transaction and hands the snapshot back as a `Deferred` — and only the **record** waits for it:
+still **one gesture, one undo entry**, just recorded a beat later. With no sticky in the act the
+entry is recorded on the spot, exactly as every erase and delete was before H5. Before M6 the
+delete itself sat inside a `runPageOp` behind a drain and the reads, and a page op is skipped under
+`closing` — so an erase while another op held the mutex, followed by Back, never deleted the rows
+and the sticky (or the sticky-wrapping link) came back on the next open. Nothing in the delete goes
+through `runPageOp` now; a closed writer cancels the deferred, so a delete that will never run
+records no entry.
 
 Every gesture-driven operation runs through `runPageOp` — a `Mutex` on `lifecycleScope`, a no-op
 while not open or once closing, `runCatching` + `Log.w` on failure — so two overlapping gestures

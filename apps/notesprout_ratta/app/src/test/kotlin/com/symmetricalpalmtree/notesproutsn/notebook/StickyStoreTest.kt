@@ -106,6 +106,53 @@ class StickyStoreTest {
     }
 
     @Test
+    fun `removeWithContent deletes in writer order and hands back the content it read first`() = runBlocking {
+        // Arc 34 / M6: the erase path's sticky delete is enqueued on the spot — never behind a page
+        // op that a Back tap can skip — and the undo snapshot is read INSIDE the same job, ahead of
+        // the soft-delete, so the caller neither drains nor reads.
+        val dao = FakeSoilDao()
+        val (store, writer) = make(dao)
+        store.create("page", sticky("a"))
+        store.create("page", sticky("b"))
+        writer.drain()
+        dao.seedChild("a", childStroke("c1"), order = 0)
+        dao.seedChild("a", childStroke("c2", 7f), order = 1)
+
+        val icons = store.loadPage("page")
+        assertTrue(icons.all { it.strokes.isEmpty() })
+        val snapshot = store.removeWithContent(icons)
+        // Nothing awaited by the caller: a drain alone finds the rows gone …
+        writer.drain()
+        assertNotNull(dao.rows["a"]!!.deletedAt)
+        assertNotNull(dao.rows["b"]!!.deletedAt)
+        assertNotNull(dao.rows["c1"]!!.deletedAt)
+        assertNotNull(dao.rows["c2"]!!.deletedAt)
+        // … and the snapshot carries what was live before the delete, in writing order.
+        val full = snapshot.await()
+        assertEquals(listOf("a", "b"), full.map { it.id })
+        assertEquals(listOf("c1", "c2"), full[0].strokes.map { it.id })
+        assertTrue(full[1].strokes.isEmpty())
+
+        // Which is exactly what restore needs.
+        store.restore("page", full)
+        writer.drain()
+        assertNull(dao.rows["a"]!!.deletedAt)
+        assertNull(dao.rows["c1"]!!.deletedAt)
+        assertNull(dao.rows["c2"]!!.deletedAt)
+        writer.close()
+    }
+
+    @Test
+    fun `removeWithContent on a closed writer cancels the snapshot instead of hanging`() = runBlocking {
+        val dao = FakeSoilDao()
+        val (store, writer) = make(dao)
+        writer.close()
+        val snapshot = store.removeWithContent(listOf(sticky("a")))
+        assertTrue(snapshot.isCancelled)
+        assertTrue(store.removeWithContent(emptyList()).await().isEmpty())
+    }
+
+    @Test
     fun `restore revives the icon and the snapshot's children`() = runBlocking {
         val dao = FakeSoilDao()
         val (store, writer) = make(dao)

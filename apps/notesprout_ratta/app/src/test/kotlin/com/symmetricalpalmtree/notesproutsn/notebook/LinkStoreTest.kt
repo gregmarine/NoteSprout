@@ -372,6 +372,33 @@ class LinkStoreTest {
     }
 
     @Test
+    fun `removeWithContent deletes a wrapping link in writer order and hands back its notes' content`() = runBlocking {
+        // Arc 34 / M6: the link that wraps a sticky is deleted on the spot too; the snapshot its
+        // undo needs is read inside the job, ahead of the soft-delete.
+        val dao = FakeSoilDao()
+        val f = ObjectFixture(dao)
+        val full = wrapAllKinds(dao, f)
+        val iconOnly = full.copy(stickies = listOf(note("n1")))
+
+        val snapshot = f.links.removeWithContent(listOf(iconOnly))
+        f.writer.drain()
+        assertNotNull(dao.rows["l1"]!!.deletedAt)
+        assertNotNull(dao.rows["n1"]!!.deletedAt)
+        assertNotNull(dao.rows["c1"]!!.deletedAt)
+
+        val got = snapshot.await().single()
+        assertEquals(listOf("c1"), got.stickies.single().strokes.map { it.id })
+        assertEquals(listOf("c1"), got.stickies.single().childIds)
+
+        f.links.restore("page", listOf(got))
+        f.writer.drain()
+        assertNull(dao.rows["l1"]!!.deletedAt)
+        assertNull(dao.rows["n1"]!!.deletedAt)
+        assertNull(dao.rows["c1"]!!.deletedAt)   // named by the snapshot, so revived
+        f.writer.close()
+    }
+
+    @Test
     fun `restore revives in place too, and still upserts a row that never existed`() = runBlocking {
         val dao = FakeSoilDao()
         val (links, writer, stores) = make(dao)

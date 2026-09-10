@@ -7,7 +7,7 @@ the cross-session memory for the arc: read it whole at every phase start, togeth
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `FOCUS_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 🔄 (M1 ✅ + M2 ✅ + M3 ✅ + M4 ✅ + M5 ✅ 2026-09-09, all by Fable at the user's call; M6–M9 ⬜) · P3 ⬜ · P4 ⬜.**
+**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 🔄 (M1 ✅ + M2 ✅ + M3 ✅ + M4 ✅ + M5 ✅ + M6 ✅ 2026-09-09, all by Fable at the user's call; M7–M9 ⬜) · P3 ⬜ · P4 ⬜.**
 Baseline before the arc: 1626 `:app` / 3033 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump, no schema change, no g-paper change, no new
 module, no new dependency. **The notebook's bottom-strip pager (`NotebookActivity.kt` /
@@ -499,3 +499,23 @@ explanation and an `AskUserQuestion` never share one turn — explain, wait, the
   Gates: 320 `:ext-calendar` (314 + 6), 52 `:ext-ink`, 54 `:ext-scratchpad`, all green;
   `:ext-calendar` + `:ext-ink` release compile; NUL scan clean. No walk (JVM-pinned). Next: M6
   (`NotebookActivity` — sticky / link soft-deletes enqueued synchronously).
+- **2026-09-09 — P2 / M6 ✅ (Fable — again at the user's call).** Failing tests first: two
+  `StickyStoreTest` cases + one `LinkStoreTest` case (compile-red on `removeWithContent`). **As
+  built — one reading of the plan's "enqueue synchronously, leave `recordWithStickies` to record
+  only":** the plan's literal shape (`session.stickies.remove(ids)` on the spot, then
+  `withContent` later for the undo payload) cannot work — `StickyStore.content` reads live
+  children only, so a read after the delete would snapshot an empty note and the undo would
+  revive an empty one. So the read and the delete became **one writer job**:
+  `StickyStore.removeWithContent(icons): Deferred<List<PageSticky>>` and
+  `LinkStore.removeWithContent(links): Deferred<List<PageLink>>` each `enqueue` a single job that,
+  in one transaction, reads every note's content, soft-deletes children + rows, and completes the
+  deferred with the full snapshot (a failing job completes it exceptionally; a closed writer
+  cancels it). The enqueue is synchronous — in writer order, no drain needed (the writer *is* the
+  order), no `runPageOp`, no `closing` gate. `NotebookActivity.recordWithStickies` queues both on
+  the spot and records the entry in a plain `lifecycleScope.launch` after the awaits (a cancelled
+  deferred ends it quietly: no delete ran, so no entry). Both call sites (the three erases via
+  `removeContent`, and `deleteSelection`) route through it unchanged; only the comments moved.
+  No `PageErase.plan` factoring (the pure piece is the store job, pinned in the store tests).
+  Docs: `docs/notebook.md` § Undo (the "delete snapshot suspends" paragraph). Gates: 1638 `:app`
+  tests (1635 + 3), all green; `:app` release compiles; NUL scan clean. No walk (JVM-pinned; the
+  race needs a held mutex + Back inside one frame). Next: M7 (`runPageOp` failure dispatch).

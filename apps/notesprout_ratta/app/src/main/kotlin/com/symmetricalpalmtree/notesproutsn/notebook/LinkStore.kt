@@ -3,6 +3,8 @@ package com.symmetricalpalmtree.notesproutsn.notebook
 import com.symmetricalpalmtree.notesproutsn.core.Slog
 import com.symmetricalpalmtree.notesproutsn.data.soil.SoilDao
 import com.symmetricalpalmtree.notesproutsn.data.soil.SoilSchema
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
 
 /**
  * `link` rows of the open notebook (arc 6 / K1) and the re-parenting that wraps a selection in
@@ -100,6 +102,46 @@ class LinkStore(
             }
             Slog.d(TAG) { "remove ${links.size} (${ids.size} rows)" }
         }
+    }
+
+    /**
+     * [remove] that also hands back the **undo snapshot**: each link with every wrapped sticky's
+     * content read in the same job, *ahead of* the soft-delete, in one transaction (arc 34 / M6 —
+     * [StickyStore.removeWithContent]'s shape, for the same reason: the delete is queued on the
+     * spot, in writer order, and the caller neither drains nor reads). A closed writer cancels the
+     * deferred.
+     */
+    fun removeWithContent(links: List<PageLink>): Deferred<List<PageLink>> {
+        val out = CompletableDeferred<List<PageLink>>()
+        if (links.isEmpty()) { out.complete(emptyList()); return out }
+        val accepted = writer.enqueue {
+            try {
+                val now = System.currentTimeMillis()
+                val ids = links.map { it.id } + links.flatMap { it.childIds }
+                val full = ArrayList<PageLink>(links.size)
+                transact {
+                    val stickyContent = ArrayList<String>()
+                    for (l in links) {
+                        if (l.stickies.isEmpty()) { full += l; continue }
+                        full += l.copy(
+                            stickies = l.stickies.map { sticky ->
+                                val children = dao.childrenOfType(sticky.id, SoilSchema.TYPE_STROKE)
+                                stickyContent += children.map { it.id }
+                                sticky.copy(strokes = children.mapNotNull { StrokeRows.toStroke(it) })
+                            },
+                        )
+                    }
+                    (ids + stickyContent).chunked(ID_CHUNK).forEach { dao.softDelete(it, now) }
+                }
+                Slog.d(TAG) { "removeWithContent ${links.size} (${ids.size} rows)" }
+                out.complete(full)
+            } catch (e: Exception) {
+                out.completeExceptionally(e)
+                throw e
+            }
+        }
+        if (!accepted) out.cancel()
+        return out
     }
 
     /**
