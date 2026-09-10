@@ -7,7 +7,7 @@ the cross-session memory for the arc: read it whole at every phase start, togeth
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `FOCUS_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 🔄 (M1 ✅ + M2 ✅ + M3 ✅ + M4 ✅ + M5 ✅ + M6 ✅ + M7 ✅ 2026-09-09, all by Fable at the user's call; M8–M9 ⬜) · P3 ⬜ · P4 ⬜.**
+**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 🔄 (M1 ✅ + M2 ✅ + M3 ✅ + M4 ✅ + M5 ✅ + M6 ✅ + M7 ✅ + M8 ✅ 2026-09-09, all by Fable at the user's call; M9 ⬜) · P3 ⬜ · P4 ⬜.**
 Baseline before the arc: 1626 `:app` / 3033 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump, no schema change, no g-paper change, no new
 module, no new dependency. **The notebook's bottom-strip pager (`NotebookActivity.kt` /
@@ -532,3 +532,23 @@ explanation and an `AskUserQuestion` never share one turn — explain, wait, the
   paragraph). Gates: 1642 `:app` tests (1638 + 4), all green; `:app` release compiles; NUL scan
   clean. **The dialog itself is the P4 walk item the plan names (optional: fill the disk, Erase
   page).** Next: M8 (`ExtensionScreenEntry` — the guarded launch).
+- **2026-09-09 — P2 / M8 ✅ (Fable — again at the user's call).** Failing test first:
+  `ScreenLaunchTest` (4 cases, compile-red on `ScreenLaunch`). **The plan's
+  `ExtensionScreenEntryTest` with a launcher stub is not buildable on the JVM** — the entry
+  registers its `ActivityResultLauncher` from the Activity in its constructor and there is no
+  Robolectric — so the sequence itself became the pure piece: `extension/ScreenLaunch.attempt(
+  resolves, beforeLaunch, launch, afterFailure)` → `Launched` / `Unresolved` (nothing ran — the
+  pen never released) / `Refused(cause)` (an `ActivityNotFoundException` or `SecurityException`
+  thrown by the launch: `afterFailure` has run); anything else propagates. `ExtensionScreenEntry.
+  open` runs it with `resolves = { intent.resolveActivity(pm) != null }`, `launch = { launcher.
+  launch(intent) }`, and a non-`Launched` answer goes to the existing `fail(fresh)` (bind finished,
+  latch cleared, overlay down, the point's "unavailable" dialog, re-discovery); `stack.attach`
+  stays behind a real launch. New entry param `afterLaunchFailed` threaded through `ScratchPadEntry`
+  / `CalendarEntry`; the notebook passes `{ paper.resumeDrawing() }` for both (its `onResume` never
+  runs on a refused launch — the screen never paused). `DocumentEditorEntry` / `TagManagerEntry` /
+  `CloudConnectEntry` keep their unguarded launch: the finding is the released pipeline, and none
+  of the three releases one from the notebook (the editor passes no `beforeLaunch`) — noted, not
+  fixed (the rule). Docs: `docs/extensions.md` boundary audit row 51. Gates: 1646 `:app` tests
+  (1642 + 4), all green; `:app` release compiles; NUL scan clean. No walk (a refusal needs a
+  package swapped between bind and launch). Next: M9a (`:ext-image` held bind) + M9b (Drive
+  folder-id cache).

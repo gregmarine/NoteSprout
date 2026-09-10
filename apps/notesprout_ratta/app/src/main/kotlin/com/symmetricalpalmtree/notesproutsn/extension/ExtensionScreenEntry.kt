@@ -124,6 +124,10 @@ open class ExtensionScreenEntry<I : Any, P>(
     private val sendEnabled: Boolean,
     /** Run immediately before the screen is launched — the notebook's `releaseForHandoff()`. */
     private val beforeLaunch: () -> Unit,
+    /** Run when the launch itself was refused **after** [beforeLaunch] had run (arc 34 / M8) — the
+     *  notebook's `resumeDrawing()`, the re-arm its `onResume` does after a real return; the
+     *  refusal leaves this screen resumed, so nothing else would. */
+    private val afterLaunchFailed: () -> Unit = {},
     /** An outbound [InkSend] is across — fired **after** the last `receiveInk` returns, never at the
      *  tap, so the caller's confirmation only ever confirms something that has happened. */
     private val onSent: () -> Unit,
@@ -261,9 +265,22 @@ open class ExtensionScreenEntry<I : Any, P>(
                 intent.putExtra(ExtensionContract.EXTRA_CHROME_HIDDEN, chromePrefs.hidden)
                 if (send != null && !handOver(fresh, send)) return@launch
                 // The pipeline goes over the instant before the launch, and not one step earlier:
-                // until here the open could still have failed and left this screen writing.
-                beforeLaunch()
-                launcher.launch(intent)
+                // until here the open could still have failed and left this screen writing. The
+                // launch itself can still be refused (arc 34 / M8 — `open` validated the service,
+                // not the screen): an Intent that does not resolve is found out BEFORE the pipeline
+                // goes over, and a refusal thrown by the launch re-arms it and takes the ordinary
+                // failure road — a dialog, never a crash, never a leaked showing.
+                val launched = ScreenLaunch.attempt(
+                    resolves = { intent.resolveActivity(activity.packageManager) != null },
+                    beforeLaunch = beforeLaunch,
+                    launch = { launcher.launch(intent) },
+                    afterFailure = afterLaunchFailed,
+                )
+                if (launched != ScreenLaunch.Outcome.Launched) {
+                    Slog.d(tag) { "launch refused: ${(launched as? ScreenLaunch.Outcome.Refused)?.cause?.javaClass?.simpleName ?: "unresolved"}" }
+                    fail(fresh)
+                    return@launch
+                }
                 // On the stack only once the launch has actually happened (arc 32 / RS1): every
                 // path above this line leaves nothing on the glass, so there is nothing to restore.
                 stack.attach(stackEntry)

@@ -21,6 +21,7 @@ class CalendarEntry(
     sendEnabled: Boolean = false,
     /** Run immediately before the screen is launched — the notebook's `releaseForHandoff()`. */
     beforeLaunch: () -> Unit = {},
+    afterLaunchFailed: () -> Unit = {},
     /** An outbound send is across — fired **after** the last `receiveInk` returns, never at the tap. */
     onSent: () -> Unit = {},
     /** Ink the calendar sent back, already sanitized and capped; the bind is finished the moment this
@@ -44,6 +45,7 @@ class CalendarEntry(
     resultSend = ExtensionContract.RESULT_CALENDAR_SEND,
     sendEnabled = sendEnabled,
     beforeLaunch = beforeLaunch,
+    afterLaunchFailed = afterLaunchFailed,
     onSent = onSent,
     onDrained = onDrained,
     // The calendar's own Scratch Pad door (Y4): it exists only when the host finds a trusted pad —

@@ -22,6 +22,7 @@ class ScratchPadEntry(
     sendEnabled: Boolean = false,
     /** Run immediately before the screen is launched — the notebook's `releaseForHandoff()`. */
     beforeLaunch: () -> Unit = {},
+    afterLaunchFailed: () -> Unit = {},
     /** An outbound send is across — fired **after** the last `receiveInk` returns, never at the tap. */
     onSent: () -> Unit = {},
     /** Ink the pad sent back, already sanitized and capped; the bind is finished the moment this
@@ -40,6 +41,7 @@ class ScratchPadEntry(
     resultSend = ExtensionContract.RESULT_SCRATCH_SEND,
     sendEnabled = sendEnabled,
     beforeLaunch = beforeLaunch,
+    afterLaunchFailed = afterLaunchFailed,
     onSent = onSent,
     onDrained = onDrained,
     onClosed = onClosed,

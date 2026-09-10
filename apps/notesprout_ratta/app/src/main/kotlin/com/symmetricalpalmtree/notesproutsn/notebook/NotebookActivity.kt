@@ -695,6 +695,9 @@ class NotebookActivity : AppCompatActivity() {
             // The transform mode first: `releaseForHandoff` is a silent release, and a mode still
             // running when the pipeline goes over would take its geometry with it (H4).
             beforeLaunch = { endTransformIfRunning(); paper.releaseForHandoff() },
+            // A launch the system refused after the hand-over (arc 34 / M8): this screen never
+            // paused, so its onResume will not re-arm the pipeline — this does.
+            afterLaunchFailed = { paper.resumeDrawing() },
             onSent = { onPadSent() },
             onDrained = { drained -> pasteFromPad(drained) },
             onClosed = { onPadClosed(it) },
@@ -713,6 +716,7 @@ class NotebookActivity : AppCompatActivity() {
             // The notebook is the one caller that can be sent to, so the calendar shows its Send buttons.
             sendEnabled = true,
             beforeLaunch = { endTransformIfRunning(); paper.releaseForHandoff() },
+            afterLaunchFailed = { paper.resumeDrawing() },
             onSent = { onCalendarSent() },
             onDrained = { drained -> pasteFromCalendar(drained) },
             onExport = { onCalendarExport(it) },
