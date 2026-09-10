@@ -561,6 +561,9 @@ and per flip · crash buffer empty · left shown at the library. Walk note: laun
 the dense "Objects" notebook, and a mid-page double-tap at (700, 1000) landed on a sticky icon and
 opened the editor — the collision rule doing its job; the walk moved to (700, 200).
 
+**User checklist 2026-09-09: both passed by hand on the Nomad** (hidden pad: lasso raises the
+floating selection bar; ink to the pad's top edge, shown → the bar covers it).
+
 **Design notes for F4:** the calendar's geometry still reads `binding.topBar.height` /
 `bottomBar.height` (three call sites + `BakeKey`); with a hidden launch those are 0, so F4's
 "insets removed" changes nothing a hidden showing does not already do. The F4 toggle needs no new
