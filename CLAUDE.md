@@ -147,83 +147,18 @@ skill (`.claude/skills/device-build-install/SKILL.md`) — invoked automatically
 - `main` — stable release branch (v1.0 "Seed" through v1.3 "Supernote" shipped; the release merge
   commits are in git history).
 - `ratta` — **the active feature branch** (cut 2026-08-20): Notesprout SN, a from-scratch
-  Supernote-only rebuild under `apps/notesprout_ratta/`. **Arcs 1–25 complete + frozen**
-  (2026-09-05). Drive work (arc 25, the EIGHTH point): read the **standalone
-  `apps/notesprout_ratta/DRIVE_PLAN.md`** (not `RATTA_PLAN.md`). **Arc 26 "Keys" (full encryption,
-  PARITY_BACKLOG item 1) is COMPLETE + FROZEN (U1–U7 landed 2026-09-05)**: the reference is
-  `apps/notesprout_ratta/docs/encryption.md`; for any work on it read the standalone
-  `apps/notesprout_ratta/ENCRYPTION_PLAN.md` (not `RATTA_PLAN.md`) — no code review, host-only,
-  no ninth point. **Arc 27 "Restore" (whole-library restore, PARITY_BACKLOG item 2) is COMPLETE +
-  FROZEN (L1–L6 landed 2026-09-05/06)**: the reference is `apps/notesprout_ratta/docs/restore.md`;
-  for any work on it read the standalone `apps/notesprout_ratta/RESTORE_PLAN.md` (not
-  `RATTA_PLAN.md`) — host-only, no code review in the arc, no ninth point. **Arcs 1–27 are all
-  complete and frozen.** **Arc 28 "Objects" (sticky notes, text objects, six hand-placed shapes —
-  PARITY_BACKLOG item 3) is COMPLETE + FROZEN (H1–H7 landed 2026-09-06)**: the reference is
-  `apps/notesprout_ratta/docs/objects.md`; for any work on it read the standalone
-  `apps/notesprout_ratta/OBJECTS_PLAN.md` (not `RATTA_PLAN.md`) — all core on the heading pattern
-  (three additive row types, no `.soil` version bump), a g-paper transform mode (SN pinned to
-  g-paper 0.1.27), a host sticky editor, PDF endnotes over `PageBundle` v2; no ninth point, no API
-  bump, code review waived by the user. **Arcs 1–28 are all complete and frozen.**
-  **Arc 29 "Loop" (the lasso eraser, PARITY_BACKLOG item 4) is COMPLETE + FROZEN (LE1–LE4 landed
-  2026-09-06/07)**: the reference is `apps/notesprout_ratta/docs/notebook.md` (§ Toolbar, § Undo,
-  § Frame-silence); for any work on it read the standalone `apps/notesprout_ratta/LOOP_PLAN.md`
-  (not `RATTA_PLAN.md`) — a g-paper `Tool.LASSO_ERASER` (0.1.28, SN re-pinned from 0.1.27) armed
-  from an eraser re-tap Point · Lasso sub-bar on all four paper surfaces; no ninth point, no API
-  bump, no new row, no code review. **Arcs 1–29 are all complete and frozen.**
-  **Arc 30 "Page" (page erase + page export, PARITY_BACKLOG item 5) is COMPLETE + FROZEN (PE1–PE3
-  landed 2026-09-08)**: the reference is `apps/notesprout_ratta/docs/notebook.md` (§ Erase page,
-  § Export page, § Undo) + `apps/notesprout_ratta/docs/export.md` (§ Scope); for any work on it
-  read the standalone `apps/notesprout_ratta/PAGE_PLAN.md` (not `RATTA_PLAN.md`) — two page-sheet
-  rows (Erase page = one soft-delete transaction + `Action.PageErased` by id; Export page = close →
-  `ExportActivity` at page scope → reopen, a host-side page filter with `ExportSpec` and every
-  exporter untouched); host-only, no point, no API bump, no code review. **Arcs 1–30 are all
-  complete and frozen.**
-  **Arc 31 "Harvest" (export and import extras, PARITY_BACKLOG item 6) is COMPLETE + FROZEN
-  (HV1–HV6 landed 2026-09-08/09)**: the references are `apps/notesprout_ratta/docs/export.md`
-  (§ Images, § Presets, § Calendar mode), `docs/calendar.md` (§ Export, § Calendar → notebook),
-  `docs/templates.md` (§ Save as template), `docs/notebook.md` (§ The received page) and
-  `docs/extensions.md`; for any work on it read the standalone
-  `apps/notesprout_ratta/HARVEST_PLAN.md` (not `RATTA_PLAN.md`) — `:ext-image` PNG exporter with
-  per-page folder delivery (FOURTEEN modules), Save as template, `export_preset` index rows,
-  `ICalendar.render` at `API_VERSION` **9** (two compatible tails, no floor moved, not a ninth
-  point) for calendar file export and a papered page on send; no code review. **Arcs 1–31 are all
-  complete and frozen.**
-  **Arc 32 "Resume" (launch restore, PARITY_BACKLOG item 7 — the LAST item) is COMPLETE + FROZEN
-  (RS1–RS3 landed 2026-09-09)**: the references are `apps/notesprout_ratta/docs/library.md`
-  (§ Launch restore) and `docs/notebook.md` (§ Cold-launch restore); for any work on it read the
-  standalone `apps/notesprout_ratta/RESUME_PLAN.md` (not `RATTA_PLAN.md`) — a surface stack in
-  prefs replayed on a cold launch so the whole chain of screens comes back (notebook → calendar /
-  scratch pad / document editor, the calendar → pad pair, or a library-level calendar / pad), every
-  missing target dropped; host-only, no point, no API bump, no schema change, no code review.
-  **Arcs 1–32 are all complete and frozen, and `apps/notesprout_ratta/PARITY_BACKLOG.md` is
-  closed — every item done.**
-  **Arc 33 "Focus" is COMPLETE + FROZEN (F1–F5 landed 2026-09-09; a fresh user decision, not a
-  backlog item)**: a single-finger double-tap hides / shows all chrome on the four paper screens,
-  full-bleed paper with floating bars everywhere (the sticky editor restructured), full-page
-  calendar grids (`CalendarBars` deleted, old calendar ink one bar higher — accepted), one global
-  persisted flag handed to the pad and calendar as the compatible `EXTRA_CHROME_HIDDEN` tail both
-  ways; the references are `apps/notesprout_ratta/docs/notebook.md` § Layout / § Gestures,
-  `docs/calendar.md`, `docs/scratchpad.md`, `docs/objects.md`, `docs/sn-screen.md` and
-  `docs/extensions.md` row 50; read the standalone `apps/notesprout_ratta/FOCUS_PLAN.md` (not
-  `RATTA_PLAN.md`) for any work on it — no code review, 1626 `:app` / 3033 tests. **Arcs 1–33 are
-  all complete and frozen.**
-  **Arc 34 "Prune" is COMPLETE + FROZEN (P1–P4 landed 2026-09-09/10; a fresh user decision)**:
-  the 32 confirmed findings of the 2026-09-09 `/code-review` of arcs 24–33 (1 high, 9 medium,
-  22 low) fixed with JVM tests where the code is pure — the restore `-wal` refusal, rotation
-  quarantine / needless rekey, FOLLOWING event edits, the mutilating multi-batch event write, the
-  Back-skippable sticky erase, silent page-op failures, the crashing refused extension launch, the
-  per-page `:ext-image` rebind and the Drive round-trips, plus twenty-two reuse / dead-code lows;
-  four candidates refuted and listed — do not re-raise. No point, no API bump, no schema change,
-  no code review of the fixes; 1653 `:app` / 3077 tests. Read the standalone
-  `apps/notesprout_ratta/PRUNE_PLAN.md` (not `RATTA_PLAN.md`) for any work on it. **Arcs 1–34 are
-  all complete and frozen.**
-  **No NINTH extension point
-  and no other arc without another user decision. Read `apps/notesprout_ratta/RATTA_PLAN.md`
-  first for ANY other work there** — it holds the working protocol, model recipe, standing
-  traps, and the per-arc ledger of still-binding decisions. Subsystem detail:
-  `apps/notesprout_ratta/docs/` + that app's CLAUDE.md. Full frozen-arc phase records live in
-  git history (`git show 90a9198:apps/notesprout_ratta/RATTA_PLAN.md` for arcs 1–18; later
-  arcs at the end of the plan file).
+  Supernote-only rebuild under `apps/notesprout_ratta/`. **Arcs 1–34 are all COMPLETE + FROZEN
+  (2026-09-10) and `apps/notesprout_ratta/PARITY_BACKLOG.md` is closed — every item done. No
+  NINTH extension point and no other arc without another user decision.** Arcs 25–34 (Drive,
+  Keys, Restore, Objects, Loop, Page, Harvest, Resume, Focus, Prune) each have a standalone
+  `apps/notesprout_ratta/<ARC>_PLAN.md` that is the plan + ledger for any work on that arc — never
+  `RATTA_PLAN.md` — and a reference doc under `apps/notesprout_ratta/docs/`; that app's CLAUDE.md
+  names both per arc, plus the rules that still bind (no code review of any of them — do not
+  re-raise). **Read `apps/notesprout_ratta/RATTA_PLAN.md` first for ANY other work there** — it
+  holds the working protocol, model recipe, standing traps, and the per-arc ledger of
+  still-binding decisions. Full frozen-arc phase records live in git history (`git show
+  90a9198:apps/notesprout_ratta/RATTA_PLAN.md` for arcs 1–18; later arcs at the end of the plan
+  file).
 - `germination` — previous post-MVP feature branch (reference, not active)
 - The former feature branches (`seed`, `sprout`, `sapling`, `supernote`, `paper`) are merged and
   **deleted** (local + remote) — "on sprout/sapling/supernote/paper" means `main`; history lives under

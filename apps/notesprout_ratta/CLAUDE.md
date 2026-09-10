@@ -206,319 +206,70 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   the host bakes once and splits (`BundleSplit`) and calls it once per page.)
   `gradle.properties` sets `android.nonTransitiveRClass=false` — undoing it breaks every
   `:sn-screen` resource reference from `:app`.
-- **Arc 26 "Keys" is COMPLETE + FROZEN (wizard locked 2026-09-05; U1–U7 landed 2026-09-05)** — og-parity
-  encryption (`PARITY_BACKLOG.md` item 1, now done): the Encryption screen + library door, rotation,
-  per-notebook scope, recovery. **`docs/encryption.md` is the reference. Read the standalone
-  `ENCRYPTION_PLAN.md`, not `RATTA_PLAN.md`, for any work on it** — phases U1–U7, no code review,
-  host-only, no ninth point. **U1:** `encryption/EncryptionActivity` behind
-  the library's new `btnEncryption` (`ic_lock`, `[Backup] [Encryption] [Import]`): status (the count
-  reads `keyScope`), Reveal (og's wording, Copy/Close, no re-auth), Forget on this device (ships in
-  release; clears `PassphraseStore` + `KeySession` + `KeyMaterial`, then **kills the process** —
-  `SnIndex` has no close, so a live process would answer READY with no key). The debug menu's
-  "Show recovery key" / "Forget cached key" are gone; every crypto walk starts at Reveal. **U2 (rekey
-  core, 2026-09-05):** `crypto/SoilRekey` is **the only thing that changes the key a file on disk is
-  under** — export-and-key into `X.rekey.tmp`, `RekeyCommit.commitReplace` (og's fsync'd rename order,
-  `X.old.bak`), `RekeyRecovery` (delete nothing unless the survivor verifies); Bootstrap runs
-  `recoverGarden` after the index opens and `SnIndex.ensureReady` recovers the index's own leftovers
-  before it could ever treat a missing file as a fresh install; `SnIndex.closeForRotation()` is the one
-  door that closes the index (rotation only — after it, dialogs then a relaunch, nothing else).
-  `PassphraseRules` (≥ 8 after trim, confirm, not-current) and single-use `PassphraseCache` exist for
-  U3–U5. Debug menu: *Rekey one notebook round-trip* / *Break a rekey commit* (`RekeyProbe`). **U3
-  (rotation, 2026-09-05):** `crypto/GlobalRotation` + `RotationMarker` (journal in `PassphraseStore`,
-  written before any file is touched) + pure `RotationPlan` — notebooks → `ext:<pkg>` stores → **index
-  last**, both backup stamp maps cleared while the index is still open, `closeForRotation`, then
-  commit (`setGlobalPassphrase(new)` first, marker cleared last, ack cleared for a minted key) and a
-  relaunch through `BootstrapActivity.relaunchIntent`. Three resume paths: the Encryption screen's
-  banner, `BootstrapRoute.afterOpen` (key screen → marker → library; shared by Bootstrap, Unlock and
-  the recovery-key screen), and `SnIndex` trying the marker's key for an index the cached global no
-  longer opens and committing itself. A resume re-lists notebooks/stores minted since the marker. A
-  notebook under neither key is quarantined to `NOTEBOOK` scope, never deleted. **Standing rule from
-  the walk: `RawKeyDerivation.deriveKey` goes through the platform PBKDF2 and `KeyOpener.warm` is
-  serialized — the hand HMAC loop churns ~80 MB of native memory per derive and a burst of cold opens
-  after a rotation killed the process (Scudo OOM). Do not put the loop back on the hot path.**
-  **U4 (notebook scope core, 2026-09-05):** `crypto/KeyScope` + `KeyResolver` (pure decision:
-  `Passphrases([global, markerNew])` / `Unlocked(rawKey)` / `NeedsPrompt` / `NoKey`) +
-  `NotebookUnlocks` (per-process unlocked ids) + `NotebookPassphrasePrompt` (THE one notebook
-  passphrase dialog — bucket = notebook id, IME never hidden). **Every `.soil` open goes
-  `SoilDatabase.resolve(context, id)` → `SoilDatabase.open(…, resolved)`; `KeySession.get()` is
-  for the GLOBAL passphrase only and never receives a notebook's.** A silent reader (`readOnce`,
-  backup compaction, the cloud snapshot) never prompts: a locked notebook answers null / is
-  skipped; the notebook screen, a link follow, the picker's lock row and the Export screen prompt
-  on every open. **A caller that just prompted passes `Passphrases(typed)` into its read — the
-  raw-key warm is ~9 s on the Nomad, so `Unlocked` is never there in time.** `ObjectSummary.
-  keyScope` rides every listing; `IndexRepository.setEncryptionState` (cover nulled, both stamps
-  cleared, unlock forgotten, `updatedAt` untouched) is the only scope writer; the parked hand-off
-  (`PassphraseCache`, 60 s TTL) is taken by the notebook screen's open ONLY — every other prompt
-  asks regardless; a NOTEBOOK card is
-  a lock (`ic_lock`), never a cover, and the seal never captures one. **U5 (the doors, 2026-09-05):**
-  `crypto/ScopeChange` is **the only caller of `SoilRekey` for one notebook** — `toNotebook` /
-  `toGlobal` / `changePassphrase` = rekey → `setEncryptionState` → park, refusing an open file; og's
-  downgrade rule lives in `ScopeChange.scopeFor` (typed == global → GLOBAL) and every door goes
-  through it. Doors: the New Notebook screen's Key radio row, the library sheet's *Change
-  passphrase…* / *Change encryption scope…* (`library/ScopeChangeFlow`; GLOBAL's passphrase row
-  redirects to Encryption), the import chooser (`crypto/ImportChoice` pure table + `ImportKeying.
-  toScope`; asked only after a FOREIGN unlock; `setEncryptionState` before `refreshMeta`), and
-  Export's host-substituted Keep label for a NOTEBOOK source. `crypto/SetPassphraseDialog` is the one
-  set-a-notebook-passphrase dialog. The notebook's own bar has no key rows. Debug *Change key scope*
-  is gone. **U6 (recovery, 2026-09-05):** `crypto/KeyFailure` (pure classifier — a key failure,
-  never a schema error, earns the offer) + `crypto/NotebookRecovery` (og's "Can't open <name>" →
-  Try a passphrase: the cached global and a rotation's key silently, then the one prompt; a foreign
-  key on a GLOBAL row → "Repair and open" = `ScopeChange.toGlobal`; NOTEBOOK → parked for the
-  reopen). The notebook screen offers it **once per launch** (`EXTRA_RECOVERY_ATTEMPTED`) and a
-  RETRY re-runs the whole open. **Every raw-key user goes through `KeyMaterial.peekVerified`** (hit
-  verified against the file, stale dropped everywhere) — `peekOrLoad` is for "is one cached?" only;
-  `KeyOpener.warm` carries `KeyMaterial.generation` so a derive queued before a rekey cannot store
-  after its invalidate. Debug *Break keying* (`RekeyProbe.BROKEN_KEY`) is the walk's door.
-  **U7 (docs + freeze, 2026-09-05):** `docs/encryption.md` written, pointers in the eight docs it
-  touches, `PARITY_BACKLOG.md` item 1 closed — no code. Nomad library left all-GLOBAL under a typed
-  passphrase (the value is in the memory file, never in a doc).
-- **Arc 27 "Restore" is COMPLETE + FROZEN (L1–L6 landed 2026-09-05/06; `docs/restore.md` is the
-  reference; read the standalone `RESTORE_PLAN.md`, not `RATTA_PLAN.md`, for any work on it).**
-  What landed, phase by phase — L1 landed 2026-09-05 (`restore/` read side: manifest, staging,
-  `SafRestoreSource` + `data/backup/SafBackupReader`), L2 landed 2026-09-05 (`restore/RestoreEngine`
-  — preflight / stage / validate / proveCached / proveTyped / commit, the rename-only swap with the
-  installed index as the marker and an in-process rollback; pure `RestoreRecovery.plan` executed by
-  `RestoreEngine.recoverInterrupted` as **the first line of `BootstrapActivity.boot()`**; pure
-  `RestoreDestination.merge` + the `SecurePrefs` park applied by Bootstrap and Unlock on the first
-  open after the relaunch; `SnIndex.closeForRotation` now serves "rotation or restore";
-  `AttemptLimiter.RESTORE_KEY`; `SoilOpenFiles.anyOpen()`), **L3 landed 2026-09-05**
-  (`restore/RestoreActivity` — sources pane → folder pick with **no persisted grant** → backup list →
-  *Replace your library?* → one progress dialog → the key prompt under `RESTORE_KEY` → four endings
-  (Committed / RolledBack / **Interrupted** — the index landed but the key step threw / Refused),
-  all dialogs; the Backup screen's *Restore from a backup…* row; the first real restore walked on
-  the Nomad against a rotation-made foreign backup), **L4 landed 2026-09-05**
-  (`restore/CloudRestoreSource` over `CloudClient.list`/`.download` — `Backups/<folder>` rows whose
-  handle is the folder **name**, re-listed at fetch, **no `-wal` ever fetched**, downloads into
-  `.part` under `CloudTimeouts.downloadBudgetMs` (the read-side rate twin), the four cloud
-  `RestoreProblem`s mapped as `CloudBackupLeg` maps them; the Restore screen's *From the cloud…* row
-  GONE while no provider is installed; walked on the Nomad — a mid-fetch wifi cut refused with
-  nothing touched, then a full cloud restore with a renamed device folder proved decision 3 on the
-  cloud leg), **L5 ✅ 2026-09-06** (`restore/RestoreFaults` — one armed fault per commit behind the
-  debug menu's *Break a restore*, nine faults over six seams, inert in release; the **orphan
-  prune** `RestoreEngine.pruneOrphans` — after the key is proven, a staged `.soil` the staged index
-  has no alive row for, and a staged store that is not encrypted SQLite or does not open under the
-  proven key, are dropped and **named** in *Restore complete*, never installed; validate before the
-  key covers the index only; recovery clears an obstruction on a rename-back target and any index
-  sidecar the new index left at the live name; a disk that fills mid-fetch is named as the disk;
-  every kill seam, the rollback, the torn set, the mid-swap store call, both disk-full shapes, the
-  lockout and the foreign-key restore walked on the Nomad), **L6 ✅ 2026-09-06** (docs + freeze, no
-  code) — whole-library restore, `PARITY_BACKLOG.md` item 2, now DONE. Phases L1–L6, host-only, no
-  point, no API bump, version stays `0.1.0-ratta`, 1194 `:app` tests, and **no `/code-review` in the
-  arc** (L5 was a failure-injection pass instead). The four decisions that
-  bind everything else: **both legs** (local SAF and cloud — `ICloudStorage` already has `list` +
-  `download`, so no contract change); **replace all** with the aside-swap and the installed index as
-  the commit marker, no undo once it commits; **the staged index must open under a key the user can
-  supply BEFORE anything live is touched** (cached global silently, then a prompt under
-  `AttemptLimiter("RESTORE")`); and **the backup destination is device-local state that a restore
-  never rewrites** — `treeUri` / `cloudEnabled` / `cloudDeviceFolder` are read out before the swap
-  and re-applied after it, both stamp maps cleared, the backup's own destination fields always
-  discarded. That last one is the user's own incident (a restored backup silently re-aimed a
-  device's backup folder at another device's, and overwrote it over several runs); reading a backup
-  and writing one are two different questions. A restore is refused while a rotation marker stands,
-  the cloud extension store is restored like any other (the host never reaches into `:ext-cloud`'s
-  tables), and every restore walk is driven by hand on the Nomad against a backup made foreign by
-  `GlobalRotation` — never the Manta.
-- **Arc 28 "Objects" is COMPLETE + FROZEN (H1–H7 landed 2026-09-06; wizard locked the same
-  day)** — sticky notes, on-page Markdown text objects and six hand-placed shapes
-  (`PARITY_BACKLOG.md` item 3, now DONE), all **core** on the arc-3 heading pattern: three additive
-  row types on the universal table (`text` / `shape` / `sticky_note` — no `SOIL_VERSION` bump, no
-  migration, no new column; packing in `docs/objects.md`), pure mappers + stores on the one
-  `SoilWriter`, three `ContentRenderer`s in the D8 draw order (headings · text · shapes · links ·
-  stickies · strokes), one `Insert` button + an eight-button floating sub-bar, `SelectionMode`
-  TEXT / SHAPE / STICKY, undo / clipboard / page-copy / erase parity, a host
-  `StickyEditorActivity` (the second second-paper-surface in one process, no `.soil` of its own —
-  writes through the notebook's `SoilWriter` via the process-local `StickyEditorTransfer`; Back
-  saves-and-closes), a g-paper **transform mode** (H3 — engine-owned handles + rotate knob + aspect
-  lock + 5° snap, **g-paper 0.1.27**, SN re-pinned from 0.1.23; the host's finger gates yield while
-  `paper.transformingContentId != null`, `endTransformIfRunning()` before every silent release), and
-  PDF endnotes over a backward-readable `PageBundle` v2 + the `ExporterInfo.bundleVersion`
-  compatible tail. No ninth point, no `API_VERSION` bump (stays 8), no line objects, no shape
-  recognizer, **no extension transfers** (Pad / Calendar hide for the new kinds). Version stays
-  `0.1.0-ratta`; `:app` 1194 → **1470** tests, **2830** across the modules. **The arc-range
-  `/code-review` was waived by the user at H6 — do not re-raise it.** **`docs/objects.md` is the
-  reference**; the plan + per-phase ledger is the standalone `OBJECTS_PLAN.md` (not `RATTA_PLAN.md`).
-  Standing rule from H2 that binds every later host-landed selection: call `armLassoForLanding()`
-  **before** `setSelection` from any non-lasso context — a selection landed under a pen tool is a
-  picture the pen inks through.
-- **Arc 29 "Loop" is COMPLETE + FROZEN (LE1–LE4 landed 2026-09-06/07; wizard locked 2026-09-06)** —
-  the lasso eraser (`PARITY_BACKLOG.md` item 4, now DONE): `Tool.LASSO_ERASER` in g-paper **0.1.28**
-  (re-pinned from 0.1.27 at LE1) — the lasso's outline capture completed as an erase on the lasso's
-  own hit rule (touch semantics: a stroke goes if any point is inside, host content goes whole if
-  the loop touches its box — so select-then-Delete and lasso-erase always agree), never a selection,
-  the Supernote x-trail (`SupernoteInk.Pen.CROSS`) retracted by the same trace ladder as the dash
-  trail, one `onLassoErased(strokeIds, contentIds)` with a forwarding default. Armed on **all four
-  paper surfaces** (notebook, sticky editor, scratch pad, calendar) from **a second tap on the armed
-  eraser** → a Point · Lasso sub-bar (`EraserBar` in `:sn-screen`; `AnchoredBar` moved there with
-  it; `PaperToolbar` + `NotebookToolbar` carry `onEraserReTap` / `arm(tool)` / the glyph swap) —
-  never a fourth bar button (a twelfth 62 dp button falls off the Nomad's 749 dp with every
-  extension installed). The sub-bar remembers nothing; a plain eraser tap always arms the point
-  eraser. The notebook mirrors it as `NotebookUndo.Action.LassoErased` (`ScribbleErased`'s shape,
-  its own kind) through `EraseKind { ERASER, SCRIBBLE, LASSO }`; the sticky editor records its
-  point-eraser body; the pad and the calendar record `InkAction.Erased` (no new kind) with the
-  whole sub-bar lifecycle living **once** in `:ext-ink` `InkScreenActivity`. The host never repaints
-  from `onLassoErased` (the scribble rule). No point, no API bump, no new row, no code review (the
-  user's call — do not re-raise); version stays `0.1.0-ratta`; 1472 `:app` / 2832 tests. Onyx's
-  side of the engine change is mechanical and **untested** (SN is Ratta-only). **`docs/notebook.md`
-  is the reference; read the standalone `LOOP_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**
-- **Arc 30 "Page" is COMPLETE + FROZEN (PE1–PE3 landed 2026-09-08; wizard locked 2026-09-08)** —
-  page erase + page export (`PARITY_BACKLOG.md` item 5, now DONE): an **Erase page** row on the
-  page sheet (confirm → `store.drain()` → one soft-delete transaction over `liveDescendantIds`,
-  every kind incl. the page's document row, page row / order / size / template kept, an empty page
-  erases silently, `Action.PageErased(pageId, ids)` replayed by id — `StrokeStore` keeps no
-  mirror, so a bare DAO restore is the road; one `refreshToPage` repaint) and an **Export page**
-  row (last, only while an exporter is installed) that is **close, export, reopen**: the notebook
-  closes as for a Recents switch, `ExportActivity` opens with `EXTRA_PAGE_ID` +
-  `EXTRA_RETURN_TO_NOTEBOOK`, and its `finish()` (overridden once) relaunches the notebook
-  whatever the outcome, landing on the bookmark = that page. On the screen a host-owned **Scope**
-  radio row (This page · Whole notebook — first row, above Format; GONE from the library door and
-  when nothing serves page scope), Soil **hidden** at page scope, `hasDocument` derived from scope,
-  filename `<notebook> - <heading>.<ext>` by the Contents rule else `<notebook> - page N.<ext>`
-  (ASCII hyphen; `ExportNaming.pageStem`). Scope is `export/ExportScope`'s **host-side page-id
-  filter** run ahead of `ExportRender` / `DocumentPdfRender` / `ExportText`'s existing plans —
-  `ExportSpec`, every exporter and the seam untouched, so item 6's image exporter inherits it.
-  Host-only, no point, no API bump, no new row, no code review (the user's call — do not
-  re-raise); version stays `0.1.0-ratta`; 1487 `:app` / 2847 tests. **`docs/notebook.md` (§ Erase
-  page, § Export page, § Undo) + `docs/export.md` (§ Scope) are the reference; read the standalone
-  `PAGE_PLAN.md`, not `RATTA_PLAN.md`, for any work on it.**
-- **Arc 31 "Harvest" is COMPLETE + FROZEN (wizard locked 2026-09-08; HV1–HV2 landed 2026-09-08,
-  HV3–HV6 2026-09-09)** — the export and import extras (`PARITY_BACKLOG.md` item 6, now done).
-  **The references are `docs/export.md` (§ Images, § Presets, § Calendar mode), `docs/calendar.md`
-  (§ Export, § Calendar → notebook), `docs/templates.md` (§ Save as template), `docs/notebook.md`
-  (§ The received page) and `docs/extensions.md` (the delivery tail, the calendar point's render).
-  Read the standalone `HARVEST_PLAN.md`, not `RATTA_PLAN.md`, for any work on it** — six phases,
-  no code review (the user's call — do not re-raise), no ninth point. What landed: **HV1** —
-  `ExtensionContract.API_VERSION` **8 → 9** with `ExporterInfo.delivery` as the third compatible
-  tail (`DELIVERY_ONE_FILE` / `DELIVERY_PER_PAGE`, absent = one file, per-page refused at unmarshal
-  on any source but `SOURCE_PAGES`; `MIN_API_VERSION_FOR_DELIVERY` 9, **no floor moved**), the
-  `:ext-image` module above, and the host's per-page loop (`ExportDelivery` reads the tail only from
-  a service declaring ≥ 9; Whole scope → a folder, SAF tree or cloud, even for a one-page notebook;
-  `BundleSplit` bakes once and splits into v1 one-page parts; `exportPerPage` names each file by
-  heading else `page N`, SHORT deletes that one file and stops, every stop leads with *N of M images
-  were exported*; the cloud-folder confirmation is asked once, always, before any work, with no
-  count). **HV2** — the page sheet's eighth row **Save as template** (`SaveAsTemplateFlow`: drain →
-  the shared `notebook/PageRaster` pulled out of `ExportRender` so a template made from a page is
-  the picture the page exports as → `TemplateImport.overCap` → `NameDialog` seeded by pure
-  `TemplateSeedName` (topmost heading reduced to `NameRules.CHARSET`, else `page N`) →
-  `FolderPickerActivity.PickVerb.SAVE_TEMPLATE` ("Save to…" / "Templates" / "Save here") →
-  `createTemplate(KIND_IMAGE, FIT)`; bytes are flow fields, a rebuilt screen says "Saving was
-  interrupted"; no undo, no `.soil` write). **HV3** — presets: `ObjectType.EXPORT_PRESET` (additive
-  index row, identity hash untouched; kotlinx `ExportPreset` blob = exporter package · values ·
-  documentSource · destination · `cloudPath?`; rename is the only `updatedAt` bump; soft-delete),
-  pure `ExportPresets` (listable = installed AND scope in one question; capture; apply with
-  `cloudFallback`), `ExportPresetRow` (every view and dialog: None · one radio per preset · *Save
-  preset…* · long-press Rename/Delete), a Scope flip is NOT a hand change, **the cloud folder became
-  Export-screen state** (`cloudPath`, a *Folder:* value row, `listThenExport` skips the browser);
-  never the secret, never the scope. **HV4** — `ICalendar.render(store, targets[], w, h, flags,
-  destination)` + `outgoingTarget()` appended after `end()` (`:ext-calendar` declares **9**;
-  `MIN_API_VERSION_FOR_CALENDAR_RENDER` 9 is a **method** floor, `MIN_API_VERSIONS` untouched;
-  `RENDER_GRID/INK/RING/MARKS`, `RENDER_MAX_TARGETS` 8, `CALENDAR_RENDER_TIMEOUT_MS` **30 s**
-  measured — Month ≈ 1.0 s, Day pair ≈ 1.6 s); `:ext-calendar`'s pure `RenderRequest` +
-  `CalendarRender` (the lent store → white RGB_565 → `CalendarTemplate` by flag, `today` nullable →
-  marks → g-paper's `StrokeRasterizer` → WEBP → `PageBundle` v1) drawn at **the screen's bar insets**
-  (`CalendarBars` + the `calendar_bar_rule` dimen — the plan's "insets 0" put the ink one bar low);
-  the calendar bar's **one out-door button** (Send · Export `ic_download` · an `ActionSheetDialog`
-  Send page / Export… — an eleventh 62 dp button fills 726 of the Nomad's 749 dp, a twelfth
-  overflows) exiting `RESULT_CALENDAR_EXPORT` with `EXTRA_CALENDAR_EXPORT_ENABLED` the Intent's
-  fourth boolean (set only when the calendar declares ≥ 9 AND an exporter is installed); host
-  `CalendarClient.render` bind-per-call over the new shared `ExtensionStores.lease`, `export/
-  CalendarRender` the fourth producer (bundle re-read whole before trust), pure `CalendarRenderPlan`
-  (Day = AM then PM, marks AND ring drawn on a file export) + `ExportNaming.calendarStem`,
-  `ExportScope.Calendar` (pages exporters only; a Day as PNG is a folder), `ExportActivity` calendar
-  mode (`EXTRA_CALENDAR_TARGET` host-internal, **no `.soil` opened**, no Scope/Source rows), both
-  doors reopen the calendar via `reopenCalendarAfterExport` on `onResume`. **HV5** — a whole-page
-  Send lands a **NEW page after the displayed one** papered with the view's grid (`RENDER_GRID`
-  only — no ring, no marks, so the `IMG#` token dedupes and one template row is reused), ink 1:1 at
-  the calendar page's size, lasso armed, one undo entry (`Action.PageReceived`, its own kind on
-  `PagePasted`'s arm); `InkScreenActivity.emptyPageSendCarriesPaper` (calendar true — an empty
-  whole-page send parks zero chunks; selection sends and the pad keep "Nothing to send");
-  `HeldInkClient.renderPaper` on the HELD bind with the HELD store binder (never a second lease),
-  `ExtensionScreenEntry.paperOnPageSend` gated on API ≥ 9 + a page size + `outgoingTarget()` non-null
-  (null after a selection send), failures dropped to the ink-only road; pure `CalendarPaper.accept`,
-  `NotebookSession.receivePage` (reuse-before-mint through `resolvePaper` inside the receive's one
-  transaction), the shared `landTransferred` tail. Version stays `0.1.0-ratta`; g-paper 0.1.28;
-  1564 `:app` / **2945** tests. Every phase walked on the Nomad by Sonnet over adb (undo/redo and
-  the lasso-fragment send by the user's hand).
-- **Arc 32 "Resume" is COMPLETE + FROZEN (wizard locked 2026-09-09; RS1–RS3 landed 2026-09-09)** —
-  launch restore (`PARITY_BACKLOG.md` item 7, the LAST item — **the backlog is closed**). **The
-  references are `docs/library.md` § Launch restore and `docs/notebook.md` § Cold-launch restore;
-  read the standalone `RESUME_PLAN.md`, not `RATTA_PLAN.md`, for any work on it** — three phases,
-  host-only, no point, no API bump, no schema change, no code review (the user's call — do not
-  re-raise). What landed: **RS1** — the surface stack: `data/prefs/SurfaceStack.kt` (`Surface {
-  NOTEBOOK, CALENDAR, SCRATCH_PAD, DOCUMENT_EDITOR }`, `SurfaceEntry(token, surface, notebookId?,
-  viaLink)`, the pure `SurfaceStackCodec` — untrusted decode drops an unknown surface or blank
-  token entry-by-entry, `attach` appends-or-refreshes by token, `markTop` drops everything above,
-  `pop` by token, `migrate` reads the pre-arc `lastOpenNotebookId`/`lastOpenViaLink` once as a
-  one-entry stack — and the prefs door in `sn_view_state` key `surfaceStack`, ids and enum names
-  only, **device-local: never backed up, never restored**); `BrowseState` lost the two legacy
-  properties. **Host screens maintain it from lifecycle, extension entries from `open`/`onResult`,
-  never `onDestroy`:** `NotebookActivity` attaches in `onCreate` with a per-instance token saved
-  under `KEY_STACK_TOKEN`, `markTop` first line of `onResume`, `pop` at its four clear sites;
-  `LibraryActivity` `reset()`s in `onResume` (nothing stands above a resumed library) and
-  `snapshotAndClear()`s in `onCreate` on a cold launch (read once, cleared regardless, before
-  `onResume`'s reset); `ExtensionScreenEntry` / `DocumentEditorEntry` push right after
-  `launcher.launch` and pop synchronously at the top of `onResult` and in `close()` (ActivityResult
-  callbacks run BEFORE `onResume`). The calendar → pad latch is **structural**: both hosts'
-  `onCalendarClosed` re-attach `calendar.stackEntry` before `scratchPad.open()` so `CALENDAR` stays
-  beneath `SCRATCH_PAD`. **RS2** — the chain above: pure `library/ReplayPlan.of(stack)` →
-  `Notebook(id, viaLink, above)` · `LibraryLevel(top, calendarBeneath)` · `Nothing`, `legalAbove`
-  (one screen or `CALENDAR, SCRATCH_PAD`, anything else cut to its longest legal prefix) and
-  `decodeAbove`; the library's `replayStack` (the old three gates kept verbatim — alive row · type
-  NOTEBOOK · `.soil` on disk — through `openNotebook`, still the one door) hands the above-list
-  down as the host-internal consume-once `NotebookActivity.EXTRA_RESUME_ABOVE`; `replayAbove()` is
-  the LAST line of `loadCanvas` — after `opened = true` and the overlay is down, so **behind the
-  own-key prompt by construction** (cancel → library, stack cleared) — each arm awaits the entry's
-  own `discovered()` (never `isAvailable`: `refresh()`'s discovery and the replay are two coroutines
-  whose order is a race) and re-checks `standingForReplay()` after every suspension; the pair →
-  `openPadOverCalendar()` shared with `onCalendarClosed`; `[DOCUMENT_EDITOR]` → `documentEntry.
-  open()` only when the landing page has a document row (no seed flow, no recognition); a text
-  document's `openIntoEditor(launch = true)` consumes the whole list (a bare `[DOCUMENT_EDITOR]`
-  silently — never a second launch); `replayLibraryLevel` opens the calendar / pad / pad over the
-  latched calendar the same way. **Missing target → drop that entry and everything above it, keep
-  what is below; every drop one `Slog.d` naming the surface, never an id.** Templates, Backup,
-  Export, Tags, the pickers and the sticky editor are never targets. Version stays `0.1.0-ratta`;
-  1606 `:app` / **2987** tests; walked on the Nomad 8/8 by Sonnet + Fable over adb (own-key by hand
-  if wanted). **Walk trap:** `am force-stop` the HOST FIRST, then the extension processes, in one
-  shell command, then `am start` Bootstrap — an extension killed under a live host hands it a
-  cancelled result that pops the entry, and a walk then reports a drop that never happened.
-- **Arc 33 "Focus" is COMPLETE + FROZEN (wizard locked 2026-09-09; F1–F5 ✅ 2026-09-09)** — a single-finger
-  double-tap on each of the four paper screens (notebook, scratch pad, calendar, sticky editor)
-  hides / shows all of its chrome; while hidden the whole screen is writable paper; the bars are
-  floating overlays over full-bleed paper on every screen (the sticky editor is restructured to
-  match); the calendar's Month / Week / Day grids go full page (insets removed, `CalendarBars`
-  deleted, existing calendar ink shifts one bar height — accepted); one global persisted boolean
-  (`ChromePrefs`, `SnapPrefs`' shape) crosses to the pad and calendar as `EXTRA_CHROME_HIDDEN` on
-  the launch Intent and comes back on the result Intent (a compatible tail, no API bump). Shared
-  pieces in `:sn-screen` (`ChromeBand`, `ChromeToggle`, the `PaperToolbar.rectOf` visibility rule —
-  a GONE view keeps its last size), the host's `ChromePrefs` + pure `DoubleTapToggleRule` (a
-  double-tap whose either tap hit a sticky or a link is that act, never a toggle), `:ext-ink`'s
-  `InkScreenActivity.initChrome()` / `toggleChrome()` inherited by the pad and the calendar, and the
-  calendar's pure `CalendarDoubleTap.decide` (cell → day-open stays; the Notes band toggles; a Day
-  page toggles anywhere). The flip rides frame-silence exception 6, never `whenPenIdle`. No point,
-  no schema change, no code review (the user's call — do not re-raise); 1626 `:app` / 3033 tests.
-  **The references are `docs/notebook.md` § Layout / § Gestures, `docs/calendar.md` § The three
-  pages / § Gestures, `docs/scratchpad.md`, `docs/objects.md` § Sticky notes, `docs/sn-screen.md`
-  and `docs/extensions.md` row 50; read the standalone `FOCUS_PLAN.md`, not `RATTA_PLAN.md`, for
-  any work on it.** Arcs 1–33 are all frozen.
-- **Arc 34 "Prune" is COMPLETE + FROZEN (P1–P4 ✅ 2026-09-09/10)** — the 32 confirmed findings of
-  the 2026-09-09 `/code-review` of arcs 24–33 (1 high, 9 medium, 22 low; four candidates refuted
-  and listed in the plan — do not re-raise) fixed, each with its JVM test where the code is pure.
-  H1: staged stores are verified read-only (`SoilCrypto.openRawReadOnly` /
-  `verifyPassphraseReadOnly`), so a local backup carrying a `<pkg>.db-wal` restores instead of
-  being refused. M1–M9: a `BothKept` rekey outcome recovers the original before any verdict; an
-  already-NEW-keyed file is not re-keyed on Resume; a FOLLOWING edit carries a COUNT series'
-  remaining count and never resurrects later THIS-deletions; a failed multi-batch event write
-  leaves the original byte-identical (`EventWrites` → `EventWrite`); an erased sticky / link is
-  soft-deleted on the spot (`removeWithContent`); a failed Erase / Delete page is a dialog
-  (`PageOpFailure.classify`); a refused extension-screen launch is a dialog, never a crash
-  (`ScreenLaunch.attempt`); per-page PNG export holds ONE `:ext-image` bind
-  (`ExporterClient.hold`); Drive folder ids are cached process-wide (`FolderCache`). L1–L22:
-  reuse / simplification / dead code (`RestoreRows`, `AnchoredBar.button`, `SoilDao.childrenOf`,
-  `SoilFile.rekeyLeftovers`, `SoilRekey.attachLiteral`, `KEY_CHROME_HIDDEN`, …). No point, no API
-  bump, no schema change, no g-paper change, no new module, no code review of the fixes (the
-  user's call); the H1 and M7 hand-walks waived (JVM-pinned; M9a walked PASS over adb); 1653
-  `:app` / 3077 tests. **The references are the `docs/*.md` each fix updated; read the standalone
-  `PRUNE_PLAN.md`, not `RATTA_PLAN.md`, for any work on it — every item's judgment calls are in
-  its ledger.** Arcs 1–34 are all frozen; no next arc without a user decision.
+- **Arcs 26–34 are each COMPLETE + FROZEN.** Each has ONE reference doc and ONE standalone plan
+  file whose ledger holds every phase record and judgment call — **read that plan file, not
+  `RATTA_PLAN.md`, for any work on the arc.** None added a point, bumped `API_VERSION` past 9,
+  changed the `.soil` schema, or had a code review (every waiver was the user's call — **do not
+  re-raise any of them**); the version stays `0.1.0-ratta`. What binds beyond the plan files:
+  - **Arc 26 "Keys"** (U1–U7, 2026-09-05; `docs/encryption.md`; `ENCRYPTION_PLAN.md`) — full
+    encryption, `PARITY_BACKLOG.md` item 1. `SoilRekey` is the only key-changer on disk and
+    `ScopeChange` its only one-notebook caller; every `.soil` open goes `SoilDatabase.resolve` →
+    `open`; `KeySession.get()` is the GLOBAL passphrase only; every raw-key user goes through
+    `KeyMaterial.peekVerified`; a caller that just prompted passes `Passphrases(typed)` into its
+    read (the raw-key warm is ~9 s on the Nomad). **`RawKeyDerivation.deriveKey` stays on the
+    platform PBKDF2 and `KeyOpener.warm` stays serialized — the hand HMAC loop churned ~80 MB of
+    native memory per derive and a burst of cold opens after a rotation OOM-killed the process.**
+    The Nomad's typed passphrase is in the memory file, never in a doc.
+  - **Arc 27 "Restore"** (L1–L6, 2026-09-05/06; `docs/restore.md`; `RESTORE_PLAN.md`) —
+    whole-library restore, item 2; L5 was a failure-injection pass instead of a review. The four
+    binding decisions: both legs (SAF + cloud, no contract change); replace-all by aside-swap with
+    the installed index as the commit marker, no undo; the staged index must open under a key the
+    user can supply BEFORE anything live is touched; **the backup destination is device-local
+    state a restore never rewrites** (the user's own overwritten-folder incident). Refused while a
+    rotation marker stands; walked by hand on the Nomad against a `GlobalRotation`-made foreign
+    backup, never the Manta.
+  - **Arc 28 "Objects"** (H1–H7, 2026-09-06; `docs/objects.md`; `OBJECTS_PLAN.md`) — sticky
+    notes, text objects, six shapes, item 3: three additive row types on the heading pattern (no
+    `SOIL_VERSION` bump), a g-paper transform mode (**0.1.27**), the host `StickyEditorActivity`,
+    PDF endnotes over `PageBundle` v2; no line objects, no shape recognizer, no extension
+    transfers. **Call `armLassoForLanding()` before `setSelection` from any non-lasso context.**
+  - **Arc 29 "Loop"** (LE1–LE4, 2026-09-06/07; `docs/notebook.md`; `LOOP_PLAN.md`) — the lasso
+    eraser, item 4: `Tool.LASSO_ERASER` in g-paper **0.1.28** (the current pin), armed on all four
+    paper surfaces from a second tap on the armed eraser → the Point · Lasso `EraserBar`
+    (`:sn-screen`), **never a fourth bar button** (a twelfth 62 dp button falls off the Nomad's
+    749 dp). The host never repaints from `onLassoErased`. Onyx's side of the engine change is
+    untested.
+  - **Arc 30 "Page"** (PE1–PE3, 2026-09-08; `docs/notebook.md` § Erase page / § Export page /
+    § Undo + `docs/export.md` § Scope; `PAGE_PLAN.md`) — Erase page (one soft-delete transaction,
+    `Action.PageErased` replayed by id) and Export page (close → `ExportActivity` at page scope →
+    reopen; a host-side page-id filter, every exporter and the seam untouched), item 5.
+  - **Arc 31 "Harvest"** (HV1–HV6, 2026-09-08/09; `docs/export.md` § Images / § Presets /
+    § Calendar mode, `docs/calendar.md` § Export / § Calendar → notebook, `docs/templates.md`
+    § Save as template, `docs/notebook.md` § The received page, `docs/extensions.md`;
+    `HARVEST_PLAN.md`) — item 6: `API_VERSION` **8 → 9** as two compatible tails
+    (`ExporterInfo.delivery`, `ICalendar.render` + `outgoingTarget()` — method floors only, **no
+    module floor moved**), the `:ext-image` per-page PNG exporter (the fourteenth module), Save
+    as template, `EXPORT_PRESET` index rows, calendar file export drawn at the screen's bar insets,
+    a papered page on a whole-page Send. The calendar bar's one out-door button is an action
+    sheet — an eleventh 62 dp button fills the Nomad bar, a twelfth overflows.
+  - **Arc 32 "Resume"** (RS1–RS3, 2026-09-09; `docs/library.md` § Launch restore +
+    `docs/notebook.md` § Cold-launch restore; `RESUME_PLAN.md`) — launch restore, item 7, **the
+    last item: `PARITY_BACKLOG.md` is closed.** The surface stack in prefs is device-local (never
+    backed up or restored); host screens maintain it from lifecycle and extension entries from
+    `open` / `onResult`, never `onDestroy`; a missing target drops that entry and everything above
+    it. **Walk trap:** `am force-stop` the HOST FIRST, then the extensions, in one shell command.
+  - **Arc 33 "Focus"** (F1–F5, 2026-09-09; `docs/notebook.md` § Layout / § Gestures,
+    `docs/calendar.md`, `docs/scratchpad.md`, `docs/objects.md` § Sticky notes, `docs/sn-screen.md`,
+    `docs/extensions.md` row 50; `FOCUS_PLAN.md`) — a fresh user decision: a single-finger
+    double-tap hides / shows all chrome on the four paper screens, floating bars over full-bleed
+    paper, full-page calendar grids (`CalendarBars` deleted, old calendar ink one bar higher —
+    accepted), one global flag crossing as the compatible `EXTRA_CHROME_HIDDEN` tail. A GONE view
+    keeps its last size; the flip rides frame-silence exception 6, never `whenPenIdle`.
+  - **Arc 34 "Prune"** (P1–P4, 2026-09-09/10; the `docs/*.md` each fix updated; `PRUNE_PLAN.md`)
+    — a fresh user decision: the 32 confirmed findings of the 2026-09-09 `/code-review` of arcs
+    24–33 fixed with JVM tests where the code is pure; **four candidates refuted and listed in the
+    plan — do not re-raise**; the H1 and M7 hand-walks waived. Final counts: 1653 `:app` /
+    3077 JVM tests. **Arcs 1–34 are all frozen; no next arc without a user decision.**
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by
