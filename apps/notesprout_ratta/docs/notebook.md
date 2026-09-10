@@ -72,7 +72,12 @@ deliberate differences are listed at the end.
 
 `FrameLayout` root → `paperContainer` (the `PaperView`, added in code — `GPaper.create` needs a
 Context) → `topBar` overlay (flush at the top edge — the top guard is 0 on Ratta; 1dp inkBlack
-bottom border) → `bottomStrip` overlay ("`<name>` `n / N`", 1dp top border) → `selectionToolbar`
+bottom border) → `bottomStrip` overlay (1dp top border; **one `@dimen/toolbar_bar_thickness`
+row like every other chrome bar** — the notebook's name at the left, ellipsized inside its
+half, and the pager `[‹] n / N [›]` centred on the SCREEN by an equal-weight spacer, the
+calendar's and the pad's bottom bar exactly; the arrows flip **within** the notebook only —
+the swipe past the last page still grows it, a button never does — and are silent no-ops at
+either bound, never disabled) → `selectionToolbar`
 (floating, `GONE`, placed by margins) → `selectionSubToolbar` (N2 — its own floating `GONE` bar,
 placed by `SelectionAnchor.placeSub` off the main bar when H is tapped) → `tagsPopup` (arc 21 / W2 —
 the `ic_tag` button's own floating `GONE` bar, placed by `AnchoredBar` under `btnTags`) →

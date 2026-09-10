@@ -549,6 +549,22 @@ class NotebookActivity : AppCompatActivity() {
                 hideEraserBar()
             },
         )
+        // The bottom strip's pager (the calendar's and the pad's [‹] [n / N] [›]). It flips only
+        // WITHIN the notebook: the swipe past the last page still grows the notebook, but a button
+        // that made a page on a stray tap would write to the file for a mis-tap. At either bound it
+        // is a silent no-op — the arrows never disable (a disabled control is invisible on e-ink).
+        // The render is released first, pen-gated, exactly as every other chrome tap does it.
+        binding.btnPrevPage.setOnClickListener {
+            releaseRenderIfIdle()
+            runPageOp { if (session.currentIndex > 0) navigateTo(session.currentIndex - 1) }
+        }
+        binding.btnNextPage.setOnClickListener {
+            releaseRenderIfIdle()
+            runPageOp { if (session.currentIndex < session.pages.lastIndex) navigateTo(session.currentIndex + 1) }
+        }
+        listOf(binding.btnPrevPage, binding.btnNextPage).forEach {
+            TooltipCompat.setTooltipText(it, it.contentDescription)
+        }
         lassoPopup = LassoPopup(
             root = binding.root,
             bar = binding.lassoPopup,
@@ -3907,6 +3923,13 @@ class NotebookActivity : AppCompatActivity() {
     private fun setPageIndicator(n: Int, total: Int) {
         val text = getString(R.string.page_indicator, n, total)
         whenPenIdle { binding.pageIndicator.text = text }
+    }
+
+    /** [NotebookToolbar]'s rule for any chrome tap of ours: release the EPD render so the tap's
+     *  visual result shows, but never inside the pen-active window — an ungated release there can
+     *  cost a live stroke. */
+    private fun releaseRenderIfIdle() {
+        if (::paper.isInitialized && !paper.isPenActive) paper.releaseRender()
     }
 
     private fun whenPenIdle(action: () -> Unit) {

@@ -162,34 +162,65 @@
             android:layout_height="1dp"
             android:background="@color/inkBlack"/>
 
+        <!-- One bar-thickness row (@dimen/toolbar_bar_thickness), matching every other chrome bar
+             in the app: the notebook's name on the left, the pager centred on the SCREEN — the
+             calendar's and the pad's [‹] [n / N] [›] — with an equal-weight spacer on the right so
+             the centring survives a long name (which ellipsizes inside its half). -->
         <LinearLayout
+            android:id="@+id/bottomStripRow"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="@dimen/toolbar_bar_thickness"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:paddingTop="6dp"
-            android:paddingBottom="6dp">
+            android:paddingEnd="12dp">
 
             <TextView
                 android:id="@+id/notebookName"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:textSize="13sp"
+                android:paddingEnd="8dp"
+                android:textSize="14sp"
                 android:textColor="@color/inkBlack"
                 android:singleLine="true"
                 android:ellipsize="end"/>
 
-            <TextView
-                android:id="@+id/pageIndicator"
+            <LinearLayout
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textSize="13sp"
-                android:textColor="@color/inkBlack"
-                android:singleLine="true"
-                android:paddingStart="16dp"/>
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnPrevPage"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:src="@drawable/ic_page_prev"
+                    android:contentDescription="@string/cd_prev_page"/>
+
+                <TextView
+                    android:id="@+id/pageIndicator"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:minWidth="56dp"
+                    android:textSize="14sp"
+                    android:textColor="@color/inkBlack"
+                    android:singleLine="true"/>
+
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnNextPage"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:src="@drawable/ic_page_next"
+                    android:contentDescription="@string/cd_next_page"/>
+
+            </LinearLayout>
+
+            <!-- The right half of the row: nothing but the space that keeps the pager centred. -->
+            <View
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1"/>
 
         </LinearLayout>
 
