@@ -7,7 +7,7 @@ the cross-session memory for the arc: read it whole at every phase start, togeth
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `FOCUS_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 🔄 (M1 ✅ + M2 ✅ + M3 ✅ 2026-09-09, all by Fable at the user's call; M4–M9 ⬜) · P3 ⬜ · P4 ⬜.**
+**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 🔄 (M1 ✅ + M2 ✅ + M3 ✅ + M4 ✅ 2026-09-09, all by Fable at the user's call; M5–M9 ⬜) · P3 ⬜ · P4 ⬜.**
 Baseline before the arc: 1626 `:app` / 3033 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump, no schema change, no g-paper change, no new
 module, no new dependency. **The notebook's bottom-strip pager (`NotebookActivity.kt` /
@@ -463,3 +463,15 @@ explanation and an `AskUserQuestion` never share one turn — explain, wait, the
   § og's three recurring scopes (the FOLLOWING bullet), the test table. Gates: 312 `:ext-calendar`
   tests (308 + 4), all green; `:app` + `:ext-calendar` release compile; NUL scan clean. No walk
   (JVM-pinned). Next: M4 (same function — carry the exceptions at/after the split).
+- **2026-09-09 — P2 / M4 ✅ (Fable — again at the user's call).** Failing test first: the
+  `editingThisAndFollowingTruncatesAndStartsAFreshSeries` "no inherited exceptions" assertion
+  flipped to assert the carried `(new, 2026-09-23)` row, plus two new `EventWritesTest` cases
+  (an exception before the split dropped, a re-anchored tail still carrying the later one) — 3
+  red before the fix. `EventWrites.editWithScope(FOLLOWING)` now saves the successor with
+  `original.exceptions.filterTo(HashSet()) { !it.isBefore(occurrence) }`; the KDoc's inverted
+  rationale corrected (the truncated part is the head). A planned "exception dated on the split
+  itself" case was dropped, not pinned: `occurrenceStartCovering` skips exception dates, so no
+  caller can split on one — the inclusive bound is still the right one and costs nothing. Docs:
+  `docs/calendar.md` § og's three recurring scopes (the FOLLOWING bullet), the test table. Gates:
+  314 `:ext-calendar` tests (312 + 2), all green; `:ext-calendar` release compiles; NUL scan
+  clean. No walk (JVM-pinned). Next: M5 (`EventStore` statement order — mutating statements last).

@@ -178,9 +178,31 @@ class EventWritesTest {
         assertEquals("new", text(batch[1].args[columns.indexOf("id")]))
         assertEquals("2026-09-16", text(batch[1].args[columns.indexOf("startDate")]))
         assertEquals(Cell.Integer(1), batch[1].args[columns.indexOf("recurring")])
-        // No inherited exceptions: they belonged to the tail that was just truncated away.
-        assertTrue(batch.none { it.sql.startsWith("INSERT OR IGNORE INTO event_exception") })
+        // The exceptions at or after the split carry over: an occurrence removed with THIS stays removed
+        // (the truncated part is the head, not the tail — the fresh series is the tail).
+        assertEquals(listOf("new" to "2026-09-23"), successorExceptions(batch))
         assertEquals("new", EventWrites.editLandsUnder(Scope.FOLLOWING, series, edited, viewed, "new"))
+    }
+
+    private fun successorExceptions(batch: List<Statement>): List<Pair<String, String>> =
+        batch.filter { it.sql.startsWith("INSERT OR IGNORE INTO event_exception") }.map { text(it.args[0]) to text(it.args[1]) }
+
+    @Test
+    fun aFollowingEditDropsTheExceptionsBeforeTheSplit() {
+        // Sep 9 was removed from the head, Sep 23 from the tail: only the tail's comes along.
+        val twice = series.copy(exceptions = setOf(LocalDate.of(2026, 9, 9), LocalDate.of(2026, 9, 23)))
+        val edited = twice.copy(title = "Standup v2", startDate = viewed, endDate = viewed)
+        val batch = EventWrites.editWithScope(Scope.FOLLOWING, twice, edited, viewed, "new", now)!!
+        assertEquals(listOf("new" to "2026-09-23"), successorExceptions(batch))
+    }
+
+    @Test
+    fun aReanchoredFollowingEditStillCarriesTheLaterExceptions() {
+        // Moving the tail a day later: the carried date no longer lands on an occurrence, so it is
+        // harmless — but it is written, so a rule change back would not resurrect the removal.
+        val edited = series.copy(startDate = viewed.plusDays(1), endDate = viewed.plusDays(1))
+        val batch = EventWrites.editWithScope(Scope.FOLLOWING, series, edited, viewed, "new", now)!!
+        assertEquals(listOf("new" to "2026-09-23"), successorExceptions(batch))
     }
 
     /** Every 7 days from Sep 2, ten times: Sep 2, 9, 16, 23, 30, Oct 7, 14, 21, 28, Nov 4. */

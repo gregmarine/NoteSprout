@@ -69,8 +69,9 @@ object EventWrites {
      *   reminders **and the note**. Changing the date in the editor therefore *moves* just that
      *   occurrence;
      * - **[Scope.FOLLOWING]** — the original ends the day before the occurrence and a fresh series
-     *   starts under [newId] with no inherited exceptions (they belonged to the truncated tail). A
-     *   COUNT rule the editor handed back **unchanged** carries the *remaining* count (the original's
+     *   starts under [newId] carrying the exceptions dated **at or after** the split (the truncated
+     *   part is the head; an occurrence removed with THIS from the tail stays removed — a re-anchored
+     *   tail carries them too, where they simply match nothing). A COUNT rule the editor handed back **unchanged** carries the *remaining* count (the original's
      *   minus the starts ahead of the split, [Recurrence.countBefore]), so "10 times" split at #5 is
      *   4 + 6, not 4 + 10; a rule the person changed is theirs, count included;
      * - **[Scope.ALL]**, a non-recurring original, or a brand-new event — [editSeries], in place.
@@ -96,7 +97,12 @@ object EventWrites {
                 if (!occurrence.isAfter(original.startDate)) editSeries(original, edited, viewedDay, now, noteStatements)
                 else listOf(EventSql.truncateEvent(original.id, occurrence.minusDays(1), now)) +
                     save(
-                        edited.copy(id = newId, recurrence = remainingRule(original, edited, occurrence), exceptions = emptySet(), createdAt = now),
+                        edited.copy(
+                            id = newId,
+                            recurrence = remainingRule(original, edited, occurrence),
+                            exceptions = original.exceptions.filterTo(HashSet()) { !it.isBefore(occurrence) },
+                            createdAt = now,
+                        ),
                         now, noteStatements,
                     )
 
