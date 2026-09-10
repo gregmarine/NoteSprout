@@ -608,6 +608,8 @@ nothing · Week band toggles, hidden Week cell opens its day with no toggle line
 buffer empty. Walk trap: the brief's "row 2 col 3" y ≈ 476 landed on a hairline (nothing, by design);
 a cell centre is `77 + row·200 + 99`.
 
+**User checklist 2026-09-09: both passed by hand on the Nomad** (pre-arc calendar ink one bar higher, eyeballed; a Day page's first row written hidden is covered by the shown bar and the pen refuses under it).
+
 **Consequences to say plainly:** (1) decision 3's shift is now live — pre-arc calendar ink sits one
 bar height above the ruling it was written on; nothing is moved or lost, hidden shows it. (2)
 Decision 2's consequence: a Day page's first and last rows (12:00 AM / 11:30 AM and their PM twins)
