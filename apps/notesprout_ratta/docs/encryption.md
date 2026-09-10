@@ -201,6 +201,10 @@ rest under the cached global (still the old one until commit).
   after a resume), `REKEY` (still under the old), `QUARANTINE` (a notebook under neither key),
   `STOP` (a store or the index under neither — nothing to quarantine, the rotation stops with
   `Failed`).
+- **`beforeRekey(kind, resumed, rawKeyOpens, opensUnderNew, opensUnderOld)`** — the order the
+  two facts of `decide` are read in (arc 34 / M2): a start trusts a raw-key hit as the old key and
+  verifies old-then-new on a miss; a resume verifies the new key before anything else, because a
+  hit may have been warmed under it since the Cancel. See *Per file* below.
 - **`afterThrow` / `afterFailure`** — the sequence once a rekey throws. **A missing original is
   recovered before anything is read** (arc 34 / M1): `RekeyCommit.Outcome.BothKept` leaves
   `X.old.bak` + `X.rekey.tmp` and no `X`, and against a missing file every verify is false, which
@@ -223,9 +227,17 @@ rest under the cached global (still the old one until commit).
   and a rekey always invalidates it) joins the pending list, so nothing is left behind under the
   old key.
 
-**Per file** (`GlobalRotation.rotateFile`): the cached raw key is tried first (a hit means "under
-the old key" for free, since every rekey invalidates it); a KDF verify under the new key answers
-"already done" otherwise. A file under the old key goes through `SoilRekey.rekeyInPlace`. A
+**Per file** (`GlobalRotation.rotateFile`, the order fixed by `RotationPlan.beforeRekey` — arc
+34 / M2): on a **start** the cached raw key is tried first (a hit means "under the old key" for
+free — every rekey invalidates it, and no marker existed before the start, so nothing can have
+been derived under the new passphrase); a KDF verify answers on a miss. On a **resume** the new
+key is verified **first**: the library is reachable between a Cancel and a Resume, and
+`KeyResolver`'s two-candidate open warms the cache under the *new* passphrase for a file already
+re-keyed — a Cancel invalidates no cached key — so a hit there proves only "under one of the two".
+Only once the new key fails does the hit answer "old" for free (one KDF per still-pending file on
+a resume, none on a start; before the fix an already-rotated file was sent back through a rekey
+that could only fail, rescued after one or two wasted KDFs and a warning). A file under the old
+key goes through `SoilRekey.rekeyInPlace`. A
 notebook that opens under **neither** key is **quarantined** — `IndexRepository.quarantine` sets
 `keyScope = NOTEBOOK` (the lock card, U4 on), clears its backup stamps, drops it from pending, and
 the rotation carries on; the count is reported at the end and U6's recovery is the way back. A
@@ -697,7 +709,7 @@ transform steps are proven on the Nomad by the debug tools above).
 | `PassphraseRulesTest` | length, mismatch, same-as-current, trimming |
 | `PassphraseCacheTest` | single-use `takeOnce`, the 60 s TTL, `clear` |
 | `RotationMarkerTest` | JSON encode/decode round-trip, `augmented`, `quarantine`, `without` |
-| `RotationPlanTest` | id ordering (notebooks → stores → index), the `decide` / `afterFailure` / `afterThrow` outcome tables (a missing original is recovered, never judged), `commitSteps`, `resumeCandidates` |
+| `RotationPlanTest` | id ordering (notebooks → stores → index), the `decide` / `afterFailure` / `afterThrow` outcome tables (a missing original is recovered, never judged), `beforeRekey` (a resume verifies the new key before trusting a raw-key hit; a start never pays a KDF for a hit), `commitSteps`, `resumeCandidates` |
 | `BootstrapRouteTest` | the three-way `afterOpen` decision and `carriesThenBackup` |
 | `BackupStoreTest` | both stamp maps, `clearAllStamps` |
 | `RawKeyDerivationTest` | the platform PBKDF2 path agrees byte-for-byte with the hand loop |

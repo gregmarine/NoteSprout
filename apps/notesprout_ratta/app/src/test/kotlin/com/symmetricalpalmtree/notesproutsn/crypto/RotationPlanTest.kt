@@ -66,6 +66,86 @@ class RotationPlanTest {
         assertEquals(Failure.STOP, RotationPlan.afterFailure(Kind.INDEX, opensUnderOld = false))
     }
 
+    // ── beforeRekey — arc 34 / M2: a raw-key hit on a resume is not "under the old key" ──────
+
+    /** A fake of the three facts `beforeRekey` may ask for, recording what it was asked. */
+    private class Before(
+        private val rawKeyOpens: Boolean,
+        private val underNew: Boolean = false,
+        private val underOld: Boolean = false,
+    ) {
+        var askedRaw = 0
+        var askedNew = 0
+        var askedOld = 0
+        fun run(kind: Kind, resumed: Boolean): Step = RotationPlan.beforeRekey(
+            kind,
+            resumed = resumed,
+            rawKeyOpens = { askedRaw++; rawKeyOpens },
+            opensUnderNew = { askedNew++; underNew },
+            opensUnderOld = { askedOld++; underOld },
+        )
+    }
+
+    @Test
+    fun onResumeARawKeyWarmedUnderTheNewKeyAnswersSkipWithoutARekey() {
+        // The verifier's scenario: between a Cancel and the Resume, `KeyResolver`'s two-candidate
+        // open re-keyed nothing but warmed the cache under the NEW passphrase. The hit opens the
+        // file, but it says nothing about which key — the new key is asked first.
+        for (kind in Kind.values()) {
+            val f = Before(rawKeyOpens = true, underNew = true)
+            assertEquals(Step.SKIP, f.run(kind, resumed = true))
+            assertEquals(1, f.askedNew)
+            assertEquals(0, f.askedOld)
+        }
+    }
+
+    @Test
+    fun onResumeARawKeyHitNotUnderTheNewKeyIsTheOldKeyForFree() {
+        for (kind in Kind.values()) {
+            val f = Before(rawKeyOpens = true, underNew = false)
+            assertEquals(Step.REKEY, f.run(kind, resumed = true))
+            assertEquals(1, f.askedNew)
+            assertEquals(0, f.askedOld) // the hit settles it — no second KDF
+        }
+    }
+
+    @Test
+    fun onStartARawKeyHitIsTheOldKeyWithNoKdf() {
+        // No marker existed before `start`, so nothing can have been warmed under the new key:
+        // the cheap answer stands and neither passphrase is verified.
+        for (kind in Kind.values()) {
+            val f = Before(rawKeyOpens = true)
+            assertEquals(Step.REKEY, f.run(kind, resumed = false))
+            assertEquals(0, f.askedNew)
+            assertEquals(0, f.askedOld)
+        }
+    }
+
+    @Test
+    fun aCacheMissVerifiesTheLikelierKeyFirst() {
+        // On a start every file is under the old key: old first, new only when it fails.
+        val start = Before(rawKeyOpens = false, underOld = true)
+        assertEquals(Step.REKEY, start.run(Kind.NOTEBOOK, resumed = false))
+        assertEquals(0, start.askedNew)
+        // On a resume a miss is most often a file whose rekey invalidated the key: new first.
+        val resume = Before(rawKeyOpens = false, underNew = true)
+        assertEquals(Step.SKIP, resume.run(Kind.NOTEBOOK, resumed = true))
+        assertEquals(0, resume.askedOld)
+        val resumeOld = Before(rawKeyOpens = false, underOld = true)
+        assertEquals(Step.REKEY, resumeOld.run(Kind.NOTEBOOK, resumed = true))
+        assertEquals(1, resumeOld.askedNew)
+        assertEquals(1, resumeOld.askedOld)
+    }
+
+    @Test
+    fun beforeRekeyUnderNeitherKeyReadsTheTable() {
+        for (resumed in listOf(false, true)) {
+            assertEquals(Step.QUARANTINE, Before(rawKeyOpens = false).run(Kind.NOTEBOOK, resumed))
+            assertEquals(Step.STOP, Before(rawKeyOpens = false).run(Kind.STORE, resumed))
+            assertEquals(Step.STOP, Before(rawKeyOpens = false).run(Kind.INDEX, resumed))
+        }
+    }
+
     // ── afterThrow — arc 34 / M1: a missing original is recovered first, never judged ─────
 
     /** A fake of the four facts `afterThrow` may ask for, recording what it was asked. */

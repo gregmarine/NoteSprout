@@ -34,9 +34,13 @@ import kotlin.coroutines.coroutineContext
  * while a marker exists, and `SnIndex.ensureReady` trying the marker's new passphrase for an
  * index that no longer opens under the old one and committing itself (it calls [commit]).
  *
- * **Per file** ([RotationPlan.decide]): the cached raw key is tried first — a raw key that still
- * opens the file says "under the old key" for free, since every rekey invalidates it; otherwise
- * one KDF verify under the new key answers "already done" (idempotent after a resume). A file
+ * **Per file** ([RotationPlan.beforeRekey] → [RotationPlan.decide]): on a `start` the cached raw
+ * key is tried first — a raw key that still opens the file says "under the old key" for free,
+ * since every rekey invalidates it and nothing can have been derived under the new passphrase
+ * yet; otherwise one KDF verify answers. On a `resume` the new key is verified **first**: between
+ * a Cancel and the Resume the library is reachable and `KeyResolver`'s two-candidate open warms
+ * the cache under the NEW passphrase for a file already re-keyed (a Cancel invalidates nothing),
+ * so a hit there proves only "under one of the two" (arc 34 / M2). A file
  * under the old key goes through [SoilRekey.rekeyInPlace], the only thing in SN that changes the
  * key a file on disk is under. A notebook under **neither** key is quarantined: `keyScope` set to
  * `NOTEBOOK` (the lock card from U4 on), its backup stamps cleared, dropped from pending, the
@@ -138,7 +142,7 @@ object GlobalRotation {
         )
         PassphraseStore.setRotationMarker(app, marker)
         Slog.d(TAG) { "rotation started: ${notebookIds.size} notebooks, ${stores.size} stores, index" }
-        run(app, marker, onProgress, cancel)
+        run(app, marker, onProgress, cancel, resumed = false)
     }
 
     /** Continue the rotation the marker describes (the banner's Resume). IO. */
@@ -153,7 +157,7 @@ object GlobalRotation {
         // A commit that died between its two renames: put the survivor in place under whichever
         // key it verifies with, before the loop can find an original missing.
         SoilRekey.recoverGarden(app, trustedVerifier(app))
-        run(app, marker, onProgress, cancel)
+        run(app, marker, onProgress, cancel, resumed = true)
     }
 
     private suspend fun run(
@@ -161,6 +165,7 @@ object GlobalRotation {
         initial: RotationMarker,
         onProgress: suspend (Progress) -> Unit,
         cancel: AtomicBoolean,
+        resumed: Boolean,
     ): Result {
         val old = PassphraseStore.getGlobalPassphrase(app)
             ?: return Result.Failed(Reason.NO_CACHED_GLOBAL, initial.pendingIds.size, initial.quarantined.size)
@@ -169,7 +174,9 @@ object GlobalRotation {
         // The library is reachable between a Cancel and a Resume, so the list is re-read: a
         // notebook created or imported since, and any store minted since, were made under the OLD
         // key and must not be left behind. Stores are cheap to re-check (a raw-key verify, or one
-        // KDF each for the handful already done); notebooks join only by RotationPlan's rule.
+        // KDF each for the handful already done); notebooks join only by RotationPlan's rule. A
+        // raw-key hit here may have been warmed under the NEW key since the Cancel (M2) — joining
+        // costs that notebook one verify in the loop, which answers SKIP; nothing is re-keyed.
         val globalIds = repository.globalNotebookIds()
         val rows = repository.aliveNotebooks(globalIds)
         val extra = RotationPlan.resumeCandidates(
@@ -196,16 +203,16 @@ object GlobalRotation {
 
             val outcome = withContext(NonCancellable) {
                 when (kind) {
-                    RotationPlan.Kind.NOTEBOOK -> rotateNotebook(app, id, old, new, repository)
+                    RotationPlan.Kind.NOTEBOOK -> rotateNotebook(app, id, old, new, repository, resumed)
                     RotationPlan.Kind.STORE -> {
                         if (!storesClosed) { ExtensionStores.closeAll(); storesClosed = true }
-                        rotateFile(app, extensionStoreFile(app, RotationPlan.storePackage(id)!!), id, kind, old, new, null)
+                        rotateFile(app, extensionStoreFile(app, RotationPlan.storePackage(id)!!), id, kind, old, new, null, resumed)
                     }
                     RotationPlan.Kind.INDEX -> {
                         // Decision 4, while the index is still open; then the one door that closes it.
                         BackupStore().clearAllStamps()
                         SnIndex.closeForRotation()
-                        rotateFile(app, indexFile(app), id, kind, old, new, null)
+                        rotateFile(app, indexFile(app), id, kind, old, new, null, resumed)
                     }
                 }
             }
@@ -230,14 +237,16 @@ object GlobalRotation {
 
     private enum class FileOutcome { DONE, QUARANTINED, TRANSIENT, STUCK }
 
-    private suspend fun rotateNotebook(app: Context, id: String, old: String, new: String, repository: IndexRepository): FileOutcome {
+    private suspend fun rotateNotebook(
+        app: Context, id: String, old: String, new: String, repository: IndexRepository, resumed: Boolean,
+    ): FileOutcome {
         val file = soilFile(app, id)
         if (!file.exists() || file.length() == 0L) {
             // An alive row with no file: nothing to re-key, nothing this rotation can put right.
             Log.w(TAG, "notebook file missing; skipped")
             return FileOutcome.DONE
         }
-        val outcome = rotateFile(app, file, id, RotationPlan.Kind.NOTEBOOK, old, new, KEY_SCOPE_GLOBAL)
+        val outcome = rotateFile(app, file, id, RotationPlan.Kind.NOTEBOOK, old, new, KEY_SCOPE_GLOBAL, resumed)
         if (outcome == FileOutcome.QUARANTINED) {
             repository.quarantine(id)   // setEncryptionState: scope, cover nulled, both stamps cleared
             Log.w(TAG, "notebook quarantined to NOTEBOOK scope (opens under neither key)")
@@ -245,13 +254,21 @@ object GlobalRotation {
         return outcome
     }
 
-    /** One file through [RotationPlan.decide] / [RotationPlan.afterFailure]. */
+    /** One file through [RotationPlan.beforeRekey] / [RotationPlan.afterThrow]. */
     private suspend fun rotateFile(
         app: Context, file: File, fileId: String, kind: RotationPlan.Kind, old: String, new: String, keyScope: String?,
+        resumed: Boolean,
     ): FileOutcome {
-        val underOld = opensUnderOld(app, file, fileId, old)
-        val underNew = !underOld && SoilCrypto.verifyPassphrase(file, new)
-        return when (RotationPlan.decide(kind, opensUnderNew = underNew, opensUnderOld = underOld)) {
+        val step = RotationPlan.beforeRekey(
+            kind,
+            resumed = resumed,
+            // Stale ones are dropped there — the V4 rule. A hit is "under the old key" only where
+            // beforeRekey asks for it (a start, or a resume once the new key has failed).
+            rawKeyOpens = { KeyMaterial.peekVerified(app, fileId, file) != null },
+            opensUnderNew = { SoilCrypto.verifyPassphrase(file, new) },
+            opensUnderOld = { SoilCrypto.verifyPassphrase(file, old) },
+        )
+        return when (step) {
             RotationPlan.Step.SKIP -> {
                 KeyMaterial.invalidate(app, fileId) // derived against the old salt, if at all
                 FileOutcome.DONE
@@ -285,13 +302,6 @@ object GlobalRotation {
             RotationPlan.Step.QUARANTINE -> FileOutcome.QUARANTINED
             RotationPlan.Step.STOP -> FileOutcome.STUCK
         }
-    }
-
-    /** The cheap answer first: a cached raw key that still opens the file means "under the old key"
-     *  with no KDF (every rekey invalidates it). Only a cache miss pays the verify. */
-    private fun opensUnderOld(app: Context, file: File, fileId: String, old: String): Boolean {
-        if (KeyMaterial.peekVerified(app, fileId, file) != null) return true // stale ones are dropped there — the V4 rule
-        return SoilCrypto.verifyPassphrase(file, old)
     }
 
     /**

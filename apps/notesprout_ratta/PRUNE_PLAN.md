@@ -7,7 +7,7 @@ the cross-session memory for the arc: read it whole at every phase start, togeth
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `FOCUS_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 🔄 (M1 ✅ 2026-09-09, by Fable at the user's call; M2–M9 ⬜) · P3 ⬜ · P4 ⬜.**
+**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 🔄 (M1 ✅ + M2 ✅ 2026-09-09, both by Fable at the user's call; M3–M9 ⬜) · P3 ⬜ · P4 ⬜.**
 Baseline before the arc: 1626 `:app` / 3033 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump, no schema change, no g-paper change, no new
 module, no new dependency. **The notebook's bottom-strip pager (`NotebookActivity.kt` /
@@ -431,4 +431,18 @@ explanation and an `AskUserQuestion` never share one turn — explain, wait, the
   failure table (a new BothKept row), the test table. Gates: 1630 `:app` tests (1626 + 4), all
   green; `:app` release compiles; NUL scan clean. No walk (JVM-pinned; BothKept needs two
   renames to fail on a real filesystem). Next: M2 (same file — `underNew` before `opensUnderOld`).
-
+- **2026-09-09 — P2 / M2 ✅ (Fable — again at the user's call).** Failing test first: five
+  `RotationPlanTest` `beforeRekey` cases (compile-red before the fix). `RotationPlan.beforeRekey(kind,
+  resumed, rawKeyOpens, opensUnderNew, opensUnderOld)` is the pure read order of `decide`'s two
+  facts: on a **start** a raw-key hit is the old key for free (no marker existed before it, so
+  nothing can have been warmed under the new passphrase — the arc-26 cheap path kept whole) and a
+  miss verifies old then new; on a **resume** the new key is verified **first** and only a failed
+  new verify lets the hit answer "old" (a miss goes new then old). The plan's "raw-key verify under
+  the new key's cached raw material" has no real referent — `KeyMaterial` caches one untagged key
+  per file, so the only discriminator is one KDF, paid on resumes only. `GlobalRotation.run`
+  carries `resumed` from `start` / `resume` into `rotateFile`; the private `opensUnderOld` helper
+  is gone. `resumeCandidates` logic untouched (a done notebook opened since the Cancel still
+  re-joins; it now costs one verify → SKIP instead of a failing rekey); its KDoc and the class
+  KDoc corrected — a Cancel invalidates no cached key. Docs: `docs/encryption.md` § The pure half
+  (`beforeRekey` bullet), § Per file, the test table. Gates: 1635 `:app` tests (1630 + 5), all
+  green; `:app` release compiles; NUL scan clean. No walk (JVM-pinned). Next: M3.

@@ -11,7 +11,8 @@ package com.symmetricalpalmtree.notesproutsn.crypto
  *  - [kindOf]: what an id names — the three file kinds have three paths, three cache ids and two
  *    close rituals.
  *  - [decide]: the per-file outcome table over two facts (does the file open under the new key?
- *    under the old?), and [afterFailure]: the same two facts after a rekey threw.
+ *    under the old?); [beforeRekey]: the order those facts are read in, which differs between a
+ *    start and a resume; [afterThrow] / [afterFailure]: the same facts after a rekey threw.
  *  - [commitSteps]: the commit's side-effect list, in order, so the executor cannot reorder it.
  */
 object RotationPlan {
@@ -45,9 +46,10 @@ object RotationPlan {
      * Which `GLOBAL` notebooks a resume must add to the list: not already pending, and either
      * their row is newer than the marker (created / imported between a Cancel and the Resume —
      * under the OLD key, and the commit would strand them) or their cached raw key still opens
-     * the file ([rawKeyOpens] — free to test, and a rekey always invalidates it, so a hit means
-     * "under the old key" whatever the timestamps say). Rows older than the marker with no live
-     * raw key are the ones already re-keyed; they are not re-verified (a KDF each).
+     * the file ([rawKeyOpens] — free to test; a rekey always invalidates it, so a hit means the
+     * file was opened since, under the old key **or** the new one — [beforeRekey] settles which
+     * with one verify, and a file already done answers SKIP). Rows older than the marker with no
+     * live raw key are the ones already re-keyed; they are not re-verified (a KDF each).
      */
     fun resumeCandidates(
         globalNotebooks: List<Pair<String, Long>>, // id → max(createdAt, updatedAt)
@@ -79,6 +81,36 @@ object RotationPlan {
         opensUnderOld -> Step.REKEY
         kind == Kind.NOTEBOOK -> Step.QUARANTINE
         else -> Step.STOP
+    }
+
+    /**
+     * The two facts of [decide], read in the cheapest **safe** order (arc 34 / M2). A cached raw
+     * key that opens the file ([rawKeyOpens], ~35 ms, no KDF) proves only that this device once
+     * derived a key for it under *some* passphrase — and between a Cancel and a Resume,
+     * `KeyResolver`'s two-candidate open warms the cache under the **new** passphrase for a file
+     * already re-keyed. Taken as "under the old key", that hit sent an already-rotated file back
+     * through a rekey that could only fail, rescued after one or two wasted KDFs and a warning.
+     *
+     *  - **[resumed] = false** (a `start`): no marker existed before it, so nothing can have been
+     *    warmed under the new key — a hit is the old key for free, exactly as before; a miss
+     *    verifies old first (every file is under it on a start), then new.
+     *  - **[resumed] = true**: a hit is ambiguous, so the new key is verified **first** (one KDF);
+     *    only when that fails does the hit answer "old" for free. A miss verifies new first too —
+     *    on a resume a miss is most often a file whose own rekey invalidated its key.
+     */
+    fun beforeRekey(
+        kind: Kind,
+        resumed: Boolean,
+        rawKeyOpens: () -> Boolean,
+        opensUnderNew: () -> Boolean,
+        opensUnderOld: () -> Boolean,
+    ): Step {
+        if (!resumed) {
+            val underOld = rawKeyOpens() || opensUnderOld()
+            return decide(kind, opensUnderNew = !underOld && opensUnderNew(), opensUnderOld = underOld)
+        }
+        if (opensUnderNew()) return Step.SKIP
+        return decide(kind, opensUnderNew = false, opensUnderOld = rawKeyOpens() || opensUnderOld())
     }
 
     enum class Failure {
