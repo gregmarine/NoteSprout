@@ -1935,11 +1935,12 @@ collapsing, nothing left being a null prefill rather than an empty one, an over-
 the cap, and a cut never splitting a surrogate pair). The tag screen, the codec and the seam's own
 tests are [`docs/tags.md`](tags.md)'s.
 
-**Arc 23 (calendar), the notebook's own half:** `CalendarTargetsTest` (7) — the four rows in the
+**Arc 23 (calendar), the notebook's own half:** `CalendarTargetsTest` (8) — the four rows in the
 wizard's order, a fixed Wednesday's day/day/week/month targets, a Sunday's week target being that
 day itself, a Saturday's six days back, a month-first day, a year-end day whose week crosses into
-January while the month stays in December, and every row satisfying `CalendarTarget.requireValid`
-(construction is the validation). The screen, the store, the geometry and the seam's own tests are
+January while the month stays in December, every row satisfying `CalendarTarget.requireValid`
+(construction is the validation), and a choice resolving against the day it is asked on rather than
+the day the sheet was built. The screen, the store, the geometry and the seam's own tests are
 [`docs/calendar.md`](calendar.md)'s.
 
 **Arc 23 / Y4 (the host-side client/entry sibling copy), the pure rule the unification also pulled

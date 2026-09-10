@@ -1431,6 +1431,14 @@ total across the modules).
 **Arc 33 "Focus" / F4 grew `:ext-calendar` 295 → 308** — `CalendarDoubleTapTest` (13 new);
 `CalendarGeometryTest` stays at 14, swept to the no-inset signatures. No other module's calendar
 tests changed (the host's `export/CalendarRenderPlan` etc. are untouched by the geometry sweep).
+
+**Arc 34 "Prune" grew `:ext-calendar` 308 → 321** across M3/M4/M5/L8 (L7's `coveredDays` added no
+new case — the existing `RecurrenceTest`/`EventStoreTest` coverage already pinned the day set it
+now computes once): M3 `EventWritesTest` +4 (`Recurrence.countBefore`, the FOLLOWING remaining-count
+rule), M4 +2 (the FOLLOWING split's carried exceptions), M5 +6 (`EventStoreTest` ×4 — a THIS/
+FOLLOWING/existing-event save failing part-way leaves the original byte-identical — and
+`EventWritesTest` ×2 for `EventWrite.batches`/`NoteWrite.inPlace`), L8 +1
+(`EventStoreTest.dayAndUpcomingReadTheRecurringSetOnce`).
 **3033 tests total across the modules** after F4, version stays `0.1.0-ratta`.
 
 ## Traps

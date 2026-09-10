@@ -207,6 +207,16 @@ skill (`.claude/skills/device-build-install/SKILL.md`) — invoked automatically
   `docs/extensions.md` row 50; read the standalone `apps/notesprout_ratta/FOCUS_PLAN.md` (not
   `RATTA_PLAN.md`) for any work on it — no code review, 1626 `:app` / 3033 tests. **Arcs 1–33 are
   all complete and frozen.**
+  **Arc 34 "Prune" is COMPLETE + FROZEN (P1–P4 landed 2026-09-09/10; a fresh user decision)**:
+  the 32 confirmed findings of the 2026-09-09 `/code-review` of arcs 24–33 (1 high, 9 medium,
+  22 low) fixed with JVM tests where the code is pure — the restore `-wal` refusal, rotation
+  quarantine / needless rekey, FOLLOWING event edits, the mutilating multi-batch event write, the
+  Back-skippable sticky erase, silent page-op failures, the crashing refused extension launch, the
+  per-page `:ext-image` rebind and the Drive round-trips, plus twenty-two reuse / dead-code lows;
+  four candidates refuted and listed — do not re-raise. No point, no API bump, no schema change,
+  no code review of the fixes; 1653 `:app` / 3077 tests. Read the standalone
+  `apps/notesprout_ratta/PRUNE_PLAN.md` (not `RATTA_PLAN.md`) for any work on it. **Arcs 1–34 are
+  all complete and frozen.**
   **No NINTH extension point
   and no other arc without another user decision. Read `apps/notesprout_ratta/RATTA_PLAN.md`
   first for ANY other work there** — it holds the working protocol, model recipe, standing

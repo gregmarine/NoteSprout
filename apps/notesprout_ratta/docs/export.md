@@ -429,14 +429,21 @@ deferred). `ExportRender.render(..., bundleVersion)` plans the endnotes **before
 is drawn, since the `PageBundle.Writer` declares its page count and its whole link trailer up
 front; it then walks the notebook's pages as before, recycling the template bitmap, and finally
 bakes each note — its strokes clipped to the content area (local coordinates, `(0,0)` at the
-content's own top-left), a 1 px rule under it, `Endnotes.caption(number, fromPage)` ("Note N — from
-page P", og's wording verbatim, the notebook never named) in 32 px sans at a 16 px inset, encoded
-WEBP q100 exactly like a page, one bitmap alive at a time. Progress counts the notes as well as the
-pages. `DocumentPdfRender` is untouched — a document export never carries links, so it is always a
-version-1 bundle by construction.
+content's own top-left), a 1 px rule under it, `Endnotes.caption(number, fromPageLabel)` ("Note N —
+from page P", og's wording verbatim, the notebook never named) in 32 px sans at a 16 px inset,
+encoded WEBP q100 exactly like a page, one bitmap alive at a time. **`fromPage` and `fromPageLabel`
+answer different questions (arc 34 / L15):** `fromPage` stays bundle-relative (1-based within the
+exported pages) because that is what the link annotation must address; `fromPageLabel` is the
+**notebook-relative** page number, so a page-scope export whose bundle holds only the exported
+pages still captions "from page 7" rather than "from page 1" when page 7 is the only page in the
+bundle. `ExportScope.pagesInScope` answers a `ScopedPage(row, number)` carrying that
+notebook-relative number, and `ExportRender.PageBake` carries it through to the bake. Progress
+counts the notes as well as the pages. `DocumentPdfRender` is untouched — a document export never
+carries links, so it is always a version-1 bundle by construction.
 
 Failure-table and traps additions, below, are this phase's; tests: `PageBundleTest` (11, in
-`extension-api`), `PdfLinksTest` (`:ext-pdf`), `EndnotesTest` (8), `ExportRenderEndnotesTest` (2,
+`extension-api`), `PdfLinksTest` (`:ext-pdf`), `EndnotesTest` (9 — arc 34 / L15 added the
+notebook-relative-caption-vs-bundle-relative-link case), `ExportRenderEndnotesTest` (2,
 over the fake DAO — order, skip-empty, wrapped, size fallback), `ExportDocumentRulesTest` (+1).
 
 ---
@@ -724,8 +731,8 @@ when the page has a heading by the Contents / link-picker rule (`PageLabels.titl
 and capped at 80 characters (`MAX_TITLE_CHARS`); else `<notebook> - page N.<ext>` with the page's
 1-based position; a page that cannot be placed names the notebook alone (a filename must never say
 "page 0"). A plain ASCII hyphen throughout, because the sanitize strips every other dash. At Whole
-the name is the notebook's, suffix-free, as before. Pure, tested (`ExportScopeTest` 8,
-`ExportNamingTest` +6).
+the name is the notebook's, suffix-free, as before. Pure, tested (`ExportScopeTest` 12 — arc 34 /
+L15 added the notebook-relative `ScopedPage.number` assertions, `ExportNamingTest` +6).
 
 **What did not change.** `ExportVerification` (bytes are bytes), every exporter, `ExportSpec`, the
 seam, the keying flow, the cloud leg. The library door: no Scope row, Soil listed, whole notebook.

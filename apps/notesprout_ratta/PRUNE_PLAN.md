@@ -7,7 +7,7 @@ the cross-session memory for the arc: read it whole at every phase start, togeth
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `FOCUS_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 ✅ (M1–M9 landed 2026-09-09, all by Fable at the user's call — 3069 JVM tests, 1646 in `:app`) · P3 ✅ (L1–L22 landed 2026-09-10, all by **Opus** at the user's call — the plan said Sonnet; 3077 JVM tests, 1653 in `:app`) · P4 ⬜.**
+**Status: ✅ ARC COMPLETE + FROZEN 2026-09-10 — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 ✅ (M1–M9 landed 2026-09-09, all by Fable at the user's call — 3069 JVM tests, 1646 in `:app`) · P3 ✅ (L1–L22 landed 2026-09-10, all by **Opus** at the user's call — the plan said Sonnet; 3077 JVM tests, 1653 in `:app`) · P4 ✅ (2026-09-10, docs sweep + freeze; M7 walk WAIVED).** No code review of the fixes, no point, no API bump, no schema change. **Arcs 1–34 are all complete and frozen; the next arc, if any, is a fresh user decision.**
 Baseline before the arc: 1626 `:app` / 3033 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump, no schema change, no g-paper change, no new
 module, no new dependency. **The notebook's bottom-strip pager (`NotebookActivity.kt` /
@@ -31,7 +31,7 @@ weight to the model that fits:
 | **P1** | **Fable** | The one high — a restore data-path defect | H1 |
 | **P2** | **Opus** | The nine mediums — correctness in rotation, events, notebook, extension launch; two efficiency items | M1–M9 |
 | **P3** | ~~Sonnet~~ **Opus** (the user's call, 2026-09-10) | The twenty-two lows — reuse, simplification, dead code, conventions, small efficiency, two doc mismatches | L1–L22 |
-| **P4** | **Sonnet** (docs) + **Fable** (freeze) | Docs, ledger, memory, freeze | — |
+| **P4** ✅ | **Sonnet** (docs) + **Fable** (freeze) | Docs, ledger, memory, freeze | — |
 
 Every fix carries its JVM test where the code is pure; the three findings that need a device
 walk (H1, M5, M7) get a short numbered checklist for the user's hand. **No `/code-review` of the
@@ -670,3 +670,36 @@ explanation and an `AskUserQuestion` never share one turn — explain, wait, the
   - **I / L22** — `CloudBrowserDialog.Pick.File.path` deleted with its construction.
 
   Next: P4 (docs sweep + freeze).
+
+- **2026-09-10 — P4 ✅ (Sonnet docs sweep · Fable read-back, ledger, CLAUDE.md, memory, gates,
+  freeze; no code).** **Phase-start question:** walk M7 (fill the Nomad's disk, Erase page, the
+  *Couldn't change the page* dialog) — **WAIVED** by the user (`PageOpFailureTest` pins the
+  classifier; the dialog is `InkScreenActivity`'s existing shape). Both hand-walks of the arc are
+  therefore waived (H1 at P1, M7 here); M9a's per-page PNG pin PASSED in Sonnet's 2026-09-10 adb
+  walk (one `hold` / `unbind (held)` pair for seven pages). **Do not re-raise any of the three.**
+  **Docs (Sonnet, one agent over all eighteen `docs/*.md`, Fable read-back):** most fixes had
+  already moved their sentence in P2/P3; the sweep found eight docs behind. `docs/restore.md` —
+  L9's rename in three places (`RestoreRows`, `RestoreRowsTest` 10 → 12, `rowFor` serving both
+  legs) + L10's `stage(...)` unification and its two stricter behaviours. `docs/encryption.md` —
+  L17's `oldRawKey` parameter / `attachLiteral` / `absorbWal` raw-key path, L18's
+  `SoilFile.rekeyLeftovers` (one read-back fix by Fable: the sweep had attributed `attachLiteral`
+  to `RawKeyDerivation`; it is `SoilRekey`'s, choosing between `rawKeyLiteral` and
+  `ExportKeying.sqlLiteral`). `docs/export.md` — L15's `fromPage` (bundle-relative, the link) vs.
+  `fromPageLabel` (notebook-relative, the caption) + `ScopedPage`, `EndnotesTest` 8 → 9,
+  `ExportScopeTest` 8 → 12. `docs/cloud.md` — L22's `Pick.File(entry)`. `docs/calendar.md` — the
+  arc's 308 → 321 growth itemized (M3 +4, M4 +2, M5 +6, L8 +1; L7 added no case) and a stale
+  pre-arc `CalendarTargetsTest` 7 → 8 (mirrored in `docs/notebook.md`). `docs/scratchpad.md` —
+  L19's `KEY_CHROME_HIDDEN` preference over the launch extra. `docs/links.md` — L16's one query
+  per level. `docs/extensions.md` row 51 verified word-for-word against `ScreenLaunch.kt`. Ten docs
+  needed nothing. Both `CLAUDE.md`, `RATTA_PLAN.md` header, this file's status, memory.
+  **Gates (Fable):** full JVM run **3077** (`:app` 1653 · `:ext-calendar` 321 · `:ext-cloud` 147 ·
+  `:ext-document` 230 · `:extension-api` 232 · `:markdown` 186 · `:sn-screen` 81 · `:ext-tags` 56 ·
+  `:ext-scratchpad` 54 · `:ext-ink` 52 · `:ext-mlkit` 29 · `:ext-pdf` 16 · `:ext-image` 15 ·
+  `:ext-soil` 5; 0 failures, 0 errors), all fourteen modules debug + release (20 APKs — ten
+  application modules, the four libraries build no APK), three release APKs (`app`,
+  `ext-calendar`, `ext-cloud`) signed with the debug keystore and `apksigner verify`d, NUL scan of
+  every file the arc touched (84 code / resource / doc files + the eight swept docs) clean.
+  **Final numbers:** 1653 `:app` / 3077 JVM tests across the modules (from 1626 / 3033), API 9,
+  fourteen modules, g-paper 0.1.28, version `0.1.0-ratta`. No point, no API bump, no schema change,
+  no g-paper change, no new module, no new dependency, no code review of the fixes. **Arc 34 is
+  complete and frozen; arcs 1–34 are all frozen. The next arc, if any, is a fresh user decision.**

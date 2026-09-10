@@ -132,12 +132,21 @@ one recipe for a `.soil`, a `Garden/<pkg>.db` extension store, and the index ali
 the library sheet's `ScopeChange` doors, and `NotebookRecovery`'s repair all call
 `SoilRekey.rekeyInPlace`; nothing else re-keys.
 
-**`rekeyInPlace(context, file, fileId, oldPassphrase, newPassphrase, keyScope)`:**
+**`rekeyInPlace(context, file, fileId, oldPassphrase, newPassphrase, keyScope, oldRawKey: ByteArray?
+= null)`:** the `oldRawKey` parameter (arc 34 / L17) lets a caller that already verified the raw
+key hand it straight to `absorbWal` instead of paying a second source-side KDF — `GlobalRotation.
+rotateFile` passes the raw key its own `rawKeyOpens` probe already verified
+(`peekVerified(...)?.also { oldRawKey = it }`), which is safe exactly because `beforeRekey` reads a
+verified hit **as** the old key at the one place that asks for it.
 
 1. **The file must be cold.** No connection in this process (`SoilOpenFiles.isOpen` for a `.soil`;
    the caller runs `ExtensionStores.closeAll()` for a store or `SnIndex.closeForRotation()` for the
-   index before calling in). Its WAL is absorbed by `absorbWal`: a raw open under the *current* key,
-   `PRAGMA wal_checkpoint(TRUNCATE)`, close, then `SoilCompactor.sweepSidecars`. A non-empty `-wal`
+   index before calling in). Its WAL is absorbed by `absorbWal`: a raw open — under `oldRawKey` via
+   `SoilCrypto.openRawKey` when one was handed in (no KDF), else the ordinary passphrase-derived
+   open — with the ATTACH key literal chosen by the pure `SoilRekey.attachLiteral(passphrase,
+   rawKey)` (`RawKeyDerivation.rawKeyLiteral` for a raw key, `ExportKeying.sqlLiteral` otherwise;
+   `SoilRekeyKeysTest`, 3 cases) — `PRAGMA
+   wal_checkpoint(TRUNCATE)`, close, then `SoilCompactor.sweepSidecars`. A non-empty `-wal`
    left after that throws — it is never deleted, and the rekey stops before writing anything.
 2. `ExportKeying.exportAndKeyToPrimary` exports the file into a sibling `<name>.rekey.tmp` under the
    new key — og's proven orientation, the destination as the primary connection, the source
@@ -159,9 +168,12 @@ the library sheet's `ScopeChange` doors, and `NotebookRecovery`'s repair all cal
 this whole recipe is export-and-key instead.
 
 **Recovery of an interrupted commit** — `SoilRekey.recoverGarden(context, verifies)`, run by
-Bootstrap once the index is open and by rotation's `resume` before its loop. It walks every
-`*.rekey.tmp` / `*.old.bak` name in `Garden/` (`RekeyNames.leftoverOriginals`) and calls
-`RekeyRecovery.recover` for each original. `RekeyRecovery.decide` is the pure table:
+Bootstrap once the index is open and by rotation's `resume` before its loop. **Since arc 34 / L18
+the `Garden/` walk itself lives in `data/SoilFile.rekeyLeftovers(context)`** — the one path
+authority's answer to "what is in this directory", not a second one grown inside `SoilRekey` — and
+`recoverGarden` calls it to find every `*.rekey.tmp` / `*.old.bak` name (`RekeyNames.
+leftoverOriginals` stays the pure naming rule) and calls `RekeyRecovery.recover` for each original.
+`RekeyRecovery.decide` is the pure table:
 
 | original | tmp | bak | plan |
 |---|---|---|---|

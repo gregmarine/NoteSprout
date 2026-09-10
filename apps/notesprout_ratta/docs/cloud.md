@@ -391,10 +391,11 @@ paginated list in the app gets.
 - **Modes.** `Mode.PICK_FOLDER` (V3): folders enter on tap, a file row is drawn and **inert**
   (information, not an offer), the action is **Save here** answering `Pick.Folder(path, listing)`
   — the listing travels with the answer so the caller's replace question costs no second `list`.
-  `Mode.PICK_FILE` (V5): every file row **is** the answer (`Pick.File(entry, path)`), the action
-  button and the *New folder…* row are both `View.GONE`, and **nothing is filtered by extension** —
-  which importer can read a tapped file is decided afterwards, by name, the family's rule that the
-  browser never hides the file the person came for.
+  `Mode.PICK_FILE` (V5): every file row **is** the answer (`Pick.File(entry)` — its `path`
+  construction parameter was dead and deleted at arc 34 / L22; the entry alone names it well enough
+  for every caller), the action button and the *New folder…* row are both `View.GONE`, and
+  **nothing is filtered by extension** — which importer can read a tapped file is decided
+  afterwards, by name, the family's rule that the browser never hides the file the person came for.
 - **Crumb** — `<provider> › Exports › …`, always headed by the provider's own name (the string
   resource's separator is quoted `" › "` in XML — an unquoted `›` was AAPT-trimmed away and caught
   on the V5 walk).

@@ -498,7 +498,27 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   **The references are `docs/notebook.md` § Layout / § Gestures, `docs/calendar.md` § The three
   pages / § Gestures, `docs/scratchpad.md`, `docs/objects.md` § Sticky notes, `docs/sn-screen.md`
   and `docs/extensions.md` row 50; read the standalone `FOCUS_PLAN.md`, not `RATTA_PLAN.md`, for
-  any work on it.** Arcs 1–33 are all frozen; no next arc without a user decision.
+  any work on it.** Arcs 1–33 are all frozen.
+- **Arc 34 "Prune" is COMPLETE + FROZEN (P1–P4 ✅ 2026-09-09/10)** — the 32 confirmed findings of
+  the 2026-09-09 `/code-review` of arcs 24–33 (1 high, 9 medium, 22 low; four candidates refuted
+  and listed in the plan — do not re-raise) fixed, each with its JVM test where the code is pure.
+  H1: staged stores are verified read-only (`SoilCrypto.openRawReadOnly` /
+  `verifyPassphraseReadOnly`), so a local backup carrying a `<pkg>.db-wal` restores instead of
+  being refused. M1–M9: a `BothKept` rekey outcome recovers the original before any verdict; an
+  already-NEW-keyed file is not re-keyed on Resume; a FOLLOWING edit carries a COUNT series'
+  remaining count and never resurrects later THIS-deletions; a failed multi-batch event write
+  leaves the original byte-identical (`EventWrites` → `EventWrite`); an erased sticky / link is
+  soft-deleted on the spot (`removeWithContent`); a failed Erase / Delete page is a dialog
+  (`PageOpFailure.classify`); a refused extension-screen launch is a dialog, never a crash
+  (`ScreenLaunch.attempt`); per-page PNG export holds ONE `:ext-image` bind
+  (`ExporterClient.hold`); Drive folder ids are cached process-wide (`FolderCache`). L1–L22:
+  reuse / simplification / dead code (`RestoreRows`, `AnchoredBar.button`, `SoilDao.childrenOf`,
+  `SoilFile.rekeyLeftovers`, `SoilRekey.attachLiteral`, `KEY_CHROME_HIDDEN`, …). No point, no API
+  bump, no schema change, no g-paper change, no new module, no code review of the fixes (the
+  user's call); the H1 and M7 hand-walks waived (JVM-pinned; M9a walked PASS over adb); 1653
+  `:app` / 3077 tests. **The references are the `docs/*.md` each fix updated; read the standalone
+  `PRUNE_PLAN.md`, not `RATTA_PLAN.md`, for any work on it — every item's judgment calls are in
+  its ledger.** Arcs 1–34 are all frozen; no next arc without a user decision.
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by

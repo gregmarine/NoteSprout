@@ -117,9 +117,14 @@ leftover is invisible to the library. Layout mirrors the live one: `restore_stag
 
 Wiped and recreated at the top of every attempt. Every file streams to a `.part` name and renames
 on completion (`writeStaged` checks both the streamed count and the landed length; the cloud twin
-`writeStagedVia` takes a `ParcelFileDescriptor` lambda). `targetFor` refuses a path that
-canonicalises out of staging. **Any single failed file aborts the whole fetch** — a silently short
-set would commit as the entire library. The live library is untouched by anything here.
+`writeStagedVia` takes a `ParcelFileDescriptor` lambda). **Since arc 34 / L10 both are one line over
+a private inline `stage(...)`** (a non-`crossinline` `fill` lambda, which is what lets the
+suspending cloud writer pass one that suspends) — unifying two behaviours upward: `writeStaged` now
+rethrows a `CancellationException` rather than swallowing it, and refuses a negative streamed count,
+same as `writeStagedVia` always did; no real caller can hit either (`input.copyTo(out)` throws
+neither). `targetFor` refuses a path that canonicalises out of staging. **Any single failed file
+aborts the whole fetch** — a silently short set would commit as the entire library. The live library
+is untouched by anything here.
 
 **Free space is gated before the first byte** (R1): both listings carry sizes for free
 (`CloudEntry.sizeBytes`, the SAF listing's `COLUMN_SIZE`), so `preflight` refuses when
@@ -290,7 +295,7 @@ indexModifiedAt, totalBytes, handle}`; the handle is source-private, never shown
   name, subfolders by name; the screen shows the folder by its document-id path, never the URI.
   Fetch re-lists and re-plans at fetch time.
 - **`CloudRestoreSource`** over `CloudClient.list` / `.download` only. `list(["Backups"])` → device
-  folders (folders only, pure `CloudRestoreRules.deviceFolders`) → one `list` per folder →
+  folders (folders only, pure `RestoreRows.deviceFolders`) → one `list` per folder →
   `RestoreManifest.plan(…, CLOUD)`. **The handle is the folder NAME** — fetch re-lists
   `Backups/<name>` by path; an entry id would go stale on a re-created folder and buy nothing.
   Downloads land in a `.part` through a `ParcelFileDescriptor` the client owns and closes, under
@@ -394,7 +399,7 @@ call, both disk-full shapes (at the gate at 39 MB free; mid-download with 91 MB 
 taken at file 9), the three-miss lockout, the foreign-key restore, a store under neither key, the
 destination trap on both legs and a `NOTEBOOK`-scope notebook were all walked on the Nomad — the
 full logs are in `RESTORE_PLAN.md` § Ledger L3–L5. **Not walked:** a stale `-wal` planted in a
-cloud device folder — the user closed L5 without it; the rule is pinned by `CloudRestoreRulesTest`
+cloud device folder — the user closed L5 without it; the rule is pinned by `RestoreRowsTest`
 and `RestoreManifestTest`, and the L4 walk fetched 55 mains and 0 sidecars. Do not re-raise.
 
 ---
@@ -496,6 +501,6 @@ proven on the Nomad by the walks and the fault seam).
 | `RestoreRecoveryTest` (14) | every state the five renames can leave, plus four invariants over all 48 states incl. idempotency through a file-system model |
 | `RestoreDestinationTest` (8) | the merge table — this device's fields kept, the backup's discarded, stamps and last-run figures cleared, idempotency |
 | `RestoreEngineTest` (36) | both free-space gates, the validation rule by kind over a real temp staging dir, the orphan rule, the recovery executor over real files (the squatter and sidecar fixes), the fetch-failure rule, staged bytes |
-| `CloudRestoreRulesTest` (10) | `deviceFolders` (folders only, by name), the not-found-vs-failed rule |
+| `RestoreRowsTest` (12) | `deviceFolders` (folders only, by name), the not-found-vs-failed rule, `rowFor` serving both legs |
 | `CloudTimeoutsTest` (+6) | `downloadBudgetMs` — flat to 20 MiB, then per-slice |
 | `AttemptLimiterTest`, `BootstrapRouteTest` | pre-existing — the `RESTORE` bucket rides the same schedule; `afterOpen` unchanged by this arc |

@@ -90,7 +90,11 @@ and **a single-finger double-tap hides / shows both of them at once.** `InkScree
 initChrome()` builds the one `ChromeToggle` (`:sn-screen`) over `listOfNotNull(topBarView,
 bottomBarView)` — `beforeHide = hideEraserBar`, `afterLayout = pushExclusions` — from
 `ExtensionContract.EXTRA_CHROME_HIDDEN` on the launch Intent (absent = shown), before the first
-layout; `toggleChrome()` (guarded `opened && !closing`) is the pad's `onFingerDoubleTap`. The band
+layout. **Since arc 34 / L19** `initChrome(savedInstanceState)` prefers a parked
+`KEY_CHROME_HIDDEN` over the launch extra when one is there — `onSaveInstanceState` parks
+`chromeToggle.hidden` under that key, so an Activity rebuilt mid-showing (a config change, a
+process-death recreation) picks up the person's own flip since launch rather than replaying the
+Intent's stale flag. `toggleChrome()` (guarded `opened && !closing`) is the pad's `onFingerDoubleTap`. The band
 between the bars is pure `ChromeBand.of(root.height, top.asBar(bottom), bottom.asBar(top))` — a
 hidden bar contributes the root edge, and (trap 2) a **shown** bar that is not yet laid out
 withholds the band entirely, so a floating bar refuses to show until it can be placed correctly.
