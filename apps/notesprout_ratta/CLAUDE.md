@@ -471,7 +471,7 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   if wanted). **Walk trap:** `am force-stop` the HOST FIRST, then the extension processes, in one
   shell command, then `am start` Bootstrap — an extension killed under a live host hands it a
   cancelled result that pops the entry, and a walk then reports a drop that never happened.
-- **Arc 33 "Focus" is IN PROGRESS (wizard locked 2026-09-09; F1–F2 ✅ 2026-09-09, F3–F5 ⬜)** — a single-finger
+- **Arc 33 "Focus" is IN PROGRESS (wizard locked 2026-09-09; F1–F3 ✅ 2026-09-09, F4–F5 ⬜)** — a single-finger
   double-tap on each of the four paper screens (notebook, scratch pad, calendar, sticky editor)
   hides / shows all of its chrome; while hidden the whole screen is writable paper; the bars are
   floating overlays over full-bleed paper on every screen (the sticky editor is restructured to

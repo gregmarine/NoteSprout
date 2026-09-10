@@ -1,6 +1,7 @@
 package com.symmetricalpalmtree.notesproutsn.ink
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Rect
 import android.util.Log
 import android.view.MotionEvent
@@ -16,8 +17,11 @@ import com.symmetricalpalmtree.gpaper.core.model.SelectionMove
 import com.symmetricalpalmtree.gpaper.core.model.Stroke
 import com.symmetricalpalmtree.notesproutsn.core.Dialogs
 import com.symmetricalpalmtree.notesproutsn.core.Slog
+import com.symmetricalpalmtree.notesproutsn.extension.ExtensionContract
 import com.symmetricalpalmtree.notesproutsn.extension.InkChunks
 import com.symmetricalpalmtree.notesproutsn.extension.WireStroke
+import com.symmetricalpalmtree.notesproutsn.notebook.ChromeBand
+import com.symmetricalpalmtree.notesproutsn.notebook.ChromeToggle
 import com.symmetricalpalmtree.notesproutsn.notebook.EraserBar
 import com.symmetricalpalmtree.notesproutsn.notebook.InkSelectionBar
 import com.symmetricalpalmtree.notesproutsn.notebook.PageGestures
@@ -25,6 +29,7 @@ import com.symmetricalpalmtree.notesproutsn.notebook.PaperChrome
 import com.symmetricalpalmtree.notesproutsn.notebook.PaperToolbar
 import com.symmetricalpalmtree.notesproutsn.notebook.PenIdle
 import com.symmetricalpalmtree.notesproutsn.notebook.UndoRedoStack
+import com.symmetricalpalmtree.notesproutsn.notebook.asBar
 import com.symmetricalpalmtree.notesproutsn.screen.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -71,6 +76,12 @@ import kotlinx.coroutines.withContext
  *   page swap, an exit, any contact outside the bar and the eraser button) lives here once, with
  *   [floatingRects] / [floatingContains] feeding the subclass's [PaperChrome]. A lasso erase on
  *   either screen is ink only and records an [InkAction.Erased] — no new kind (the plan's D5).
+ * - **the chrome toggle** (arc 33 / F3): `:sn-screen`'s [ChromeToggle] over both bars, built and
+ *   applied by [initChrome] from the host's [ExtensionContract.EXTRA_CHROME_HIDDEN] launch extra,
+ *   flipped by [toggleChrome], and echoed on **every** result Intent by [finishWithHandoff] — the
+ *   first datum this seam's result has ever carried, and the only one. The extension persists
+ *   nothing: the host writes the flag it is handed back. [chromeBand] is [ChromeBand]'s answer, so
+ *   the floating bars keep working over bare paper while the chrome is hidden.
  *
  * **`HostCallerCheck.enforceActivity` stays the first statement of the concrete `onCreate`**, before
  * anything is inflated, and the subclass assigns [paper], [chrome], [gestures], [selectionBar] and
@@ -109,6 +120,11 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
     /** The eraser button's sub-bar (arc 29 / LE3) — Point · Lasso. Assigned in `onCreate` after
      *  the toolbar, because a pick lands on the toolbar's `arm`. */
     protected lateinit var eraserBar: EraserBar
+
+    /** Both bars' hide / show (arc 33 / F3). Built by [initChrome], which the subclass calls in
+     *  `onCreate` once [paper], [eraserBar] and the bar views exist and right after its root
+     *  layout-change listener — the notebook's place for it. */
+    protected lateinit var chromeToggle: ChromeToggle
 
     /** In-memory, screen-level history: it survives page turns and dies with the screen. */
     protected val undo = UndoRedoStack<A>()
@@ -533,12 +549,52 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
         hideEraserBar()
     }
 
-    /** The free band between the two bars, in root coordinates. Null until both are laid out. */
+    /**
+     * The free band between the two bars, in root coordinates — [ChromeBand]'s rule (arc 33): a
+     * hidden bar contributes the root's edge, so a floating bar can still be placed while the
+     * chrome is hidden; a shown bar not yet laid out withholds the band. Null before the root has
+     * a height.
+     */
     protected fun chromeBand(): IntRange? {
-        val top = topBarView ?: return null
-        val bottom = bottomBarView ?: return null
-        if (top.height == 0 || bottom.height == 0) return null
-        return top.bottom..bottom.top
+        val root = screenRoot ?: return null
+        // The edge facing the paper, read here: a `GONE` bar still reports its last laid-out edges.
+        return ChromeBand.of(
+            rootHeight = root.height,
+            top = topBarView?.let { it.asBar(edge = it.bottom) },
+            bottom = bottomBarView?.let { it.asBar(edge = it.top) },
+        )
+    }
+
+    // ── The chrome toggle (arc 33 / F3) ──────────────────────────────────────
+
+    /**
+     * Build [chromeToggle] over both bars and put the chrome into the state the host launched us
+     * in — [ExtensionContract.EXTRA_CHROME_HIDDEN], absent = shown — before the first layout, so a
+     * screen opened hidden never shows its bars. The eraser sub-bar goes down at a hide (its button
+     * is about to go); the selection bar stays, a lasso being a deliberate act. After the flip's
+     * relayout the exclusions are re-pushed once — the band and every rect are read fresh.
+     */
+    protected fun initChrome() {
+        val root = screenRoot ?: return
+        chromeToggle = ChromeToggle(
+            paper = paper,
+            root = root,
+            bars = listOfNotNull(topBarView, bottomBarView),
+            beforeHide = { hideEraserBar() },
+            afterLayout = { pushExclusions() },
+        )
+        chromeToggle.apply(intent.getBooleanExtra(ExtensionContract.EXTRA_CHROME_HIDDEN, false), initial = true)
+    }
+
+    /**
+     * Hide or show every bar — the finger double-tap's answer on a screen that is open and not
+     * closing (the gesture cannot arm before the page lands, but the escrow can deliver a pair
+     * across a close). Not persisted here: the extension writes nothing, and the host reads the
+     * state off the result Intent ([finishWithHandoff]).
+     */
+    protected fun toggleChrome() {
+        if (!opened || closing || !::chromeToggle.isInitialized) return
+        chromeToggle.toggle()
     }
 
     /** The paper surface in px — a page stored with no size of its own takes it. Before the first
@@ -618,7 +674,14 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
      */
     protected fun finishWithHandoff(resultCode: Int = Activity.RESULT_CANCELED) {
         if (::paper.isInitialized) paper.releaseForHandoff()
-        setResult(resultCode)
+        // Arc 33 / F3: the chrome state this screen was left in rides every result, whatever the
+        // code — the one datum on the result Intent. A screen that never built its toggle (a
+        // failed open before `initChrome`) answers with no data, and the host writes nothing.
+        if (::chromeToggle.isInitialized) {
+            setResult(resultCode, Intent().putExtra(ExtensionContract.EXTRA_CHROME_HIDDEN, chromeToggle.hidden))
+        } else {
+            setResult(resultCode)
+        }
         Slog.d(logTag) { "finishing (handoff released, result=$resultCode)" }
         finish()
     }

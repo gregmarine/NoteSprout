@@ -7,7 +7,7 @@ cross-session memory for the arc: read it whole at every phase start, together w
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `RESUME_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — F1 ✅ (2026-09-09) · F2 ✅ (2026-09-09) · F3 ⬜ · F4 ⬜ · F5 ⬜.**
+**Status: 🔄 IN PROGRESS — F1 ✅ (2026-09-09) · F2 ✅ (2026-09-09) · F3 ✅ (2026-09-09) · F4 ⬜ · F5 ⬜.**
 Baseline before the arc: 1606 `:app` / 2987 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump (one compatible Intent extra), no schema
 change, no g-paper change, no new module.
@@ -316,7 +316,7 @@ selection bar appears.
 **Questions at phase start:** none expected beyond confirming the walk data (a pre-arc sticky must
 exist on the Nomad — make one under the F1 build if not).
 
-### ⬜ F3 — The handoff + the scratch pad (Fable: the extension-boundary seam · Sonnet adb walk)
+### ✅ F3 — The handoff + the scratch pad (Fable: the extension-boundary seam · Sonnet adb walk)
 
 **Goal:** D3 — the flag crosses to the pad and calendar and back; the pad toggles; the calendar
 honours and echoes it but keeps day-open on every double-tap until F4.
@@ -517,3 +517,53 @@ decision 5; no migration.
 
 **Design notes for F3–F4:** nothing new — the sticky editor took D1's three pieces unchanged, which
 is the test that the seam is enough for the pad and the calendar.
+
+
+### F3 ✅ 2026-09-09 — The handoff + the scratch pad
+
+**Phase-start answer:** (a) one constant, `ExtensionContract.EXTRA_CHROME_HIDDEN = "chromeHidden"`,
+read by both screens in the one base class.
+
+**Landed (Fable).** `:extension-api`: `EXTRA_CHROME_HIDDEN` under a "Chrome (arc 33 / F3)" block —
+both directions, any result code, absent = shown, no version gate, no floor; pinned in
+`ExtensionContractTest.chromeExtraIsPinned` with both points' floors asserted unmoved. Host: new
+pure `extension/ChromeResult` (`read(Intent?)` over a tested `decode(present, value)` — present →
+its value, absent → null; 4 tests); `ExtensionScreenEntry` — one `ChromePrefs` per entry, `open()`
+puts the flag right after `decorateIntent` (entry-level: every door on both hosts), `onResult`
+reads it **synchronously second**, right after `stack.pop` and before the launched coroutine (so
+the calendar → pad chain's `open()` and the host's `onResume` re-sync both see it), a null result
+writes nothing. `:ext-ink` `InkScreenActivity`: `protected lateinit var chromeToggle`;
+`initChrome()` **builds** the toggle over `listOfNotNull(topBarView, bottomBarView)` with
+`beforeHide = hideEraserBar`, `afterLayout = pushExclusions`, then `apply(extra, initial = true)`
+— the construction moved into the base rather than each subclass (D3 said "assigned by the
+subclass"; one copy is the point of the class, and the subclass calls it where the notebook applies
+its own: right after the root layout listener); `toggleChrome()` guarded `opened && !closing`, no
+persistence (the extension writes nothing); `chromeBand()` → `ChromeBand.of(root.height,
+top.asBar(bottom), bottom.asBar(top))` (trap 2); `finishWithHandoff` → `setResult(code,
+Intent().putExtra(EXTRA_CHROME_HIDDEN, chromeToggle.hidden))`, bare `setResult(code)` when the
+toggle was never built (a failed open). `ScratchPadActivity`: `initChrome()` + `onFingerDoubleTap
+→ toggleChrome()`, class note's frame-silence list gains the flip. `CalendarActivity`:
+`awaitLaidOut` reduced to the root's width / height (trap 3) + `initChrome()`; its double-tap stays
+`openDay` until F4. A hidden calendar launch lays its grid under `GONE` bars whose height is 0 —
+a full-page grid for that showing, F4's shape by accident and consistent within the showing.
+
+**Numbers:** `:app` 1622 → **1626**, `:extension-api` +1, `:ext-ink` 52 unchanged, **3020** across
+the modules; all fourteen modules debug + release; the three release APKs sign and verify; NUL scan
+clean.
+
+**Sonnet adb walk (Nomad, `.dev`) 8/8:** notebook double-tap → hidden, one line · notebook shown →
+pad opens shown (one `hidden=false` at open) → pad double-tap hides → Back → `screen returned:
+resultCode=0`, the notebook re-synced hidden, pref `hidden=true` · library → pad opens hidden,
+double-tap shows, Back → pref `false` · library → calendar shown, no hang · flag hidden → calendar
+opens hidden, full-bleed week grid, **no hang** (trap 3 verified) · pad `force-stop` under the live
+library → `resultCode=0`, pref unchanged, host resumed · exactly one `ChromeToggle` line per open
+and per flip · crash buffer empty · left shown at the library. Walk note: launch restore reopened
+the dense "Objects" notebook, and a mid-page double-tap at (700, 1000) landed on a sticky icon and
+opened the editor — the collision rule doing its job; the walk moved to (700, 200).
+
+**Design notes for F4:** the calendar's geometry still reads `binding.topBar.height` /
+`bottomBar.height` (three call sites + `BakeKey`); with a hidden launch those are 0, so F4's
+"insets removed" changes nothing a hidden showing does not already do. The F4 toggle needs no new
+seam: `toggleChrome()` is already on the base class, so the calendar's listener only needs the
+zone rule in front of it.
+

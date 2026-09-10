@@ -353,6 +353,10 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
             listener = gestureListener,
         )
         binding.root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> binding.root.post { pushExclusions() } }
+        // Arc 33 / F3: the calendar opens in the chrome state the host handed over and echoes the
+        // final one on the way out (the skeleton's). Its own double-tap stays the day-open until
+        // F4 brings the zone rule; a hidden launch simply lays its grid under no bars.
+        initChrome()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() { exit() }
         })
@@ -373,8 +377,10 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
     private suspend fun openDocument(store: CalendarStore) {
         val doc = document ?: return
         try {
-            // The bars' real heights are what the grid is laid out under — wait for the first layout
-            // rather than guessing from a dimen (a chrome dimen names a part; the bar is the whole).
+            // The surface's real size is what the grid is laid out on — wait for the first layout
+            // rather than guessing from the display metrics. The root only (arc 33 / F3): a launch
+            // with the chrome hidden has `GONE` bars that never get a height, and a wait on theirs
+            // would hang on "Opening…" forever.
             binding.root.awaitLaidOut()
             val bookmark = withContext(Dispatchers.IO) { store.open() }
             // A launch that follows a `receiveInk` opens on the page the ink landed on, not on the
@@ -448,11 +454,11 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
     }
 
     private suspend fun View.awaitLaidOut() {
-        if (width > 0 && height > 0 && binding.topBar.height > 0 && binding.bottomBar.height > 0) return
+        if (width > 0 && height > 0) return
         suspendCancellableCoroutine { cont ->
             val l = object : View.OnLayoutChangeListener {
                 override fun onLayoutChange(v: View, l: Int, t: Int, r: Int, b: Int, ol: Int, ot: Int, or: Int, ob: Int) {
-                    if (v.width > 0 && v.height > 0 && binding.topBar.height > 0 && binding.bottomBar.height > 0) {
+                    if (v.width > 0 && v.height > 0) {
                         v.removeOnLayoutChangeListener(this)
                         if (cont.isActive) cont.resume(Unit)
                     }

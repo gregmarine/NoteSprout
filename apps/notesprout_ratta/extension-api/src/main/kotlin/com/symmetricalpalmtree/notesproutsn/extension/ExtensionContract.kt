@@ -341,6 +341,24 @@ object ExtensionContract {
      */
     const val RESULT_CALENDAR_OPEN_SCRATCH_PAD: Int = 2
 
+    // ── Chrome (arc 33 / F3 — a compatible tail, not a point and not a floor) ──────
+    // The host's paper screens hide and show their chrome on a finger double-tap, and the flag is
+    // one global boolean the person set as a way of working. The pad and the calendar are paper
+    // screens too, so the flag rides their launch Intent out and their result Intent back — the
+    // shape of every other boolean on this seam: no content, no id, no path, no secret.
+
+    /**
+     * Boolean Intent extra on the scratch pad's and the calendar's screen (arc 33 / F3), **both
+     * directions**: on the launch Intent it says whether the host's paper screens currently hide
+     * their chrome (absent = shown); on the result Intent it says the state the screen was left in,
+     * whatever the result code — a plain Back (`RESULT_CANCELED`) carries it as a Send does. The
+     * host persists it; the extension writes nothing to disk. The **first datum ever on this seam's
+     * result Intent** — one boolean, nothing else. No version gate and no floor: an extension that
+     * predates it ignores the launch extra and returns a result with no data, and the host writes
+     * nothing. The fifth boolean the calendar's launch Intent carries, the third the pad's.
+     */
+    const val EXTRA_CHROME_HIDDEN: String = "chromeHidden"
+
     // ── Calendar render (arc 31 / HV4 — under API 9, a method floor, not a point) ──────
     // `ICalendar.render` writes a `PageBundle` v1 of calendar pages (grid · ink · today ring ·
     // event marks, each by flag) to a host-owned fd on a bind-per-call with a lent store — the tag

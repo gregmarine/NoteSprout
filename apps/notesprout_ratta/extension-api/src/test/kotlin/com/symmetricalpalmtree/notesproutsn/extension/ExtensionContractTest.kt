@@ -236,4 +236,14 @@ class ExtensionContractTest {
         assertEquals(true, ExtensionContract.accepts(ExtensionContract.ACTION_CALENDAR, 7))
         assertEquals(true, ExtensionContract.accepts(ExtensionContract.ACTION_CALENDAR, 9))
     }
+
+    @Test
+    fun chromeExtraIsPinned() {
+        // Arc 33 / F3. Read by both ink screens and written by the host on the way out AND read
+        // back on the way in — a drift here is a flag that silently stops crossing.
+        assertEquals("chromeHidden", ExtensionContract.EXTRA_CHROME_HIDDEN)
+        // A compatible tail: no floor moved for either point that carries it.
+        assertEquals(ExtensionContract.MIN_API_VERSION_FOR_STORE, ExtensionContract.minApiVersion(ExtensionContract.ACTION_SCRATCH_PAD))
+        assertEquals(ExtensionContract.MIN_API_VERSION_FOR_CALENDAR, ExtensionContract.minApiVersion(ExtensionContract.ACTION_CALENDAR))
+    }
 }

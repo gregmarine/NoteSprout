@@ -59,8 +59,9 @@ import kotlinx.coroutines.launch
  * ([ScratchToolbar]); the frames that do not are the notebook's own recorded exceptions, in their
  * scratch-pad form — the delete confirm at a long-press, the selection bar's show at lasso
  * completion (and its own re-anchor after a move, and its show over a received placement), the
- * "Opening…" box's hide when the page lands, and a problem dialog at a pen-up or at a chrome tap
- * (a refused stroke, an empty Send).
+ * "Opening…" box's hide when the page lands, a problem dialog at a pen-up or at a chrome tap
+ * (a refused stroke, an empty Send), and the chrome flip at a finger double-tap (arc 33 — the
+ * notebook's exception 6, never pen-idle-gated).
  */
 class ScratchPadActivity : InkScreenActivity<ScratchAction>() {
 
@@ -205,6 +206,9 @@ class ScratchPadActivity : InkScreenActivity<ScratchAction>() {
         )
         // Chrome moved/appeared/disappeared: re-push the exclusion rects once the pass settles.
         binding.root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> binding.root.post { pushExclusions() } }
+        // Arc 33: both bars hide and show together on a finger double-tap, opening in the state the
+        // host handed over and echoing the final one on the way out (the skeleton's).
+        initChrome()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() { exit() }
         })
@@ -317,6 +321,9 @@ class ScratchPadActivity : InkScreenActivity<ScratchAction>() {
         override fun onUndo() = runPageOp { doUndo() }
         override fun onRedo() = runPageOp { doRedo() }
         override fun onPageSheetRequested() = confirmDeletePage()
+        // Arc 33: a finger double-tap hides / shows the chrome. Nothing on the pad answers a single
+        // tap, so there is no collision rule here (the notebook's stickies and links are its own).
+        override fun onFingerDoubleTap(x: Float, y: Float) = toggleChrome()
         // The pad implements only what it has: SN's other callbacks (Contents, Recents, the trail
         // walk-back, link follow) stay the no-op defaults `PageGestures.Listener` already gives.
     }

@@ -11,6 +11,7 @@ import com.symmetricalpalmtree.gpaper.core.model.Stroke
 import com.symmetricalpalmtree.notesproutsn.core.Dialogs
 import com.symmetricalpalmtree.notesproutsn.core.OpeningOverlay
 import com.symmetricalpalmtree.notesproutsn.core.Slog
+import com.symmetricalpalmtree.notesproutsn.data.prefs.ChromePrefs
 import com.symmetricalpalmtree.notesproutsn.data.prefs.Surface
 import com.symmetricalpalmtree.notesproutsn.data.prefs.SurfaceEntry
 import com.symmetricalpalmtree.notesproutsn.data.prefs.SurfaceStack
@@ -89,6 +90,14 @@ class EntryWording(
  *    `markTop` must find this entry already gone. [close] pops as the backstop. Never from an
  *    `onDestroy`, the extension's least of all: a killed process gets none, which is the whole
  *    point of the stack.
+ *  - **The chrome flag, both ways** (arc 33 / F3). Both of these screens are paper screens, and
+ *    "hide the chrome" is one global way of working ([ChromePrefs]): [open] hands the flag over as
+ *    [ExtensionContract.EXTRA_CHROME_HIDDEN] on every launch — entry-level, so every door on both
+ *    hosts carries it with no per-entry code — and [onResult] reads the state the screen was left
+ *    in off the result Intent ([ChromeResult]) and persists it **synchronously, first**, before the
+ *    launched coroutine: the calendar's pad chain ([onClosed] → the pad's [open]) must hand the pad
+ *    the value the calendar just reported, and the host's own `onResume` re-sync runs after this
+ *    callback. No data (a killed process, an older extension) writes nothing.
  *
  * Neither extension opens a `.soil`, and the notebook is **not** sealed behind either — the one way
  * this hop differs from arc 10's notebook switch. What the notebook gives up is the pipeline, not its
@@ -169,6 +178,9 @@ open class ExtensionScreenEntry<I : Any, P>(
     /** The surface stack this door pushes onto (arc 32 / RS1) — the prefs door, nothing more. */
     private val stack = SurfaceStack(activity)
 
+    /** The one global chrome flag (arc 33 / F3) — out on the launch Intent, back off the result. */
+    private val chromePrefs = ChromePrefs(activity)
+
     /**
      * One token per **entry instance**, not per surface: a host holds one entry per door for its
      * whole life, and it can raise its screen many times — the same token each time is exactly
@@ -245,6 +257,8 @@ open class ExtensionScreenEntry<I : Any, P>(
                     return@launch
                 }
                 decorateIntent(activity, provider, intent)
+                // Arc 33 / F3: the screen opens in the chrome state the person is working in.
+                intent.putExtra(ExtensionContract.EXTRA_CHROME_HIDDEN, chromePrefs.hidden)
                 if (send != null && !handOver(fresh, send)) return@launch
                 // The pipeline goes over the instant before the launch, and not one step earlier:
                 // until here the open could still have failed and left this screen writing.
@@ -312,6 +326,11 @@ open class ExtensionScreenEntry<I : Any, P>(
         // own `onResume`, whose `markTop` drops everything above it — this entry must already be
         // gone by then, or the host would drop it as if it were still showing.
         stack.pop(token)
+        // Second, still synchronously (arc 33 / F3): the state the screen left its chrome in is
+        // persisted before anything else runs — `onClosed` may open the next door from the value,
+        // and the host's `onResume` re-syncs from it. Absent (a dead process, an older extension)
+        // writes nothing: the flag the person set stands.
+        ChromeResult.read(result.data)?.let { chromePrefs.hidden = it }
         val open = client
         client = null
         Slog.d(tag) { "screen returned: resultCode=${result.resultCode}" }
