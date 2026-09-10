@@ -29,6 +29,7 @@ import com.symmetricalpalmtree.notesproutsn.core.Slog
 import com.symmetricalpalmtree.notesproutsn.core.SnClipboard
 import com.symmetricalpalmtree.notesproutsn.data.clip.ClipEnvelope
 import com.symmetricalpalmtree.notesproutsn.data.clip.ClipStore
+import com.symmetricalpalmtree.notesproutsn.data.prefs.ChromePrefs
 import com.symmetricalpalmtree.notesproutsn.data.prefs.SnapPrefs
 import com.symmetricalpalmtree.notesproutsn.databinding.ActivityStickyEditorBinding
 import kotlinx.coroutines.Dispatchers
@@ -44,11 +45,15 @@ import java.util.UUID
  * — sharing the notebook's open `.soil` through [StickyEditorTransfer]. It opens no database, holds
  * no session, and is meaningless launched from anywhere but [NotebookActivity]'s result launcher.
  *
- * **What is on the glass.** One top bar (`[←] [pen] [eraser] [lasso]` + a centred "Sticky Note"
- * title — Back saves-and-closes; there is no cancel because every stroke is already a row, and no
- * ✓ because Back already does the one thing it would) over a paper the size
- * of the note's content ([StickyEditorTransfer.Showing.contentW] × `contentH`, laid top-left 1:1
- * — a foreign size is the notebook's foreign-page rule). The tools are the notebook's, fixed
+ * **What is on the glass.** Full-bleed paper with one **floating** top bar (`[←] [pen] [eraser]
+ * [lasso]` + a centred "Sticky Note" title — Back saves-and-closes; there is no cancel because
+ * every stroke is already a row, and no ✓ because Back already does the one thing it would) laid
+ * over it, the notebook's own shape since arc 33 / F2 — and a **single-finger double-tap hides the
+ * bar and brings it back**, one flag shared with every other paper screen ([ChromePrefs]). The
+ * paper is the size of the note's content ([StickyEditorTransfer.Showing.contentW] × `contentH`,
+ * laid top-left 1:1 — a foreign size is the notebook's foreign-page rule), which since F2 is the
+ * whole window for a note authored here; an older, smaller note has the paper beyond it excluded
+ * ([StickyPageRects]) so the pen cannot write outside the note. The tools are the notebook's, fixed
  * (3 px pen, 15 px eraser, black) — including the eraser's **two kinds** since arc 29 / LE2, Point
  * and Lasso, picked from the [EraserBar] its own re-tap opens; 2/3-finger undo/redo replay an
  * in-memory [StickyInk]; the lasso's bar is Snap · Copy · Cut · Delete; a pen tap on bare paper
@@ -83,6 +88,9 @@ class StickyEditorActivity : AppCompatActivity() {
     private lateinit var eraserBar: EraserBar
     private lateinit var gestures: PageGestures
     private lateinit var snapPrefs: SnapPrefs
+    /** The one global chrome flag (arc 33) — read at open, written at every toggle. */
+    private lateinit var chromePrefs: ChromePrefs
+    private lateinit var chromeToggle: ChromeToggle
     private lateinit var showing: StickyEditorTransfer.Showing
     private val clipStore by lazy { ClipStore() }
 
@@ -91,6 +99,9 @@ class StickyEditorActivity : AppCompatActivity() {
 
     /** True once the note is on the paper; before it, the whole surface is blocked. */
     private var shown = false
+    /** The page size the note was shown at — what [StickyPageRects] fences the paper against. */
+    private var pageW = 0
+    private var pageH = 0
     private var closing = false
     private var selection: Selection? = null
 
@@ -220,12 +231,13 @@ class StickyEditorActivity : AppCompatActivity() {
         )
         // Constructed after the toolbar because a pick lands on `toolbar.arm` (a host-set tool is
         // never echoed back as `onToolChanged`, so the buttons are synced by hand). The band is the
-        // whole root below the top bar — this screen has no bottom strip.
+        // root below the top bar — this screen has no bottom strip — and the whole root once the
+        // bar is hidden ([chromeBand]).
         eraserBar = EraserBar(
             root = binding.root,
             bar = binding.eraserBar,
             anchor = binding.btnEraser,
-            bandBottom = { binding.root.height.takeIf { it > 0 && binding.topBar.height > 0 } },
+            bandBottom = { chromeBand()?.last },
             paper = paper,
             onPicked = { hideEraserBar(); toolbar.arm(it) },
         )
@@ -237,7 +249,7 @@ class StickyEditorActivity : AppCompatActivity() {
             root = binding.root,
             paperView = paper.asView(),
             bar = binding.selectionBar,
-            band = { binding.topBar.height.takeIf { it > 0 }?.let { it..binding.root.height } },
+            band = { chromeBand() },
             buttons = listOf(
                 FloatingSelectionBar.Button(R.drawable.ic_snap, getString(R.string.snap_action_off)) {
                     paper.releaseRender(); toggleSnap()
@@ -255,6 +267,18 @@ class StickyEditorActivity : AppCompatActivity() {
         )
         syncSnapButton()
 
+        // Arc 33: the one bar hides and shows on a finger double-tap, and the flag is the same one
+        // every other paper screen reads. The eraser's sub-bar goes down first — its button is
+        // about to go — while the lasso's floating bar keeps working over bare paper.
+        chromePrefs = ChromePrefs(this)
+        chromeToggle = ChromeToggle(
+            paper = paper,
+            root = binding.root,
+            bars = listOf(binding.topBar),
+            beforeHide = { hideEraserBar() },
+            afterLayout = ::pushExclusions,
+        )
+
         gestures = PageGestures(
             host = paper.asView(),
             isPenActive = { paper.isPenActive },
@@ -264,6 +288,9 @@ class StickyEditorActivity : AppCompatActivity() {
                 override fun onUndo() = doUndo()
                 override fun onRedo() = doRedo()
                 // No flips, no inserts, no sheet: a note is one page and has nothing else to hear.
+                // The double-tap is the chrome toggle, plainly — a note carries no stickies and no
+                // links, so there is nothing here for the notebook's collision rule to arbitrate.
+                override fun onFingerDoubleTap(x: Float, y: Float) { toggleChrome() }
             },
         )
 
@@ -275,10 +302,16 @@ class StickyEditorActivity : AppCompatActivity() {
         // real area when the row carries none, and a stroke written before the load would be
         // thrown away by it, so the surface is blocked until then.
         blockAll()
-        binding.paperContainer.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+        // The root, not paperContainer (arc 33 / F2): since the paper went full-bleed the container
+        // never changes size on a flip, and the root's listener also re-fires after the toggle's
+        // own requestLayout.
+        binding.root.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
             if (v.width == 0 || v.height == 0) return@addOnLayoutChangeListener
             if (!shown) showNote(v.width, v.height) else pushExclusions()
         }
+        // Applied from the persisted flag before the first layout, so an editor opened hidden never
+        // shows its bar. `initial`: nothing is on the glass yet, so no render release.
+        chromeToggle.apply(chromePrefs.hidden, initial = true)
         Slog.d(TAG) {
             "open: sticky ${showing.stickyId} ${showing.initial.size} stroke(s) " +
                 "${showing.contentW}x${showing.contentH} engine=${paper.engineId}"
@@ -287,6 +320,8 @@ class StickyEditorActivity : AppCompatActivity() {
 
     private fun showNote(areaW: Int, areaH: Int) {
         val (w, h) = pageSize(areaW, areaH)
+        pageW = w
+        pageH = h
         paper.setPageSize(w, h)
         ink.reset(showing.initial)
         undo.clear()
@@ -303,6 +338,12 @@ class StickyEditorActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Arc 33: another paper screen (the notebook, the pad, the calendar) may have flipped the
+        // one global flag while this one was away — re-sync before the paper comes back. Nothing is
+        // on the glass yet, so no render release; a no-op when nothing changed.
+        if (::chromeToggle.isInitialized && chromeToggle.hidden != chromePrefs.hidden) {
+            chromeToggle.apply(chromePrefs.hidden, initial = true)
+        }
         // Reclaim the pipeline (focus events are unreliable on e-ink) — the notebook released it
         // immediately before launching us.
         if (::paper.isInitialized) paper.resumeDrawing()
@@ -560,16 +601,47 @@ class StickyEditorActivity : AppCompatActivity() {
         paper.setExclusionRects(listOf(Rect(0, 0, maxOf(v.width, 1), maxOf(v.height, 1))))
     }
 
-    /** The top bar sits outside the paper; only the floating bars need excluding, in paper px. */
+    /**
+     * The exclusion rects, in paper px. Since arc 33 / F2 the top bar **floats over** the paper, so
+     * it is excluded like every floating bar — and drops out of the list the moment it is hidden
+     * ([PaperToolbar.rectOf] refuses a non-VISIBLE view, F1's trap-1 rule). The off-page bands are
+     * the other half: an older note's page is smaller than the view, and the paper beyond it is
+     * white and writable until it is fenced ([StickyPageRects]).
+     */
     private fun pushExclusions() {
         if (!shown) { blockAll(); return }
         val v = paper.asView()
         val loc = IntArray(2).also { v.getLocationInWindow(it) }
-        val rects = selectionBar.rects() +
-            (if (::eraserBar.isInitialized) eraserBar.rects() else emptyList())
-        paper.setExclusionRects(
-            rects.map { Rect(it.left - loc[0], it.top - loc[1], it.right - loc[0], it.bottom - loc[1]) },
-        )
+        val chrome = (
+            listOfNotNull(PaperToolbar.rectOf(binding.topBar)) + selectionBar.rects() +
+                (if (::eraserBar.isInitialized) eraserBar.rects() else emptyList())
+            )
+            .map { Rect(it.left - loc[0], it.top - loc[1], it.right - loc[0], it.bottom - loc[1]) }
+        // Already paper px — the page's own geometry, not a view in the root's coordinates.
+        val offPage = StickyPageRects.offPage(pageW, pageH, v.width, v.height).map { it.toRect() }
+        paper.setExclusionRects(chrome + offPage)
+    }
+
+    /**
+     * The free band below the top bar, in the root's coordinates — where a floating bar may be
+     * placed. This screen has no bottom bar, so the band runs to the root's own bottom edge; a
+     * hidden bar (arc 33) yields the top edge instead. Before [ChromeBand] this read the bar's
+     * height and answered null at 0 — which is what a GONE bar reports, so every floating bar
+     * would have silently refused to show while the chrome was hidden (F1's trap 2).
+     */
+    private fun chromeBand(): IntRange? =
+        ChromeBand.of(binding.root.height, binding.topBar.asBar(edge = binding.topBar.bottom), null)
+
+    /**
+     * The chrome toggle (arc 33): the bar goes and comes back on a finger double-tap, and the flag
+     * is persisted for every other paper screen. Only a screen whose note is on the paper and not
+     * closing flips — the gesture cannot arm before that, but the escrow can deliver a pair across
+     * a close.
+     */
+    private fun toggleChrome() {
+        if (!shown || closing) return
+        chromeToggle.toggle()
+        chromePrefs.hidden = chromeToggle.hidden
     }
 
     private fun overChrome(ev: MotionEvent): Boolean {

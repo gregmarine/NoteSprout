@@ -229,7 +229,7 @@ class NotebookActivity : AppCompatActivity() {
         override val paper: PaperView get() = this@NotebookActivity.paper
         override val density: Float get() = resources.displayMetrics.density
         override fun contentSize(): Pair<Int, Int> =
-            StickyDefaults.contentSize(binding.root.width, binding.root.height, binding.topBar.height)
+            StickyDefaults.contentSize(binding.root.width, binding.root.height)
         override fun record(action: Action) = undo.record(action)
         override fun runPageOp(block: suspend () -> Unit) = this@NotebookActivity.runPageOp(block)
         override fun selectAsSticky(sticky: PageSticky) = this@NotebookActivity.selectAsSticky(sticky)

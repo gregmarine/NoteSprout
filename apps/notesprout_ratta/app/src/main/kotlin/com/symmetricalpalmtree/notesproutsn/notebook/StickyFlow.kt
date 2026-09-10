@@ -43,7 +43,8 @@ class StickyFlow(private val host: Host) {
         val density: Float
 
         /** The editor's paper area on this device — [StickyDefaults.contentSize] over the real
-         *  window and the notebook's own laid-out top bar. */
+         *  window, which since arc 33 / F2 is the whole of it (the editor's paper is full-bleed
+         *  under a floating bar). */
         fun contentSize(): Pair<Int, Int>
 
         fun record(action: Action)

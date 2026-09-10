@@ -7,8 +7,9 @@ import org.junit.Test
 /**
  * Where an inserted sticky lands and how big its note is (arc 28 / H5, decision 2 + D2): a
  * [StickyRows.ICON_DP] square at the page centre, and a content size taken from the creating
- * device's editor paper — the one number the row is stuck with for life, since every later opening
- * registers the note at the size it was authored at.
+ * device's editor paper — since arc 33 / F2 its whole window, because the editor's paper is
+ * full-bleed under a floating bar. The one number the row is stuck with for life, since every
+ * later opening registers the note at the size it was authored at.
  */
 class StickyDefaultsTest {
 
@@ -66,22 +67,24 @@ class StickyDefaultsTest {
     // ── The content size ─────────────────────────────────────────────────────
 
     @Test
-    fun `contentSize is the window minus the editor's one top bar`() {
-        assertEquals(1404 to 1700, StickyDefaults.contentSize(windowW = 1404, windowH = 1872, topBarPx = 172))
+    fun `contentSize is the whole window`() {
+        // Arc 33 / F2: the top bar floats over the paper, so nothing comes off either dimension.
+        assertEquals(1404 to 1872, StickyDefaults.contentSize(windowW = 1404, windowH = 1872))
     }
 
     @Test
-    fun `the bar comes off the height only — the paper is full-bleed across`() {
-        val (w, _) = StickyDefaults.contentSize(1404, 1872, 172)
+    fun `contentSize takes the window's height whole — the bar no longer comes off it`() {
+        val (w, h) = StickyDefaults.contentSize(1404, 1872)
         assertEquals(1404, w)
+        assertEquals(1872, h)
     }
 
     @Test
     fun `a size that cannot be positive floors at one px`() {
         // Nothing real produces these; a note whose packed size is 0 would read as "unknown" and
         // send the editor back to its own paper area, which is a worse answer than one px.
-        assertEquals(1 to 1, StickyDefaults.contentSize(windowW = 0, windowH = 100, topBarPx = 200))
-        assertEquals(1 to 1, StickyDefaults.contentSize(windowW = -50, windowH = 100, topBarPx = 100))
+        assertEquals(1 to 1, StickyDefaults.contentSize(windowW = 0, windowH = 0))
+        assertEquals(1 to 1, StickyDefaults.contentSize(windowW = -50, windowH = -100))
     }
 
     @Test
@@ -91,7 +94,6 @@ class StickyDefaultsTest {
         val (w, h) = StickyDefaults.contentSize(
             windowW = StickyFlags.MAX + 500,
             windowH = StickyFlags.MAX + 500,
-            topBarPx = 0,
         )
         assertEquals(StickyFlags.MAX, w)
         assertEquals(StickyFlags.MAX, h)

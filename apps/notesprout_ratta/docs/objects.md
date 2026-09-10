@@ -381,8 +381,9 @@ pure too: copy captures the note's stroke rows parented to the sticky id through
 (page-space first, a copied sticky's children only when there's no page ink to prefer), and
 `leftOut` is measured against what was actually **dropped** — the editor tells the user when
 something didn't paste. `StickyDefaults.at(...)` places the 72 dp icon; `contentSize(windowW,
-windowH, topBarPx)` is computed by the **notebook**, not the editor, from the window minus its own
-measured top bar — so the row is written complete on its very first insert.
+windowH)` is computed by the **notebook**, not the editor, and is the whole window since arc 33 /
+F2 (the editor's paper is full-bleed under a floating bar) — so the row is written complete on its
+very first insert.
 
 **`StickyFlow`** (+ `StickyFlow.Host`) owns insert and reopen: `insertAtCentre()`, `openAt(x, y):
 Boolean` (finger-tap hit test — stickies checked **before** links, topmost first, so a sticky

@@ -7,7 +7,7 @@ cross-session memory for the arc: read it whole at every phase start, together w
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `RESUME_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — F1 ✅ (2026-09-09) · F2 ⬜ · F3 ⬜ · F4 ⬜ · F5 ⬜.**
+**Status: 🔄 IN PROGRESS — F1 ✅ (2026-09-09) · F2 ✅ (2026-09-09) · F3 ⬜ · F4 ⬜ · F5 ⬜.**
 Baseline before the arc: 1606 `:app` / 2987 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump (one compatible Intent extra), no schema
 change, no g-paper change, no new module.
@@ -294,7 +294,7 @@ pen leaves, then a clean double-tap flips.
 new exception; the toggle rides 6"; (b) snap margin: constant "one toolbar" (recommended) or 0
 while hidden; (c) version stays `0.1.0-ratta` (every arc so far).
 
-### ⬜ F2 — The sticky editor (Opus on a Fable brief · Fable review · Sonnet adb walk)
+### ✅ F2 — The sticky editor (Opus on a Fable brief · Fable review · Sonnet adb walk)
 
 **Goal:** D2 — full-bleed paper under a floating bar, full-window stickies, old notes fenced.
 
@@ -471,3 +471,49 @@ unless `initial` — the `onResume` re-sync must compare first (it does) or pass
 changed. `asBar(edge)` takes the edge the *caller* reads because a `GONE` view keeps its last
 edges — the top bar's `bottom`, the bottom bar's `top`.
 
+
+### F2 ✅ 2026-09-09 — The sticky editor
+
+**Phase-start answers:** none asked — the walk's "old note" is the sticky made on the Nomad's
+"Objects" notebook under the F1 build (window minus one bar: 1404 × 1739), which is exactly the
+shorter-than-window shape decision 5 fences.
+
+**Landed (Opus on the brief, Fable review).** `activity_sticky_editor.xml` → root `FrameLayout`,
+`paperContainer` full-bleed first, `topBar` `layout_gravity="top"` as a later sibling, `selectionBar`
+/ `eraserBar` last (header rewritten). `StickyDefaults.contentSize(windowW, windowH)` — `topBarPx`
+removed, not zeroed; the note's content is the whole window. New pure `StickyPageRects.offPage(pageW,
+pageH, viewW, viewH): List<Band>` (below the page full-width, right of it page-height, never
+overlapping; `Band.toRect()` the one Android line — `android.graphics.Rect` is a stub under
+`isReturnDefaultValues`, so the rule is tested through its own type, `TemplateFit.Rect`'s precedent).
+`StickyEditorActivity`: `chromeBand()` = `ChromeBand.of(root.height, topBar.asBar(bottom), null)`
+feeding `EraserBar.bandBottom` and `FloatingSelectionBar.band` (trap 2); `chromeToggle` over
+`listOf(topBar)`, `beforeHide = { hideEraserBar() }`, `afterLayout = ::pushExclusions`,
+`apply(prefs.hidden, initial = true)` right after the layout listener — which moved from
+`paperContainer` to `root`; `onFingerDoubleTap → toggleChrome()` guarded `shown && !closing`, no
+collision rule; the `onResume` re-sync before `resumeDrawing()`; `pushExclusions` = `rectOf(topBar)`
++ the two floating bars (root → paper px) + the off-page bands (already paper px, from the
+`pageW`/`pageH` captured in `showNote`). `NotebookActivity`'s `contentSize()` call, a stale
+`StickyFlow.Host` KDoc line, `docs/objects.md`'s one sentence.
+
+**Numbers:** `:app` 1614 → **1622** (`StickyPageRectsTest` 8 new; `StickyDefaultsTest` rewritten,
+still 10), **3015** across the modules; debug + release build; NUL scan clean; the activity 704 lines.
+
+**Sonnet adb walk (Nomad, `.dev`) 7/7:** new sticky → `note shown 1404x1872 (area 1404x1872)`,
+`topBar` at y = 0, `paperContainer` the whole screen · double-tap → one `chrome hidden=true`, no
+`topBar` in the dump · again → one `false` · hidden + Back → the notebook re-synced itself hidden
+(its own `hidden=true` line, no `topBar`/`bottomStrip`), a notebook double-tap showed it · the old
+note → `note shown 1404x1739 (area 1404x1872)`, 1739 = 1872 − 133, laid top-left, both flips one
+line each · hidden + force-stop + relaunch → launch restore reopened the notebook hidden · crash
+buffer empty.
+
+**Consequence to say plainly (decision 5's twin of decision 3):** an old note's ink sits one bar
+higher than it was authored — the page is laid top-left of the full-bleed view, so what was written
+just under the bar is now under it; hidden shows it, nothing is lost or moved. Accepted with
+decision 5; no migration.
+
+**Walk trap (new):** on this session `monkey -c LAUNCHER` alone left focus on
+`com.ratta.supernote.background`; `input keyevent HOME` then `am start -n …/BootstrapActivity` (wait
+≈ 5 s) brought the app forward both times. Recorded beside the RS2 kill-order rule.
+
+**Design notes for F3–F4:** nothing new — the sticky editor took D1's three pieces unchanged, which
+is the test that the seam is enough for the pad and the calendar.
