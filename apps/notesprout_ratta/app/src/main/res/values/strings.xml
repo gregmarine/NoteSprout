@@ -767,6 +767,11 @@
     <string name="link_target_page_gone_body">The page this link points to no longer exists.</string>
     <string name="link_target_unreadable_body">This link was made by a newer or different version of Notesprout, so where it points can\'t be read here.</string>
 
+    <!-- Arc 34 / M7: a page op (Erase page, Delete page, a paste, an undo) hit a database or disk
+         failure. Plain problem dialog — a tap that did nothing must say so. -->
+    <string name="page_op_failed_title">Couldn\'t change the page</string>
+    <string name="page_op_failed_body">The page could not be changed. Nothing was saved.</string>
+
     <!-- Recents in the notebook (arc 10). cd_recents is shared with the library's shelf button. -->
     <string name="recents_title">Recent notebooks</string>
     <string name="recents_empty">No recent notebooks</string>

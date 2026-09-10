@@ -1397,8 +1397,16 @@ through `runPageOp` now; a closed writer cancels the deferred, so a delete that 
 records no entry.
 
 Every gesture-driven operation runs through `runPageOp` — a `Mutex` on `lifecycleScope`, a no-op
-while not open or once closing, `runCatching` + `Log.w` on failure — so two overlapping gestures
-can never tangle the page list.
+while not open or once closing — so two overlapping gestures can never tangle the page list. **What
+a throwing op comes to is the pure `PageOpFailure.classify` table (arc 34 / M7), the `:ext-ink`
+screens' shape:** a `CancellationException` is rethrown (the close's own business — before M7 it
+was logged as a failure on every close); a **store failure** — `android.database.SQLException`
+(the framework's and SQLCipher's `SQLiteException` base) or an `IOException` anywhere in the cause
+chain — shows the plain problem dialog *Couldn't change the page* / "The page could not be
+changed. Nothing was saved." (`page_op_failed_title/body`; skipped once the screen is finishing),
+so a full disk under Erase page or Delete page no longer reads as a confirmed tap that did nothing;
+anything else is a bug and is logged as before. Shared with `:ext-ink` it is not — that would be a
+new module edge for one `when`.
 
 ### The transfer paste-back (arc 11 / J5, unified arc 23 / Y3)
 

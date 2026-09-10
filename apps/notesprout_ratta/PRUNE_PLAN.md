@@ -7,7 +7,7 @@ the cross-session memory for the arc: read it whole at every phase start, togeth
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `FOCUS_PLAN.md` is the shape this file copies.
 
-**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 🔄 (M1 ✅ + M2 ✅ + M3 ✅ + M4 ✅ + M5 ✅ + M6 ✅ 2026-09-09, all by Fable at the user's call; M7–M9 ⬜) · P3 ⬜ · P4 ⬜.**
+**Status: 🔄 IN PROGRESS — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 🔄 (M1 ✅ + M2 ✅ + M3 ✅ + M4 ✅ + M5 ✅ + M6 ✅ + M7 ✅ 2026-09-09, all by Fable at the user's call; M8–M9 ⬜) · P3 ⬜ · P4 ⬜.**
 Baseline before the arc: 1626 `:app` / 3033 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump, no schema change, no g-paper change, no new
 module, no new dependency. **The notebook's bottom-strip pager (`NotebookActivity.kt` /
@@ -519,3 +519,16 @@ explanation and an `AskUserQuestion` never share one turn — explain, wait, the
   Docs: `docs/notebook.md` § Undo (the "delete snapshot suspends" paragraph). Gates: 1638 `:app`
   tests (1635 + 3), all green; `:app` release compiles; NUL scan clean. No walk (JVM-pinned; the
   race needs a held mutex + Back inside one frame). Next: M7 (`runPageOp` failure dispatch).
+- **2026-09-09 — P2 / M7 ✅ (Fable — again at the user's call).** `notebook/PageOpFailure`
+  (pure): `classify(t)` → `RETHROW` for a `CancellationException`, `DIALOG` for an
+  `android.database.SQLException` (the framework's and SQLCipher's `SQLiteException` base) or an
+  `IOException` anywhere in the cause chain (loop-safe), `LOG` for the rest. `PageOpFailureTest`
+  (4 cases, written first — the classifier landed in the same step, so the red run was not
+  observed; the table is small enough to read). `NotebookActivity.runPageOp` mirrors
+  `InkScreenActivity.runPageOp`: rethrow / `Dialogs.problem(page_op_failed_title, _body)` gated on
+  `!isFinishing && !isDestroyed` / `Log.w`. New strings `page_op_failed_title` "Couldn't change the
+  page" + `page_op_failed_body` "The page could not be changed. Nothing was saved." Kept in
+  `NotebookActivity` (no `:ext-ink` edge). Docs: `docs/notebook.md` § Undo (the `runPageOp`
+  paragraph). Gates: 1642 `:app` tests (1638 + 4), all green; `:app` release compiles; NUL scan
+  clean. **The dialog itself is the P4 walk item the plan names (optional: fill the disk, Erase
+  page).** Next: M8 (`ExtensionScreenEntry` — the guarded launch).

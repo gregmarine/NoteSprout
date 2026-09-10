@@ -1911,7 +1911,23 @@ class NotebookActivity : AppCompatActivity() {
         if (!opened || closing) return
         lifecycleScope.launch {
             pageOps.withLock {
-                if (opened && !closing) runCatching { block() }.onFailure { Log.w(TAG, "page op failed", it) }
+                if (!opened || closing) return@withLock
+                try {
+                    block()
+                } catch (t: Throwable) {
+                    // The `:ext-ink` screens' shape, over the pure PageOpFailure table (arc 34 / M7):
+                    // a cancellation is rethrown, a store failure is a dialog, the rest is a log.
+                    when (PageOpFailure.classify(t)) {
+                        PageOpFailure.Outcome.RETHROW -> throw t
+                        PageOpFailure.Outcome.DIALOG -> {
+                            Log.w(TAG, "page op failed: store", t)
+                            if (!isFinishing && !isDestroyed) {
+                                Dialogs.problem(this@NotebookActivity, R.string.page_op_failed_title, R.string.page_op_failed_body)
+                            }
+                        }
+                        PageOpFailure.Outcome.LOG -> Log.w(TAG, "page op failed", t)
+                    }
+                }
             }
         }
     }
