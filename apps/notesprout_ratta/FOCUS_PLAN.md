@@ -463,6 +463,8 @@ hidden: swipe flips, long-press page sheet; double-tap on a sticky icon → the 
 `ChromeToggle` lines, chrome unchanged on return; crash buffer empty. Two-finger swipe-down is not
 adb-drivable (standing trap).
 
+**User checklist 2026-09-09: all three passed by hand on the Nomad** (ink under the bars covered and refused when shown; hidden lasso raises the selection toolbar with Snap / Copy / Delete working; a hovering pen holds the double-tap until it leaves).
+
 **Design notes for F2–F4:** `ChromeToggle.apply` is a no-op when the state already matches
 unless `initial` — the `onResume` re-sync must compare first (it does) or pass `initial`;
 `apply(…, initial = true)` calls `requestLayout()` so `afterLayout` fires even when no bar
