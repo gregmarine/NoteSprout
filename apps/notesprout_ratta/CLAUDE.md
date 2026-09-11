@@ -268,8 +268,12 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   - **Arc 34 "Prune"** (P1–P4, 2026-09-09/10; the `docs/*.md` each fix updated; `PRUNE_PLAN.md`)
     — a fresh user decision: the 32 confirmed findings of the 2026-09-09 `/code-review` of arcs
     24–33 fixed with JVM tests where the code is pure; **four candidates refuted and listed in the
-    plan — do not re-raise**; the H1 and M7 hand-walks waived. Final counts: 1653 `:app` /
-    3077 JVM tests. **Arcs 1–34 are all frozen; no next arc without a user decision.**
+    plan — do not re-raise**; the H1 and M7 hand-walks waived. **Post-freeze pruning 2026-09-10:
+    L17 had spliced the raw key into `ATTACH … KEY` as a bare `x'…'` blob, so every passphrase
+    change failed at the index — a key literal handed to SQLCipher in SQL must be TEXT
+    (`ExportKeying.sqlLiteral` around `rawKeyLiteral`), and a change to any such literal's shape
+    gets a device walk, never a JVM spelling test alone.** Final counts: 1654 `:app` /
+    3078 JVM tests. **Arcs 1–34 are all frozen; no next arc without a user decision.**
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by

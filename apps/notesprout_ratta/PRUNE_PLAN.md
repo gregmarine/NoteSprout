@@ -7,7 +7,7 @@ the cross-session memory for the arc: read it whole at every phase start, togeth
 unless a standing trap needs checking; its protocol and traps are summarized at the end so this
 file is enough. `FOCUS_PLAN.md` is the shape this file copies.
 
-**Status: ✅ ARC COMPLETE + FROZEN 2026-09-10 — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 ✅ (M1–M9 landed 2026-09-09, all by Fable at the user's call — 3069 JVM tests, 1646 in `:app`) · P3 ✅ (L1–L22 landed 2026-09-10, all by **Opus** at the user's call — the plan said Sonnet; 3077 JVM tests, 1653 in `:app`) · P4 ✅ (2026-09-10, docs sweep + freeze; M7 walk WAIVED).** No code review of the fixes, no point, no API bump, no schema change. **Arcs 1–34 are all complete and frozen; the next arc, if any, is a fresh user decision.**
+**Status: ✅ ARC COMPLETE + FROZEN 2026-09-10 — P1 ✅ (2026-09-09, H1 landed; user walk WAIVED) · P2 ✅ (M1–M9 landed 2026-09-09, all by Fable at the user's call — 3069 JVM tests, 1646 in `:app`) · P3 ✅ (L1–L22 landed 2026-09-10, all by **Opus** at the user's call — the plan said Sonnet; 3077 JVM tests, 1653 in `:app`) · P4 ✅ (2026-09-10, docs sweep + freeze; M7 walk WAIVED) · **post-freeze pruning 2026-09-10: L17 shipped broken — the raw key went into `ATTACH … KEY` as a bare blob literal and every passphrase change failed at the index; one-line fix in `SoilRekey.attachLiteral`, walked PASS on the Nomad's release build (3078 JVM tests, 1654 in `:app`)**.** No code review of the fixes, no point, no API bump, no schema change. **Arcs 1–34 are all complete and frozen; the next arc, if any, is a fresh user decision.**
 Baseline before the arc: 1626 `:app` / 3033 JVM tests, g-paper 0.1.28, `API_VERSION` 9, fourteen
 modules, version `0.1.0-ratta`. No point, no API bump, no schema change, no g-paper change, no new
 module, no new dependency. **The notebook's bottom-strip pager (`NotebookActivity.kt` /
@@ -703,3 +703,24 @@ explanation and an `AskUserQuestion` never share one turn — explain, wait, the
   fourteen modules, g-paper 0.1.28, version `0.1.0-ratta`. No point, no API bump, no schema change,
   no g-paper change, no new module, no new dependency, no code review of the fixes. **Arc 34 is
   complete and frozen; arcs 1–34 are all frozen. The next arc, if any, is a fresh user decision.**
+- **2026-09-10 — post-freeze pruning (Fable, from the user's report): L17 was broken on device.**
+  The stable build's first passphrase change on the Nomad failed at the index with *Change
+  interrupted* on every Resume; the log showed `hmac check failed for pgno=1` on the
+  `ATTACH DATABASE … AS old_src KEY x'…'` inside `exportAndKeyToPrimary`, while the passphrase
+  verify of the same file passed. **Cause:** `attachLiteral` spliced `RawKeyDerivation.rawKeyLiteral`
+  in bare, so the ATTACH's key expression evaluated to a BLOB; SQLCipher only reads the `x'…'`
+  raw-key form off a TEXT value and KDFs a BLOB as a passphrase. `openRawKey` passes the same string
+  as the open-time passphrase (already text), which is why `peekVerified` hit and the JVM test
+  agreed with the wrong shape. Since `rawKeyOpens` hits on every start, **every** rotation took the
+  raw-key road, so the bug reached a fresh library too, debug and release alike — and no P3 gate
+  could see it: `SoilRekeyKeysTest` pinned the literal's shape, not SQLCipher's reading of it, and
+  P3 ran no walk (the plan called L17 pure). A first uninstall + reinstall was tried before the log
+  was read properly; the old data folder (2026-08-21, an early-arc index) made the first failure
+  look like a stale-key artefact. **Fix:** `attachLiteral` now wraps both roads in
+  `ExportKeying.sqlLiteral` (`'x''…'''` for a raw key — the spelling SQLCipher documents for ATTACH);
+  `SoilRekeyKeysTest` corrected + one case (4). `docs/encryption.md` step 1 carries the rule.
+  Walked PASS by the user on the Nomad release build (fresh library, Resume completed). **Gates:**
+  3078 JVM tests (1654 `:app`); `:app` release built, signed, verified, installed. **Trap for the
+  ledger:** a "pure" spelling test cannot pin a SQL-typed value — anything that changes the shape
+  of a key literal handed to SQLCipher gets a device walk (`RekeyProbe` or a real rotation), full
+  stop.

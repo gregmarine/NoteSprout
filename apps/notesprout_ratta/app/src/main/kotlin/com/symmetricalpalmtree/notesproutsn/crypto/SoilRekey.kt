@@ -107,13 +107,20 @@ object SoilRekey {
      * stopping here writes nothing.
      */
     /**
-     * How the source side of the transform spells its key (arc 34 / L17): the verified raw key as
-     * SQLCipher's `x'…'` blob literal when the caller had one, else the passphrase as a plain SQL
-     * string with `''` doubling. Pure, and the one place the choice is made — an `ATTACH … KEY`
-     * that spelled a raw key as a passphrase would be a wrong-key failure with a right key in hand.
+     * How the source side of the transform spells its key (arc 34 / L17): the verified raw key in
+     * SQLCipher's `x'…'` raw-key spelling when the caller had one, else the passphrase — **both as
+     * a SQL string literal** with `''` doubling. Pure, and the one place the choice is made.
+     *
+     * The raw key must travel as **text** (`'x''…'''`), never as a bare `x'…'` blob literal. An
+     * `ATTACH … KEY` evaluates its key as a SQL expression, and SQLCipher recognises the raw-key
+     * form only on a TEXT value that starts with `x'`; a BLOB value is taken as a passphrase and
+     * put through the KDF, which reads as a wrong key with the right key in hand. That was the
+     * post-freeze pruning of 2026-09-10: every passphrase change failed at the index with an HMAC
+     * error on page 1, on a fresh library, because `rawKeyOpens` hits on every start. The
+     * open-time passphrase ([SoilCrypto.openRawKey]) arrives as text already, so needs no quoting.
      */
     internal fun attachLiteral(passphrase: String, rawKey: ByteArray?): String =
-        if (rawKey != null) RawKeyDerivation.rawKeyLiteral(rawKey) else ExportKeying.sqlLiteral(passphrase)
+        ExportKeying.sqlLiteral(if (rawKey != null) RawKeyDerivation.rawKeyLiteral(rawKey) else passphrase)
 
     private fun absorbWal(file: File, passphrase: String, rawKey: ByteArray?) {
         val db = try {

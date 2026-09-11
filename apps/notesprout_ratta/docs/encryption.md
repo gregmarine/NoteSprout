@@ -144,8 +144,14 @@ verified hit **as** the old key at the one place that asks for it.
    index before calling in). Its WAL is absorbed by `absorbWal`: a raw open — under `oldRawKey` via
    `SoilCrypto.openRawKey` when one was handed in (no KDF), else the ordinary passphrase-derived
    open — with the ATTACH key literal chosen by the pure `SoilRekey.attachLiteral(passphrase,
-   rawKey)` (`RawKeyDerivation.rawKeyLiteral` for a raw key, `ExportKeying.sqlLiteral` otherwise;
-   `SoilRekeyKeysTest`, 3 cases) — `PRAGMA
+   rawKey)`: `RawKeyDerivation.rawKeyLiteral` for a raw key, the passphrase otherwise, **either
+   one wrapped in `ExportKeying.sqlLiteral`** so it reaches SQLCipher as TEXT (`SoilRekeyKeysTest`,
+   4 cases). **The raw key must never be spliced in bare** as `KEY x'…'`: an `ATTACH … KEY`
+   evaluates its key as a SQL expression, so a bare `x'…'` is a BLOB, and SQLCipher only
+   recognises the raw-key form on a TEXT value starting with `x'` — a BLOB is KDF'd as a
+   passphrase and fails the page-1 HMAC with the right key in hand. L17 first landed it bare and
+   **every passphrase change failed at the index on a fresh library** (the raw-key probe hits on
+   every start); fixed the same day, walked on the Nomad (2026-09-10) — `PRAGMA
    wal_checkpoint(TRUNCATE)`, close, then `SoilCompactor.sweepSidecars`. A non-empty `-wal`
    left after that throws — it is never deleted, and the rekey stops before writing anything.
 2. `ExportKeying.exportAndKeyToPrimary` exports the file into a sibling `<name>.rekey.tmp` under the

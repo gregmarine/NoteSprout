@@ -13,9 +13,17 @@ import org.junit.Test
 class SoilRekeyKeysTest {
 
     @Test
-    fun `a raw key is spelled as SQLCiphers blob literal`() {
+    fun `a raw key is spelled as SQLCiphers raw-key text, quoted as a SQL string`() {
+        // TEXT, never a blob literal: `ATTACH … KEY x'…'` hands SQLCipher a BLOB, which it treats
+        // as a passphrase and KDFs — an HMAC failure on page 1 with the right key in hand.
         val raw = byteArrayOf(0x01, 0x12, 0x23, 0x34.toByte(), 0xff.toByte())
-        assertEquals("x'01122334ff'", SoilRekey.attachLiteral("ignored", raw))
+        assertEquals("'x''01122334ff'''", SoilRekey.attachLiteral("ignored", raw))
+    }
+
+    @Test
+    fun `a raw key never arrives as a bare blob literal`() {
+        val literal = SoilRekey.attachLiteral("ignored", byteArrayOf(0x0a, 0x0b))
+        assert(literal.startsWith("'") && !literal.startsWith("x'")) { literal }
     }
 
     @Test
