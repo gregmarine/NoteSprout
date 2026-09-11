@@ -73,6 +73,13 @@ interface HeldInkPoint<I : Any, P> {
     fun outgoingTarget(iface: I): P?
 
     /**
+     * Move the extension's **next** parked page into place after a drain (arc 35 / HA1 — the
+     * calendar's Day send parks both halves); true when there is one. Only a point whose send can
+     * park more than one page overrides this; every other answers false, which is "nothing further".
+     */
+    fun advanceOutgoing(iface: I): Boolean = false
+
+    /**
      * Paint [target] as a finished page into [destination] — one `PageBundle` v1 carrying exactly
      * one page (arc 31 / HV5, the calendar's `render`). Only a point that has such a call
      * overrides this; every other one answers the way it always did, which is that it has no
@@ -284,6 +291,18 @@ open class HeldInkClient<I : Any, P>(
         val target = binding.call(point.callTimeoutMs) { point.outgoingTarget(it) }
         Slog.d(tag) { "outgoingTarget: ${target?.let { point.describe(it) } ?: "none"}" }
         return target
+    }
+
+    /**
+     * The extension's next parked page moved into place (arc 35 / HA1), on the bind that is still
+     * held — [outgoingTarget]'s rule: after this answers true, [drainOutgoing] and [outgoingTarget]
+     * read the next page. Throws [ExtensionCallException] (bind dead, timeout, refused).
+     */
+    suspend fun advanceOutgoing(): Boolean {
+        val binding = held ?: throw ExtensionCallException("not open")
+        val advanced = binding.call(point.callTimeoutMs) { point.advanceOutgoing(it) }
+        Slog.d(tag) { "advanceOutgoing: ${if (advanced) "another page" else "none"}" }
+        return advanced
     }
 
     /**

@@ -54,6 +54,17 @@ class NotebookUndoTest {
         assertEquals("N", received.pageId)
         assertTrue(received !is Action.PagePasted)
         assertTrue(received !is Action.Page)
+        // A pair of pages received in one gesture (arc 35 / HA1) reports the LAST page, replays
+        // from the first snapshot's `before` to the last's `after`, and owns every created id.
+        val second = NotebookSession.Structural(
+            before = snap.after, after = snap.after + "M", objectIds = listOf("s9"),
+            beforeCurrentId = "N", afterCurrentId = "M",
+        )
+        val pair = Action.PagesReceived(listOf(snap, second))
+        assertEquals("M", pair.pageId)
+        assertEquals(snap.before, pair.first.before)
+        assertEquals(second.after, pair.last.after)
+        assertEquals(snap.objectIds + "s9", pair.objectIds)
     }
 
     @Test

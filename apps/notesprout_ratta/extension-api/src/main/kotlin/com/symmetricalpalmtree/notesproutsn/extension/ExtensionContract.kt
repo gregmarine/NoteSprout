@@ -89,7 +89,7 @@ object ExtensionContract {
      * method floor, not an action floor — the host offers it only to a calendar declaring 9 and
      * still binds a 7 for everything else.
      */
-    const val API_VERSION: Int = 9
+    const val API_VERSION: Int = 10
 
     /**
      * The floor for a service on a **store-taking** point (arc 22 / X1): the host accepts such a
@@ -387,6 +387,15 @@ object ExtensionContract {
     /** The lowest API version a calendar must declare before the host asks it to `render` (HV4).
      *  A method floor: `MIN_API_VERSIONS` is untouched, [MIN_API_VERSION_FOR_CALENDAR] still binds. */
     const val MIN_API_VERSION_FOR_CALENDAR_RENDER: Int = 9
+
+    /**
+     * The lowest API version a calendar must declare before the host asks it to `advanceOutgoing`
+     * after a page send (arc 35 / HA1): a Day's whole-page Send parks BOTH halves, AM then PM, and
+     * the host drains them one after the other into two papered pages. A method floor exactly like
+     * [MIN_API_VERSION_FOR_CALENDAR_RENDER]: `MIN_API_VERSIONS` is untouched, a calendar declaring
+     * 9 is bound for everything it always was and simply lands one page as before.
+     */
+    const val MIN_API_VERSION_FOR_CALENDAR_DAY_SEND: Int = 10
 
     /** `render` flag: paint the period's ruling (the grid) under the ink; off = a white ground. */
     const val RENDER_GRID: Int = 1

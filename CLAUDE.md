@@ -147,10 +147,10 @@ skill (`.claude/skills/device-build-install/SKILL.md`) — invoked automatically
 - `main` — stable release branch (v1.0 "Seed" through v1.3 "Supernote" shipped; the release merge
   commits are in git history).
 - `ratta` — **the active feature branch** (cut 2026-08-20): Notesprout SN, a from-scratch
-  Supernote-only rebuild under `apps/notesprout_ratta/`. **Arcs 1–34 are all COMPLETE + FROZEN
+  Supernote-only rebuild under `apps/notesprout_ratta/`. **Arcs 1–35 are all COMPLETE + FROZEN
   (2026-09-10) and `apps/notesprout_ratta/PARITY_BACKLOG.md` is closed — every item done. No
-  NINTH extension point and no other arc without another user decision.** Arcs 25–34 (Drive,
-  Keys, Restore, Objects, Loop, Page, Harvest, Resume, Focus, Prune) each have a standalone
+  NINTH extension point and no other arc without another user decision.** Arcs 25–35 (Drive,
+  Keys, Restore, Objects, Loop, Page, Harvest, Resume, Focus, Prune, Halves) each have a standalone
   `apps/notesprout_ratta/<ARC>_PLAN.md` that is the plan + ledger for any work on that arc — never
   `RATTA_PLAN.md` — and a reference doc under `apps/notesprout_ratta/docs/`; that app's CLAUDE.md
   names both per arc, plus the rules that still bind (no code review of any of them — do not

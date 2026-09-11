@@ -190,6 +190,14 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
      */
     protected open val emptyPageSendCarriesPaper: Boolean get() = false
 
+    /**
+     * A whole-page send has just been parked (arc 35 / HA1): a screen whose page has companions
+     * that belong with it — the calendar's Day, whose other half is the same day — parks them here,
+     * in the order the host should land them. Runs inside the page-op lock, after the page's own
+     * flush, so anything read off the store is what is on disk. The default parks nothing more.
+     */
+    protected open suspend fun parkCompanionPages(page: InkPage) {}
+
     /** Record a stroke-level edit, wrapped in the consumer's action type. */
     protected abstract fun record(action: InkAction)
 
@@ -488,6 +496,7 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
             // bundle as "done" exactly as it does at the end of any transfer.
             val chunks = InkChunks.chunk(wire)
             parkOutgoing(chunks, page.pageWidth, page.pageHeight, wholePage = wholePage)
+            if (wholePage) parkCompanionPages(page)
             Slog.d(logTag) { "send: ${wire.size} strokes in ${chunks.size} chunks" }
             // Nothing more may run against the document: the host drains and then revokes the store.
             closing = true

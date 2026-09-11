@@ -116,6 +116,17 @@ class CalendarService : Service() {
             return CalendarSession.outboundTarget
         }
 
+        // ── Appended at arc 35 / HA1 (API 10) ──────
+
+        /** The next parked page of a multi-page send (a Day's other half) moves into place; false
+         *  when nothing further is parked. */
+        override fun advanceOutgoing(): Boolean {
+            enforce()
+            val advanced = CalendarSession.advance()
+            Slog.d(TAG) { "advanceOutgoing: ${if (advanced) "next page in place, ${CalendarSession.queuedCount} more" else "nothing further"}" }
+            return advanced
+        }
+
         private fun enforce() = HostCallerCheck.enforce(this@CalendarService, BuildConfig.HOST_PACKAGE)
     }
 

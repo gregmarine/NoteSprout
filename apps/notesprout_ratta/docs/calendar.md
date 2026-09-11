@@ -1009,6 +1009,29 @@ links) before a byte is trusted, and deletes the file in `finally`. Either failu
 call, the bundle check — is logged and dropped: the ink still travels the ink-only road. The
 "nothing arrived" rule became `strokes.isNotEmpty() || paper != null`.
 
+**A Day sends both halves (arc 35 / HA1, 2026-09-10 — a fresh user decision).** The top bar's
+Send on a Day page carries **AM then PM, whichever half is showing**, each as its own papered page
+after the displayed notebook page, the notebook ending on PM with its ink selected; one undo step
+removes the pair, redo brings both back; an empty half lands as its timeline alone (HV5's rule, per
+half). Month, Week and every selection send are unchanged. The calendar side:
+`InkScreenActivity.send` calls a new open hook `parkCompanionPages(page)` after a whole-page park;
+`CalendarActivity` overrides it for `KIND_DAY` — reads the other half off the store rows
+(`CalendarStore.readPage`, IO; the showing half was just flushed, the other is not open), chunks it,
+and re-parks so AM is the page `takeOutgoing`/`outgoingTarget` answer for and PM sits in
+`CalendarSession`'s new FIFO (`OutboundPage`, `queueAfterCurrent`, `advance`, cleared by `end`). An
+unminted half parks zero chunks at the showing page's size. The seam: **`ICalendar.advanceOutgoing()`**,
+appended after `outgoingTarget` under **`API_VERSION` 10** with a method floor
+`MIN_API_VERSION_FOR_CALENDAR_DAY_SEND` = 10 (`MIN_API_VERSIONS` untouched; a calendar declaring 9
+lands one page as before). Host side: `ExtensionScreenEntry.drainFurtherPages` — gated on that floor,
+bounded at three — loops `advanceOutgoing` → `drainOutgoing` → `withPaperIfWholePage`, and `onDrained`
+now takes the **list**; `NotebookActivity.receiveCalendarPages` checks every page's paper first, then
+one `runPageOp` with a `session.receivePage` per page (each inserts after the one before), recorded as
+`Action.PagesReceived(snapshots)` when more than one (undo = the first snapshot's `before` with every
+created id deleted, redo = the last's `after` with them revived). **The wait is visible:** a
+"Receiving from the calendar…" box (`RecognizingOverlay` with the entry's `receivingRes`) stands over
+the notebook from the result callback until the pages have landed — the two-page send runs for seconds
+on e-ink and read as a hang without it; the pad's send got the same box with its own wording.
+
 Notebook side: `notebook/CalendarPaper.accept(byteCount, width, height, pageWidth, pageHeight)` is
 the pure bound check (≤ `TemplateImport.MAX_BLOB_BYTES`, decoded size exactly the page, zero
 refused — a refusal is never a repair, nothing is scaled or cropped). `NotebookSession.receivePage`

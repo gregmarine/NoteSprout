@@ -26,7 +26,7 @@ class CalendarEntry(
     onSent: () -> Unit = {},
     /** Ink the calendar sent back, already sanitized and capped; the bind is finished the moment this
      *  returns. */
-    onDrained: suspend (DrainedInk) -> Unit = {},
+    onDrained: suspend (List<DrainedInk>) -> Unit = {},
     /** The calendar closed asking for the page it was showing to be exported (arc 31 / HV4 —
      *  `RESULT_CALENDAR_EXPORT`). The caller opens the Export screen at that target and brings the
      *  calendar back when it comes home. */
@@ -81,6 +81,7 @@ class CalendarEntry(
             failedBodyRes = R.string.calendar_failed_body,
             drainFailedTitleRes = R.string.calendar_drain_failed_title,
             drainFailedBodyRes = R.string.calendar_drain_failed_body,
+            receivingRes = R.string.calendar_receiving,
             exportFailedTitleRes = R.string.calendar_export_failed_title,
             exportFailedBodyRes = R.string.calendar_export_failed_body,
         )

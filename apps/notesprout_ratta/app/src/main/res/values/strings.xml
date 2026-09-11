@@ -834,6 +834,8 @@
     <string name="scratch_sent_toast">Sent to scratch pad</string>
     <string name="scratch_too_large_title">Too much to send</string>
     <string name="scratch_too_large_body">This selection holds more ink than the scratch pad can take. Send a smaller part of it.</string>
+    <string name="transfer_receiving">Receiving…</string>
+    <string name="scratch_receiving">Receiving from the scratch pad…</string>
     <string name="scratch_drain_failed_title">Nothing came back</string>
     <string name="scratch_drain_failed_body">The ink from the scratch pad could not be brought back. Nothing was changed — it is still on the pad.</string>
     <string name="scratch_truncated_title">Not everything came back</string>
@@ -854,6 +856,7 @@
     <string name="calendar_sent_toast">Sent to calendar</string>
     <string name="calendar_too_large_title">Too much to send</string>
     <string name="calendar_too_large_body">This selection holds more ink than the calendar can take. Send a smaller part of it.</string>
+    <string name="calendar_receiving">Receiving from the calendar…</string>
     <string name="calendar_drain_failed_title">Nothing came back</string>
     <string name="calendar_drain_failed_body">The ink from the calendar could not be brought back. Nothing was changed — it is still on the calendar.</string>
     <!-- The calendar's Export door (arc 31 / HV4): the screen closed asking for an export and then

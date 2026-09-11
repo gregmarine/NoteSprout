@@ -27,7 +27,7 @@ class ScratchPadEntry(
     onSent: () -> Unit = {},
     /** Ink the pad sent back, already sanitized and capped; the bind is finished the moment this
      *  returns. */
-    onDrained: suspend (DrainedInk) -> Unit = {},
+    onDrained: suspend (List<DrainedInk>) -> Unit = {},
     /** The showing is over (Y4): the calendar's pad chain reopens the calendar on a plain close. */
     onClosed: (resultCode: Int) -> Unit = {},
 ) : ExtensionScreenEntry<IScratchPad, Int>(
@@ -54,6 +54,7 @@ class ScratchPadEntry(
             failedBodyRes = R.string.scratch_failed_body,
             drainFailedTitleRes = R.string.scratch_drain_failed_title,
             drainFailedBodyRes = R.string.scratch_drain_failed_body,
+            receivingRes = R.string.scratch_receiving,
         )
     }
 }

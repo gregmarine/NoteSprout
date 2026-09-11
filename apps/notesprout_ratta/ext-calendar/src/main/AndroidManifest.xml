@@ -14,10 +14,10 @@
         <!-- The CALENDAR point (arc 23 / Y1) — SN's SEVENTH capability point, its FOURTH
              screen-owning one and the second with paper. The host holds one bind for the screen's
              whole showing.
-             API version 9 since arc 31 / HV4: the two appended ICalendar methods (`render`,
-             `outgoingTarget`) — a METHOD floor (MIN_API_VERSION_FOR_CALENDAR_RENDER = 9): the host
-             asks a calendar to render only when it declares 9, and still binds a 7 for everything
-             else. The point's own floor is still MIN_API_VERSION_FOR_CALENDAR (7) — born at 7, there
+             API version 10 since arc 35 / HA1: the appended `advanceOutgoing` — a METHOD floor
+             (MIN_API_VERSION_FOR_CALENDAR_DAY_SEND = 10): the host asks for a Day send's second
+             half only from a calendar declaring 10. 9 from arc 31 / HV4 (`render`, `outgoingTarget`,
+             MIN_API_VERSION_FOR_CALENDAR_RENDER = 9); a 7 is still bound for everything else. The point's own floor is still MIN_API_VERSION_FOR_CALENDAR (7) — born at 7, there
              is no older calendar shape to accept. The `android:value` below is the host-compat gate;
              this comment must move with it. -->
         <service
@@ -28,7 +28,7 @@
             </intent-filter>
             <meta-data
                 android:name="com.symmetricalpalmtree.notesproutsn.extension.API_VERSION"
-                android:value="9" />
+                android:value="10" />
         </service>
 
         <!-- The extension-owned screen (tier 2): exported, custom action, NO launcher filter;

@@ -67,6 +67,10 @@ class CalendarClient(context: Context, ref: ProviderRef) :
          *  (the host reads a target only on a result code an older calendar never returns). */
         override fun outgoingTarget(iface: ICalendar): CalendarTarget? = iface.outgoingTarget()
 
+        /** The next parked half of a Day send (arc 35 / HA1) — asked only of a calendar declaring
+         *  API 10; the entry gates the call on the version, this is the call itself. */
+        override fun advanceOutgoing(iface: ICalendar): Boolean = iface.advanceOutgoing()
+
         /** One page of paper on the **held** bind (arc 31 / HV5) — the whole-page send's grid. The
          *  store is the showing's own, handed straight back to the extension that lent it its use;
          *  [render] below is the same call bind-per-call, for the Export screen. */

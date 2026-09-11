@@ -56,4 +56,17 @@ interface ICalendar {
      * a selection send, and null when nothing is parked.
      */
     CalendarTarget outgoingTarget();
+
+    // ── Appended at arc 35 / HA1 under API 10 (ExtensionContract.MIN_API_VERSION_FOR_CALENDAR_DAY_SEND).
+    // After outgoingTarget() so every earlier transaction code is unchanged: a calendar declaring 9
+    // is bound for everything above and never asked this.
+
+    /**
+     * A page-send may park MORE than one page (a Day sends both halves, AM then PM): after the host
+     * has drained takeOutgoing to its empty bundle and read outgoingTarget for the page it holds,
+     * this moves the next parked page into place -- takeOutgoing and outgoingTarget then answer for
+     * it -- and returns true; false when nothing further is parked (the ordinary answer, and always
+     * the answer after a selection send). Idempotent at the end: a second false costs nothing.
+     */
+    boolean advanceOutgoing();
 }

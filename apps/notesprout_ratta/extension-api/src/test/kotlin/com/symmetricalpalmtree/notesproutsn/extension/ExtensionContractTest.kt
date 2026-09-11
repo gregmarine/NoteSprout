@@ -23,15 +23,17 @@ class ExtensionContractTest {
         // addition, with the floor made per action); 8 since arc 25 / V1 (the CLOUD_STORAGE point —
         // a compatible addition on the calendar's pattern, floored at 8); 9 since arc 31 / HV1
         // (ExporterInfo's `delivery` tail + the ICalendar render methods — a compatible tail whose
-        // bump is the skew guard for per-page exporters, no floor moved). Bumping this again is a
-        // contract event.
-        assertEquals(9, ExtensionContract.API_VERSION)
+        // bump is the skew guard for per-page exporters, no floor moved); 10 since arc 35 / HA1
+        // (ICalendar.advanceOutgoing — a Day send parks both halves; a compatible tail with a
+        // method floor, no action floor moved). Bumping this again is a contract event.
+        assertEquals(10, ExtensionContract.API_VERSION)
         assertEquals(9, ExporterContract.MIN_API_VERSION_FOR_DELIVERY)
         assertEquals(6, ExtensionContract.MIN_API_VERSION_FOR_STORE)
         assertEquals(7, ExtensionContract.MIN_API_VERSION_FOR_CALENDAR)
         // HV4: the render is a METHOD floor under 9 — the map above is untouched.
         assertEquals(9, ExtensionContract.MIN_API_VERSION_FOR_CALENDAR_RENDER)
-        assertEquals(ExtensionContract.API_VERSION, ExtensionContract.MIN_API_VERSION_FOR_CALENDAR_RENDER)
+        assertEquals(10, ExtensionContract.MIN_API_VERSION_FOR_CALENDAR_DAY_SEND)
+        assertEquals(ExtensionContract.API_VERSION, ExtensionContract.MIN_API_VERSION_FOR_CALENDAR_DAY_SEND)
         assertEquals(2_000, ExtensionContract.MAX_INK_STROKES)
         assertEquals(60_000, ExtensionContract.MAX_INK_POINTS)
         assertEquals(20, ExtensionContract.MAX_PRECONTEXT_CHARS)

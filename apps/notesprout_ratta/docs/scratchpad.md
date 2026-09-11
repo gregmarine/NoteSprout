@@ -293,6 +293,10 @@ page is clipped exactly like any other ink.
 
 ### Pad → notebook
 
+**Since arc 35 / HA1** a "Receiving from the scratch pad…" box (`RecognizingOverlay`, the entry's
+`receivingRes`) stands over the notebook from the pad's result callback until the ink has landed,
+and `onDrained` takes a list (the pad's is always one). Nothing else about the pad changed.
+
 1. The top bar's **Send** is the whole current page; the selection bar's **Send** is the lasso's
    strokes. Both `ic_pencil_down`; both **absent** without a notebook behind the pad. An empty pick
    raises "Nothing to send" — never silence.

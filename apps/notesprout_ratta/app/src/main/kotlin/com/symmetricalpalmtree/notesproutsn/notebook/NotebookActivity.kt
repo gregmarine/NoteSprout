@@ -2187,6 +2187,12 @@ class NotebookActivity : AppCompatActivity() {
                 session.reconcile(a.snapshot.before, emptyList(), a.snapshot.objectIds, a.snapshot.beforeCurrentId)
                 refreshToPage(session.currentPage.id)
             }
+            // The pair lands and leaves together (arc 35 / HA1): back to the list the FIRST insert
+            // saw, every row either insert created soft-deleted.
+            is Action.PagesReceived -> {
+                session.reconcile(a.first.before, emptyList(), a.objectIds, a.first.beforeCurrentId)
+                refreshToPage(session.currentPage.id)
+            }
             // No drain: a re-papering writes one page row and never touches the stroke writer.
             is Action.TemplateChanged -> { session.applyTemplate(a.pageId, a.from); refreshToPage(a.pageId) }
         }
@@ -2275,6 +2281,10 @@ class NotebookActivity : AppCompatActivity() {
             }
             is Action.PageReceived -> {
                 session.reconcile(a.snapshot.after, a.snapshot.objectIds, emptyList(), a.snapshot.afterCurrentId)
+                refreshToPage(session.currentPage.id)
+            }
+            is Action.PagesReceived -> {
+                session.reconcile(a.last.after, a.objectIds, emptyList(), a.last.afterCurrentId)
                 refreshToPage(session.currentPage.id)
             }
             is Action.TemplateChanged -> { session.applyTemplate(a.pageId, a.to); refreshToPage(a.pageId) }
@@ -3145,8 +3155,8 @@ class NotebookActivity : AppCompatActivity() {
      * Ink coming back from the pad ([ScratchPadEntry.onDrained]) — the transfer paste, in the pad's
      * words.
      */
-    private fun pasteFromPad(drained: DrainedInk) =
-        pasteTransferred(drained.strokes, drained.truncated, PAD_WORDING, "the scratch pad")
+    private fun pasteFromPad(drained: List<DrainedInk>) =
+        pasteTransferred(drained.flatMap { it.strokes }, drained.any { it.truncated }, PAD_WORDING, "the scratch pad")
 
     /**
      * Ink coming back from the calendar ([CalendarEntry.onDrained]) — the same paste, the calendar's
@@ -3154,15 +3164,16 @@ class NotebookActivity : AppCompatActivity() {
      * but the three strings they say, and a copy is how the `RattaNotebookView` trap is recreated one
      * file at a time.
      */
-    private suspend fun pasteFromCalendar(drained: DrainedInk) {
-        val paper = drained.paper
+    private suspend fun pasteFromCalendar(drained: List<DrainedInk>) {
         // Ink only: a selection send, or a whole-page send whose paper never arrived (the entry
-        // logged why). The arc-23 road, unchanged — it lands on the page that is displayed.
-        if (paper == null) {
-            pasteTransferred(drained.strokes, drained.truncated, CALENDAR_WORDING, "the calendar")
+        // logged why). The arc-23 road, unchanged — it lands on the page that is displayed. A
+        // multi-page send (arc 35 / HA1) always carries paper; one without it is the entry telling
+        // us a render failed, and every drain's ink lands on the displayed page rather than vanish.
+        if (drained.all { it.paper == null }) {
+            pasteTransferred(drained.flatMap { it.strokes }, drained.any { it.truncated }, CALENDAR_WORDING, "the calendar")
             return
         }
-        receiveCalendarPage(drained, paper)
+        receiveCalendarPages(drained)
     }
 
     /**
@@ -3179,22 +3190,33 @@ class NotebookActivity : AppCompatActivity() {
      * ink-only road: ink on the displayed page is a smaller wrong than a send that vanished. Paper
      * that fails it with **no** ink behind it landed nothing at all, and says so.
      */
-    private suspend fun receiveCalendarPage(drained: DrainedInk, paperBytes: ByteArray) {
+    private suspend fun receiveCalendarPages(drained: List<DrainedInk>) {
         if (!opened || closing) return
-        val width = drained.pageWidth.toInt()
-        val height = drained.pageHeight.toInt()
-        val usable = withContext(Dispatchers.IO) {
-            val bitmap = Bitmaps.decodeBounded(paperBytes, NotebookSession.MAX_TEMPLATE_EDGE)
-            if (bitmap == null) false else try {
-                CalendarPaper.accept(paperBytes.size, bitmap.width, bitmap.height, width, height)
-            } finally {
-                bitmap.recycle()
+        // Every page's paper is checked before anything is written (the HV5 rule, per page): a page
+        // whose paper fails lands ink-only on the displayed page — never in the middle of the pair.
+        val pages = ArrayList<Pair<DrainedInk, ByteArray>>(drained.size)
+        val inkOnly = ArrayList<DrainedInk>(0)
+        for (d in drained) {
+            val paperBytes = d.paper
+            val width = d.pageWidth.toInt()
+            val height = d.pageHeight.toInt()
+            val usable = paperBytes != null && withContext(Dispatchers.IO) {
+                val bitmap = Bitmaps.decodeBounded(paperBytes, NotebookSession.MAX_TEMPLATE_EDGE)
+                if (bitmap == null) false else try {
+                    CalendarPaper.accept(paperBytes.size, bitmap.width, bitmap.height, width, height)
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+            if (usable) pages += d to paperBytes!! else {
+                Slog.d(TAG) { "the calendar's paper was refused (${paperBytes?.size ?: 0} B against ${width}x$height)" }
+                inkOnly += d
             }
         }
-        if (!usable) {
-            Slog.d(TAG) { "the calendar's paper was refused (${paperBytes.size} B against ${width}x$height)" }
-            if (drained.strokes.isNotEmpty()) {
-                pasteTransferred(drained.strokes, drained.truncated, CALENDAR_WORDING, "the calendar")
+        if (pages.isEmpty()) {
+            val strokes = inkOnly.flatMap { it.strokes }
+            if (strokes.isNotEmpty()) {
+                pasteTransferred(strokes, inkOnly.any { it.truncated }, CALENDAR_WORDING, "the calendar")
             } else {
                 Dialogs.problem(this, R.string.calendar_receive_failed_title, R.string.calendar_receive_failed_body)
             }
@@ -3204,27 +3226,34 @@ class NotebookActivity : AppCompatActivity() {
             // The shared writer first, as every page op does: a stroke commit still queued would
             // land after the page list has already been swapped out from under it.
             session.store.drain()
-            val strokes = TransferCaps.toStrokes(drained.strokes)
-            val snap = runCatching {
-                session.receivePage(
-                    width, height,
-                    PaperSource.Image(paperBytes, TemplateFit.FIT),
-                    strokes,
-                    resources.displayMetrics.densityDpi.toFloat(),
-                )
-            }.onFailure { Log.w(TAG, "the calendar's page could not be added", it) }.getOrNull()
-            if (snap == null) {
+            val dpi = resources.displayMetrics.densityDpi.toFloat()
+            val snaps = ArrayList<NotebookSession.Structural>(pages.size)
+            var lastStrokes: List<Stroke> = emptyList()
+            // In order: each receive inserts after the page the previous one landed on (the
+            // session's current index moves with it), so AM comes before PM (arc 35 / HA1).
+            for ((d, paperBytes) in pages) {
+                val strokes = TransferCaps.toStrokes(d.strokes)
+                val snap = runCatching {
+                    session.receivePage(d.pageWidth.toInt(), d.pageHeight.toInt(), PaperSource.Image(paperBytes, TemplateFit.FIT), strokes, dpi)
+                }.onFailure { Log.w(TAG, "the calendar's page could not be added", it) }.getOrNull() ?: break
+                snaps += snap
+                lastStrokes = strokes
+            }
+            if (snaps.isEmpty()) {
                 // Nothing was written — the render threw, or the transaction did. One sentence.
                 Dialogs.problem(this, R.string.calendar_receive_failed_title, R.string.calendar_receive_failed_body)
                 return@runPageOp
             }
-            undo.record(Action.PageReceived(snap))
+            // One undo step for what was one gesture: a lone page keeps HV5's kind, a pair takes
+            // the arc-35 kind that replays both snapshots together.
+            undo.record(if (snaps.size == 1) Action.PageReceived(snaps[0]) else Action.PagesReceived(snaps))
             // The paste's road home: the page, its template and its strokes all come off the rows,
             // and it is synchronous within this page op — so the selection below lands on ink that
             // is already on the glass.
             navigateTo(session.currentIndex)
-            landTransferred(strokes, drained.truncated, CALENDAR_WORDING, R.string.calendar_page_received_toast)
-            Slog.d(TAG) { "received a page from the calendar (${strokes.size} strokes) as ${snap.afterCurrentId}" }
+            landTransferred(lastStrokes, pages.last().first.truncated, CALENDAR_WORDING, R.string.calendar_page_received_toast)
+            Slog.d(TAG) { "received ${snaps.size} page(s) from the calendar, last ${snaps.last().afterCurrentId}" }
+            if (inkOnly.isNotEmpty()) Slog.d(TAG) { "${inkOnly.size} page(s) of the send arrived without paper and were dropped" }
         }
     }
 

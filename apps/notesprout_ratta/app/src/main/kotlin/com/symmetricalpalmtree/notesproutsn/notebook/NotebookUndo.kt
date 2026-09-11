@@ -320,6 +320,22 @@ object NotebookUndo {
         }
 
         /**
+         * **Several pages received from the calendar in one gesture** (arc 35 / HA1 — a Day's two
+         * halves), each made by its own `receivePage` in order, undone and redone **together**:
+         * undo reconciles to the list the first insert saw with every row any of them created
+         * soft-deleted; redo to the list the last insert left with them revived. The snapshots
+         * chain — each `before` is the previous `after` — which is what makes the two ends enough.
+         * Reports the last page, where the notebook was left.
+         */
+        data class PagesReceived(val snapshots: List<NotebookSession.Structural>) : Action {
+            init { require(snapshots.isNotEmpty()) { "a multi-page receive has at least one page" } }
+            val first: NotebookSession.Structural get() = snapshots.first()
+            val last: NotebookSession.Structural get() = snapshots.last()
+            val objectIds: List<String> get() = snapshots.flatMap { it.objectIds }
+            override val pageId: String get() = last.afterCurrentId
+        }
+
+        /**
          * One page re-papered (arc 12) — the two template-row ids the page moved between, `""` for
          * blank. Replayed through [NotebookSession.applyTemplate] in either direction; no rows are
          * created or destroyed by the replay, because the template row the change may have minted

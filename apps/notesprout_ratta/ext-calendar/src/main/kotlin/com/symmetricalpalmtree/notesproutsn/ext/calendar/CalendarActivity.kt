@@ -20,6 +20,8 @@ import com.symmetricalpalmtree.notesproutsn.extension.CalendarDates
 import com.symmetricalpalmtree.notesproutsn.extension.CalendarTarget
 import com.symmetricalpalmtree.notesproutsn.extension.ExtensionContract
 import com.symmetricalpalmtree.notesproutsn.extension.HostCallerCheck
+import com.symmetricalpalmtree.notesproutsn.extension.InkChunks
+import com.symmetricalpalmtree.notesproutsn.ink.InkWire
 import com.symmetricalpalmtree.notesproutsn.extension.WireStroke
 import com.symmetricalpalmtree.notesproutsn.ink.InkAction
 import com.symmetricalpalmtree.notesproutsn.ink.InkPage
@@ -188,6 +190,40 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
      * which is a thing to want. A selection send keeps the refusal — an empty lasso is empty.
      */
     override val emptyPageSendCarriesPaper: Boolean get() = true
+
+    /**
+     * A Day's whole-page Send carries **both halves, AM then PM** (arc 35 / HA1), whichever one is
+     * showing: the other half is read off the store rows (the showing page was flushed by the
+     * caller, the other half is not open and its rows are what it is), chunked the same way, and
+     * the two are re-parked in landing order — AM as the page the host drains first, PM queued
+     * behind it for `advanceOutgoing`. An unminted half parks no chunks at the showing page's size:
+     * its paper is still a page, the HV5 rule per half. Month and Week park nothing more. A store
+     * that fails here leaves the single-page send exactly as it was parked.
+     */
+    override suspend fun parkCompanionPages(page: InkPage) {
+        val doc = document ?: return
+        val shown = doc.target
+        if (shown.kind != CalendarTarget.KIND_DAY) return
+        val store = CalendarSession.store ?: return
+        val otherHalf = if (shown.half == CalendarTarget.HALF_AM) CalendarTarget.HALF_PM else CalendarTarget.HALF_AM
+        val other = CalendarTarget.of(shown.kind, shown.localDate, otherHalf)
+        val otherChunks = try {
+            withContext(Dispatchers.IO) {
+                val stored = CalendarStore(store).readPage(other)
+                InkChunks.chunk(InkWire.toWireStrokes(stored.strokes.map { it.second }))
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "the day's other half could not be read; sending the showing half alone", e)
+            return
+        }
+        val shownPage = CalendarSession.OutboundPage(CalendarSession.outbound, CalendarSession.outboundPageWidth, CalendarSession.outboundPageHeight, shown)
+        val otherPage = CalendarSession.OutboundPage(otherChunks, page.pageWidth, page.pageHeight, other)
+        val (first, second) = if (shown.half == CalendarTarget.HALF_AM) shownPage to otherPage else otherPage to shownPage
+        CalendarSession.park(first.chunks, first.width, first.height)
+        CalendarSession.parkTarget(first.target)
+        CalendarSession.queueAfterCurrent(listOf(second))
+        Slog.d(TAG) { "send: both halves of ${shown.date} parked, AM first (${first.chunks.size} + ${second.chunks.size} chunks)" }
+    }
 
     // ── Export (arc 31 / HV4) ────────────────────────────────────────────────
 

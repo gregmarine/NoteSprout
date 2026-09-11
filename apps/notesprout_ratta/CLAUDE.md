@@ -153,7 +153,7 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   process-local `TagWrites` monitor is gone, with `TagCodec` / `CompactId` and the whole one-blob
   layout)) · `:ext-calendar` (**NSE · Calendar**, arc 23 / Y1 — `:extension-api` + `:sn-screen` +
   `:ext-ink`, never `:app`; one service + a screen: `CalendarService` + `CalendarActivity`; API
-  version **9** since arc 31 / HV4 (7 from Y1 to HV3); the fourth tier-2 screen and the second with paper; store `CalendarSchema.V1` =
+  version **10** since arc 35 / HA1 (9 from arc 31 / HV4, 7 from Y1 to HV3); the fourth tier-2 screen and the second with paper; store `CalendarSchema.V1` =
   `period` / `page` / `stroke` / `state`, every SQL string in `CalendarSql`, rows minted on the
   first stroke never on open, NEVER `INSERT OR REPLACE` into `period`/`page` (the cascade takes
   the ink), nothing deletes a period. **Grown in place by arc 24 "Events" (Z1–Z5, 2026-09-02 —
@@ -206,10 +206,10 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   the host bakes once and splits (`BundleSplit`) and calls it once per page.)
   `gradle.properties` sets `android.nonTransitiveRClass=false` — undoing it breaks every
   `:sn-screen` resource reference from `:app`.
-- **Arcs 26–34 are each COMPLETE + FROZEN.** Each has ONE reference doc and ONE standalone plan
+- **Arcs 26–35 are each COMPLETE + FROZEN.** Each has ONE reference doc and ONE standalone plan
   file whose ledger holds every phase record and judgment call — **read that plan file, not
-  `RATTA_PLAN.md`, for any work on the arc.** None added a point, bumped `API_VERSION` past 9,
-  changed the `.soil` schema, or had a code review (every waiver was the user's call — **do not
+  `RATTA_PLAN.md`, for any work on the arc.** None added a point, changed the `.soil` schema, or
+  had a code review (arc 35 bumped `API_VERSION` 9 → 10 as a compatible method-floor tail) (every waiver was the user's call — **do not
   re-raise any of them**); the version stays `0.1.0-ratta`. What binds beyond the plan files:
   - **Arc 26 "Keys"** (U1–U7, 2026-09-05; `docs/encryption.md`; `ENCRYPTION_PLAN.md`) — full
     encryption, `PARITY_BACKLOG.md` item 1. `SoilRekey` is the only key-changer on disk and
@@ -273,7 +273,19 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
     change failed at the index — a key literal handed to SQLCipher in SQL must be TEXT
     (`ExportKeying.sqlLiteral` around `rawKeyLiteral`), and a change to any such literal's shape
     gets a device walk, never a JVM spelling test alone.** Final counts: 1654 `:app` /
-    3078 JVM tests. **Arcs 1–34 are all frozen; no next arc without a user decision.**
+    3078 JVM tests.
+  - **Arc 35 "Halves"** (HA1–HA2, 2026-09-10; `HALVES_PLAN.md`; references `docs/calendar.md` §
+    Both transfers + `docs/extensions.md` § `advanceOutgoing` + `docs/notebook.md`) — a fresh user
+    decision made during the og2sn migration walk on the Manta: a Day's whole-page Send carries
+    **both halves, AM then PM**, as two papered pages after the displayed one, one undo step, an
+    empty half as its paper; `ICalendar.advanceOutgoing()` appended under **`API_VERSION` 10**
+    (method floor `MIN_API_VERSION_FOR_CALENDAR_DAY_SEND`, no action floor moved, only
+    `:ext-calendar` redeclares); `InkScreenActivity.parkCompanionPages` hook, `CalendarSession`'s
+    outbound FIFO, `ExtensionScreenEntry.drainFurtherPages` + `onDrained(List)`,
+    `Action.PagesReceived`; **a "Receiving from …" box over the caller for every send** (calendar
+    and pad). No code review (the user's call); walked by the user on the **Manta** (release, the
+    migrated library). Final counts: 1654 `:app` / 3079 JVM tests. **Arcs 1–35 are all frozen; no
+    next arc without a user decision.**
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by
@@ -393,7 +405,7 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   Action strings are
   SN-namespaced so Paper's extensions are never discovered; trust is same-signature both ways
   (discovery + bind-time re-check host-side, `HostCallerCheck` first thing in every stub method);
-  `ExtensionContract.API_VERSION` = **9** and the host accepts `minApiVersion(action)..9` — **the
+  `ExtensionContract.API_VERSION` = **10** and the host accepts `minApiVersion(action)..10` — **the
   floor is per action since arc 23 / Y1** (`minApiVersion` is a map, not a single set): 8 for
   `ACTION_CLOUD_STORAGE` (`CloudContract.MIN_API_VERSION_FOR_CLOUD`, arc 25 / V1), 7 for
   `ACTION_CALENDAR` (`MIN_API_VERSION_FOR_CALENDAR` — a point born at 7 has no older shape to
@@ -424,7 +436,10 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
   `ICalendar` methods appended after `end()` (`render` + `outgoingTarget`, gated by the **method**
   floor `MIN_API_VERSION_FOR_CALENDAR_RENDER` 9 — `MIN_API_VERSIONS` untouched, a calendar declaring
   7 still binds; `CloudContractTest` had pinned the cloud floor to *the current* version and was
-  re-pinned to 8). Not a ninth point.
+  re-pinned to 8). Not a ninth point. · **10 = arc 35 / HA1, one compatible tail and NO floor
+  moved**: `ICalendar.advanceOutgoing()` appended after `outgoingTarget` (method floor
+  `MIN_API_VERSION_FOR_CALENDAR_DAY_SEND` 10 — a Day's whole-page Send parks both halves and the
+  host drains them in turn; only `:ext-calendar` redeclares).
   Meta-data is **per service**.
 - **The Scratch Pad is not ours to change from here** (arc 11, `docs/scratchpad.md`). It is the
   `:ext-scratchpad` APK: its own process, its own g-paper surface, its own undo stack, and it

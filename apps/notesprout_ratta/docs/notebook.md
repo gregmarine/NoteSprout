@@ -1335,6 +1335,7 @@ and survives it — [`docs/links.md`](links.md)).
 | `PageErased` (arc 30 / PE1) | **Erase page** — `pageId` + the `objectIds` `eraseCurrent()` soft-deleted, ids only: `StrokeStore` keeps **no in-memory mirror** (`revive` is a bare `dao.restore` queued on the writer, and `reconcile` already restores a page delete's content ids with the same bare call), so no per-type snapshot and no stroke split is needed — nothing moves and nothing is re-minted, the rows stay where they are, dated out. Recorded only when the list is non-empty | `session.restoreIds(ids)` (one `withTransaction` + `mirror(now)`), `store.drain()`, `refreshToPage(pageId)` | `session.eraseIds(ids)`, drain, refresh — one repaint each way |
 | `TemplateChanged` (arc 12) | a pick in the template library — the two template ids the page moved between (`""` = blank). No drain: it writes one page row and never touches the stroke writer | `applyTemplate(from)` | `applyTemplate(to)` |
 | `ObjectsPasted` (O1) | an object paste — `Deleted` run in reverse, its own kind for `PagePasted`'s reason (a link travels as a `PageLink` snapshot, so undo takes its wrapped children down with it); a transfer paste from the Scratch Pad or (arc 23 / Y3) the Calendar is a strokes-only object paste and records here too, through the one shared `pasteTransferred` body (below) rather than a fifteenth kind | `store.remove` + `headings.erase` + `links.remove` | `store.revive` + `headings.restore` + `links.restore` |
+| `PagesReceived` (arc 35 / HA1) | **several pages received from the calendar in one gesture** — a Day's AM and PM halves — one `Structural` per `receivePage`, chained (`before` = the previous `after`); reports the last page | `reconcile(first.before)`, **deleting** every snapshot's `objectIds` | `reconcile(last.after)`, restoring them |
 | `PageReceived` (arc 31 / HV5) | a **whole-page send from the calendar** arriving with paper — `receivePage`'s `Structural`, `PagePasted`'s exact shape and replay, its own kind so a future undo label can say the page came from the calendar rather than the clipboard (see below) | `reconcile(before)`, **deleting** `objectIds` | `reconcile(after)`, restoring them |
 
 `Deleted` replays exactly like `Erased` (and its N2 heading half like `HeadingDeleted`) and is
@@ -1455,6 +1456,14 @@ never arms while the pen is active and re-checks at fire, so we are outside the 
 the R3 rule protects.
 
 ### The received page (arc 31 / HV5)
+
+**Since arc 35 / HA1 the landing takes a list** (`receiveCalendarPages`): every page's paper is
+checked first, then one `runPageOp` runs `session.receivePage` per page in order — each inserts
+after the page the previous one landed on — recorded as `Action.PageReceived` for one page and
+`Action.PagesReceived` for more; the notebook ends on the last page with its ink selected. A page
+whose paper fails is dropped from the pair (its ink lands on the displayed page only when no page
+at all could be papered). A "Receiving from the calendar…" box stands over the screen for the
+whole of it.
 
 A **whole-page send from the calendar** lands a *new* page rather than pasting onto the one
 displayed — the one road out of the transfer paste-back above that creates a page instead of
