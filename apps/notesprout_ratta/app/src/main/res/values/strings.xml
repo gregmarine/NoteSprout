@@ -638,6 +638,7 @@
     <string name="erase_page_title">Erase this page?</string>
     <string name="erase_confirm">Erase</string>
     <string name="export_page_action">Export page</string>
+    <string name="export_notebook_action">Export notebook</string>
 
     <!-- Save as template (arc 31 / HV2) -->
     <string name="save_as_template_action">Save as template</string>

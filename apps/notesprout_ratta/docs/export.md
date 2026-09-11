@@ -661,8 +661,10 @@ descriptor changed, no `API_VERSION` bump. Scope is a **host-side page-id filter
 so every exporter — the three installed today and item 6's future image exporter alike — inherits
 page scope without knowing it exists.
 
-**The door.** The notebook's page sheet gained an **Export page** row (last, `ic_download`, present
-only while a trusted exporter is installed — [`docs/notebook.md`](notebook.md) § Export page). It
+**The door.** The notebook's page sheet gained an **Export page** row (`ic_download`, present
+only while a trusted exporter is installed — [`docs/notebook.md`](notebook.md) § Export page; since
+2026-09-10 an **Export notebook** row, last on the sheet, walks the same door with no page id, so
+this screen opens at whole scope with no Scope row, as from the library). It
 is **close, export, reopen** (decision 5): the Export screen reads a *cold* `.soil` (`ExportOpen`
 guard 2 refuses a held file — the cold-file invariant is untouched), so the notebook closes exactly
 as for a Recents switch — drain, cover, bookmark, seal — and launches this screen from

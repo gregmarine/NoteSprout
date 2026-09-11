@@ -1227,7 +1227,7 @@ paper is full-bleed and the chrome is two thin bars.
 | 2-finger vertical swipe ↓ | open the **Recents** (T1 — its upward twin is unassigned) |
 | 2-finger stationary double-tap | undo |
 | 3-finger stationary double-tap | redo |
-| 1-finger long-press | the **page sheet** — Copy / Cut / Paste / Page template (arc 12, the whole library since arc 13; [`docs/templates.md`](templates.md)) / Erase page (arc 30 / PE1) / Delete (B1; [`docs/clipboard.md`](clipboard.md)) / Export page (arc 30 / PE2, only while an exporter is installed; [`docs/export.md`](export.md) § Scope) / Save as template (arc 31 / HV2; [`docs/templates.md`](templates.md) § Save as template) |
+| 1-finger long-press | the **page sheet** — Copy / Cut / Paste / Page template (arc 12, the whole library since arc 13; [`docs/templates.md`](templates.md)) / Erase page (arc 30 / PE1) / Delete (B1; [`docs/clipboard.md`](clipboard.md)) / Export page (arc 30 / PE2, only while an exporter is installed; [`docs/export.md`](export.md) § Scope) / Save as template (arc 31 / HV2; [`docs/templates.md`](templates.md) § Save as template) / Export notebook (2026-09-10, only while an exporter is installed; § Export page) |
 
 Thresholds (Paper-v0 parity — the numbers are the feel):
 
@@ -1437,16 +1437,17 @@ each sender's own half.
 
 The long-press **asks**; it never acts. `showPageSheet` opens an `ActionSheetDialog` with
 **Copy page · Cut page · Paste page · Page template · Erase page · Delete page · Export page · Save as
-template** (eight rows since arc 31 / HV2) — Paste present only when the clipboard holds a page,
-Export page only while a trusted exporter is installed, Save as template only while the page has a
+template · Export notebook** (nine rows since 2026-09-10) — Paste present only when the clipboard holds a page,
+Export page and Export notebook only while a trusted exporter is installed, Save as template only while the page has a
 usable size (**absent, never disabled**: a greyed control is invisible on e-ink).
 Copy and Cut confirm with a toast; Paste opens a second sheet for the placement (before/after); Page
 template opens the template library (below); Erase page and Delete go to their confirm dialogs;
 Export page closes the notebook into the Export screen (below); Save as template (arc 31 / HV2,
 `notebook/SaveAsTemplateFlow`) rasters the page as the export bake would — paper + ink through the
 shared `PageRaster`, after a `drain()` — and lands it in the template library with fit pinned to Fit,
-no `.soil` write, no undo entry: [`docs/templates.md`](templates.md) § Save as template. The whole
-clipboard side is [`docs/clipboard.md`](clipboard.md).
+no `.soil` write, no undo entry: [`docs/templates.md`](templates.md) § Save as template. Export notebook (last) is
+the library's whole-notebook Export through the same close-export-reopen door as Export page (below).
+The whole clipboard side is [`docs/clipboard.md`](clipboard.md).
 
 The delete confirm is the bare question "Delete this page?" with **no warning body** — a deleted
 page and its ink come straight back via undo (soft delete + `reconcile`), so "cannot be recovered"
@@ -1530,9 +1531,9 @@ The row sits between Page template and Delete, icon `ic_erase_page` in `:sn-scre
 `ic_erase_all` byte-for-byte (Tabler `file-x`, 24 dp / stroke 2 / round; og's `drawable/` was
 checked before drawing a "fresh" one, the standing rule).
 
-### Export page (arc 30 / PE2)
+### Export page (arc 30 / PE2) · Export notebook (2026-09-10)
 
-**Export page** is the notebook's Export reachable at page scope — the last row, `ic_download`,
+**Export page** is the notebook's Export reachable at page scope — `ic_download`,
 present only while `exportAvailable`, which is `ExtensionRegistry.exporters(this).isNotEmpty()`
 re-asked on every resume and cached (the sheet is built synchronously on the long-press, and a
 package rarely changes under an open notebook; a stale true costs one dialog on the Export screen,
@@ -1550,6 +1551,12 @@ cancelled, refused, Back), and the reopen lands on the bookmark the close just w
 Undo history dies with the close, as on every close. Seal-in-place was declined (a new state
 machine on a ~3900-line screen). The Export screen's own half — the Scope row, the Soil rule, the
 filename, the reopen — is [`docs/export.md`](export.md) § Scope.
+
+**Export notebook** (2026-09-10 — the user found the whole-notebook export reachable only from the
+library) is the sheet's last row, `ic_download`, behind the same `exportAvailable` gate. It is the
+same door — `exportVia(pageId = null)`, which `exportPage()` also calls with the displayed page —
+so the Export screen opens exactly as from the library: whole scope, Soil listed, no Scope row, and
+the notebook reopens after on its bookmark. No new Intent extra, no Export-screen change.
 
 ### Page template (arc 12; the whole library since arc 13)
 

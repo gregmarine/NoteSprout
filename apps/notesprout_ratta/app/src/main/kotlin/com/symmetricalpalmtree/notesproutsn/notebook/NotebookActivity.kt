@@ -3689,6 +3689,13 @@ class NotebookActivity : AppCompatActivity() {
                 saveAsTemplateFlow.start(displayedPageId)
             }
         }
+        // Export notebook, last (2026-09-10): the library's whole-notebook Export reachable without
+        // leaving for the library — the same close-export-reopen door as Export page with no page
+        // id, so the Export screen opens at whole scope with Soil listed and no Scope row. Same
+        // exporter gate as Export page.
+        if (exportAvailable) {
+            sheet.addAction(R.drawable.ic_download, getString(R.string.export_notebook_action)) { exportNotebook() }
+        }
         sheet.show()
     }
 
@@ -3718,9 +3725,21 @@ class NotebookActivity : AppCompatActivity() {
      * — what is on the glass (the R6 rule), never `session.currentIndex` mid-flip.
      */
     private fun exportPage() {
-        if (!opened || closing) return
         val pageId = displayedPageId
         if (pageId.isEmpty()) return
+        exportVia(pageId)
+    }
+
+    /**
+     * **Export notebook** (2026-09-10): the library's whole-notebook Export from the page sheet —
+     * the same door as [exportPage] with no page id, so the Export screen opens at whole scope
+     * (Soil listed, no Scope row) exactly as from the library, and reopens this notebook after.
+     */
+    private fun exportNotebook() = exportVia(pageId = null)
+
+    /** The close-export-reopen door shared by [exportPage] (a page id) and [exportNotebook] (null). */
+    private fun exportVia(pageId: String?) {
+        if (!opened || closing) return
         val name = notebookName
         OpeningOverlay.showThen(this) {
             close {
