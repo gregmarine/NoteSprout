@@ -90,6 +90,36 @@ again: `pm enable`, and expect the delayed re-freeze.
 
 ---
 
+## Notesprout SN (the official Supernote version)
+
+Lives in `apps/notesprout_sn/` with its own Gradle project — see `apps/notesprout_sn/CLAUDE.md`.
+**Supernote only.** Default target is the Nomad (SNN `SN078D10012852`); the Manta (SNM
+`SN100C10023972`) only when asked. The Manta identifies as a Nomad — always pass `-s`.
+
+- **applicationId:** `com.symmetricalpalmtree.notesproutsn` (debug: `….notesproutsn.dev`)
+- **Launcher label:** "Notesprout SN" (debug: "Notesprout SN Dev") · version `0.1.0-sn`
+- **Extensions** (separate APKs, `NSE · <Name>`, one puzzle icon each; package
+  `com.symmetricalpalmtree.notesproutsn.ext.<name>`): `mlkit`, `scratchpad`, `pdf`, `soil`, `image`,
+  `document`, `tags`, `calendar`, `cloud`. Install every one alongside the host on the same device.
+  The user's real library lives on the Manta's **release** install — never install debug there
+  unless asked.
+
+```sh
+cd ~/git/Notesprout/apps/notesprout_sn
+./gradlew assembleDebug                  # host + every ext-* debug APK
+./gradlew test                           # JVM tests, all modules
+./gradlew assembleRelease                # unsigned; sign each APK with the debug keystore (apksigner block above)
+for m in app ext-mlkit ext-scratchpad ext-pdf ext-soil ext-image ext-document ext-tags ext-calendar ext-cloud; do
+  adb -s <serial> install -r $m/build/outputs/apk/debug/$m-debug.apk     # or the *-release-signed.apk
+done
+adb -s <serial> shell am start -n com.symmetricalpalmtree.notesproutsn.dev/com.symmetricalpalmtree.notesproutsn.bootstrap.BootstrapActivity
+```
+
+Traps: Supernote swallows `adb shell input text` (tap the on-screen keyboard); EPD live ink is
+invisible to screencap; adb cannot drive multi-finger gestures or lasso — walk those by hand.
+
+---
+
 ## Notesprout (main app) Tiers
 
 Tiers mirror README.md — change them in both places or they drift.

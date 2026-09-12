@@ -763,7 +763,7 @@ sweep offers one, e.g. a grey pen code) would be a g-paper change (`~/git/g-pape
 ## Paper + Notesprout SN — R6 review findings accepted (not fixed) in the SN freeze (2026-08-22)
 
 The Notesprout SN R6 `/code-review high` pass fixed its 10 top correctness findings in SN
-(`apps/notesprout_ratta`, see RATTA_PLAN.md R6 Outcome). The following were **explicitly accepted**
+(`apps/notesprout_sn`, see RATTA_PLAN.md R6 Outcome). The following were **explicitly accepted**
 — most are byte-identical in Paper, so a real fix is a family-wide change:
 
 - **Paper twin of the damaged-index fix (the one worth doing):** `PaperIndex`'s probe-`Invalid`
@@ -790,7 +790,7 @@ The arc-3 `/code-review high` pass (N0–N2 range) fixed 8 of its 10 confirmed c
 in SN (see RATTA_PLAN.md N3 Outcome). Two were **explicitly accepted**:
 
 - **`StrokeSegmenter` fragment-merge guard can fold a genuine short line into an adjacent full
-  line** (`apps/notesprout_ratta/ext-mlkit/.../StrokeSegmenter.kt` ≈ line 129): the
+  line** (`apps/notesprout_sn/ext-mlkit/.../StrokeSegmenter.kt` ≈ line 129): the
   `minOf(sizes) <= 3` guard has no x-range/gap check, so a 1–3-stroke cursive line whose box
   overlaps a descender-inflated neighbour >40 % merges and interleaves both lines' ink. Affects
   `recognizePage` only, which has **no consumer in the shipped app** since N3 removed the debug
@@ -865,7 +865,7 @@ J6 Outcome) and one was refuted. Two things are carried, neither of them SN bugs
 
 - **The pad/notebook colour clamp is asymmetric, and deliberately so.** The host forces inbound ink
   to opaque black; the extension does not clamp the colour of ink the host sends it. Recorded in
-  `apps/notesprout_ratta/docs/extensions.md` § Boundary audit rather than "fixed": SN's ink is fixed
+  `apps/notesprout_sn/docs/extensions.md` § Boundary audit rather than "fixed": SN's ink is fixed
   black so the host has no other colour to send, the sender is signature-matched, and the untrusted
   direction is the one that clamps. Revisit only if SN ever gains colour ink — at which point the
   pad's fixed-tool rule changes too, and both belong in the same change.
@@ -964,7 +964,7 @@ shared code (`ExportKeying.exportAndKeyToPrimary`, `SoilStreams.streamCopy`). On
 **explicitly accepted, not fixed**:
 
 - **Imported names can't be edited under `NameRules`' charset**
-  (`apps/notesprout_ratta/.../importing/ImportNames.kt` + `library/NameRules.kt`): `ImportNames.clean`
+  (`apps/notesprout_sn/.../importing/ImportNames.kt` + `library/NameRules.kt`): `ImportNames.clean`
   deliberately admits characters (parentheses, unicode) the typed-name charset
   (`^[a-zA-Z0-9_\-. ]*$`) forbids — mangling `Field notes (2)` at import would rename the user's
   notebook for no benefit, and that decision stands. The cost: any later *edit* of such a name in
@@ -1036,8 +1036,8 @@ needs to move. It would delete `TagCodec` and its arithmetic outright and lift t
 
 Needs a fresh user decision and an arc of its own — it is a seam change every extension inherits.
 
-**→ Decided and SHIPPED 2026-09-01 as Arc 22 "Tables"** (`apps/notesprout_ratta/RATTA_PLAN.md`
-§ Arc 22 ledger; the reference is `apps/notesprout_ratta/docs/extensions.md` § the extension store).
+**→ Decided and SHIPPED 2026-09-01 as Arc 22 "Tables"** (`apps/notesprout_sn/RATTA_PLAN.md`
+§ Arc 22 ledger; the reference is `apps/notesprout_sn/docs/extensions.md` § the extension store).
 Not the appended facility sketched above — a **replacement**: `IExtensionStore` v6 is `schemaVersion`
 / `applySchema` / `exec` / `query` / `next` / `close` over gated parameterized SQL (`StoreSql`
 validates every statement, `StoreCodec` carries statements and rows, ≤ 4 MiB chunks over the
@@ -1055,13 +1055,13 @@ the user's call). Everything the entry predicted was deleted: `TagCodec`, `Compa
 from either leg, replace-all behind the Backup screen's *Restore from a backup…* row; the aside-swap
 ordering, "replace all" against a moved-on library (it replaces, no merge, no undo) and the
 cross-device key (the staged index is proved openable under a key the user supplies **before**
-anything live is touched) are all answered in `apps/notesprout_ratta/RESTORE_PLAN.md` § Decisions,
-and the reference is `apps/notesprout_ratta/docs/restore.md`. The manual copy-back stays documented
+anything live is touched) are all answered in `apps/notesprout_sn/RESTORE_PLAN.md` § Decisions,
+and the reference is `apps/notesprout_sn/docs/restore.md`. The manual copy-back stays documented
 as the way to recover ONE store without replacing the library. The original entry follows.
 
 **W5 put every extension store into the backup set; it did not add a way to put one back.** The
 user's phase-start call: W5 ships backup only, the manual copy-back is documented
-(`apps/notesprout_ratta/docs/backup.md` § Extension stores), and a restore screen is deferred here.
+(`apps/notesprout_sn/docs/backup.md` § Extension stores), and a restore screen is deferred here.
 
 Arc 17 shipped the same shape for the library itself — backup, no restore — because a single
 notebook already comes back through arc 16's Import, every backup file being a self-describing
@@ -1090,7 +1090,7 @@ is the host's. That is the shape the seam wants — the extension owns tags, the
 library — so a pruning pass cannot be a background job inside `:ext-tags`.
 
 **Arc 22 "Tables" (2026-09-01) dissolved the hard half.** The assignments are rows in the
-extension's own `assignment` table now (`apps/notesprout_ratta/docs/tags.md` § the data model), so
+extension's own `assignment` table now (`apps/notesprout_sn/docs/tags.md` § the data model), so
 a prune is one statement — `DELETE FROM assignment WHERE notebookId NOT IN (…)` (and, per notebook
 asked about, `… WHERE notebookId = ? AND pageId <> '' AND pageId NOT IN (…)`) — inside one `exec`
 transaction, with no codec, no blob budget and no `TagWrites` lock (both are gone). Two shapes
@@ -1183,7 +1183,7 @@ og's events — with reminders and three recurring scopes (this / following / al
 shape answers the entry's own "whose seam" question for events — the calendar's own store and
 process, not a new point — and no notification plumbing was needed to get there because SN events
 carry no notifications of any kind (a look-ahead *Upcoming* section only, per
-`apps/notesprout_ratta/RATTA_PLAN.md` § Arc 24).
+`apps/notesprout_sn/RATTA_PLAN.md` § Arc 24).
 
 The remaining list — **tasks/routines, the day window, history, day notes, calendar export, the
 Today dashboard** — is still open, and the shape question arc 23 posed for it still stands: "should

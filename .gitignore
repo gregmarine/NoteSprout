@@ -25,6 +25,7 @@ out/
 captures/
 
 # Kotlin
+**/.kotlin/
 *.class
 
 # Keystore / signing

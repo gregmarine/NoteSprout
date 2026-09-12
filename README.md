@@ -15,6 +15,25 @@ Notesprout is an open source, handwriting-first notes app built for people who p
 | **v1.1 — Sprout** | ✅ Shipped — merged to `main`, source preserved on the `sprout` branch (archived) |
 | **v1.2 — Sapling** | ✅ Shipped — merged to `main`, source preserved on the `sapling` branch (archived) |
 | **v1.3 — Supernote** | ✅ Shipped — merged to `main`, source preserved on the `supernote` branch (archived) |
+| **Notesprout SN 0.1.0** | ✅ Shipped — the official Supernote version (`apps/notesprout_sn`), merged to `main` 2026-09-11 (tag `notesprout-sn-0.1.0`; the `ratta` branch was merged and deleted) |
+
+## Growth Log — Notesprout SN 0.1.0 (2026-09-11)
+
+**New Branches**
+- **Notesprout SN** (`apps/notesprout_sn`) — a from-scratch, Supernote-only version of Notesprout: a
+  small host app plus separately installed extension APKs (`NSE · ML Kit`, `Scratch Pad`, `PDF
+  Export`, `Soil Export`, `Image Export`, `Document`, `Tags`, `Calendar`, `Cloud Storage`) over the
+  g-paper Ratta firmware-ink engine. Eight extension points behind one versioned Binder contract.
+- Library with folders, fuzzy name + tag search, templates library, notebook export / import,
+  local + Google Drive backup and whole-library restore.
+- Notebook: headings, links, contents, recents, snap-to-guides, sticky notes, text objects, six
+  shapes, lasso + lasso eraser, clipboard within and across notebooks, page erase / export.
+- Documents (the page is the draft, the document is the result) with Proofread; Tags; a
+  Month / Week / Day handwriting calendar with Events; a Scratch Pad.
+- Full encryption parity: global or per-notebook passphrases, key rotation, recovery.
+- Focus mode: double-tap hides the chrome; hidden chrome collapses to a corner tool button.
+
+**Gardeners** — Greg Marine, with Claude Code.
 
 ---
 
@@ -48,7 +67,7 @@ Notesprout is an open source, handwriting-first notes app built for people who p
 - **Kotlin** — native Android app (Java 17 target)
 - **Room / SQLite** — `.soil` notebook files, single unified table, one file per notebook
 - **Onyx SDK** — low-latency stylus input on BOOX e-ink devices, for both EMR and USI pens
-- **Ratta firmware ink** — low-latency stylus input on Supernote e-ink devices via the firmware's ink service
+- **Ratta firmware ink** — low-latency stylus input on Supernote e-ink devices via the firmware's ink service (through the g-paper engine in Notesprout SN)
 - **SQLCipher** — full-database encryption for `.soil` notebooks and the global index; passphrase-derived keys, per-notebook or global scope, with password-protected PDF export via PDFBox
 - **Handwriting recognition** — on-device, two engines: **ML Kit** digital ink (default, always available) and an optional **TrOCR** personal engine running on **ONNX Runtime Mobile**, fine-tuned to your own handwriting; feeds heading text, full-page text extraction, and text/markdown export (Experimental)
 - **kotlinx.serialization** — code-generated JSON, zero reflection
