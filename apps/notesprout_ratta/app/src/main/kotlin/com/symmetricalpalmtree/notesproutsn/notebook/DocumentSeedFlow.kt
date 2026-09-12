@@ -3,6 +3,7 @@ package com.symmetricalpalmtree.notesproutsn.notebook
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import com.symmetricalpalmtree.gpaper.core.model.Stroke
 import com.symmetricalpalmtree.notesproutsn.R
 import com.symmetricalpalmtree.notesproutsn.core.Dialogs
 import com.symmetricalpalmtree.notesproutsn.core.Slog
@@ -115,11 +116,7 @@ class DocumentSeedFlow(
             val page = nb.pages.firstOrNull { it.id == pageId } ?: return
             val watermark = nb.db.documentDao().maxContentUpdatedAt(pageId)
             val t0 = System.currentTimeMillis()
-            val text = client.recognizePage(
-                InkPayload.fromStrokes(strokes),
-                page.width.toFloat(),
-                page.height.toFloat(),
-            )
+            val text = recognizePage(client, strokes, page)
             Slog.d(TAG) {
                 "seed: ${strokes.size} strokes → ${text.length} chars in ${System.currentTimeMillis() - t0} ms"
             }
@@ -180,11 +177,7 @@ class DocumentSeedFlow(
         val page = nb.pages.firstOrNull { it.id == pageId } ?: return null
         return try {
             val t0 = System.currentTimeMillis()
-            val text = client.recognizePage(
-                InkPayload.fromStrokes(strokes),
-                page.width.toFloat(),
-                page.height.toFloat(),
-            )
+            val text = recognizePage(client, strokes, page)
             Slog.d(TAG) {
                 "recognize: ${strokes.size} strokes → ${text.length} chars in ${System.currentTimeMillis() - t0} ms"
             }
@@ -193,6 +186,25 @@ class DocumentSeedFlow(
             Slog.d(TAG) { "recognize failed: ${e.javaClass.simpleName}" }
             null
         }
+    }
+
+    /**
+     * The page's ink out to the extension, **fitted to the recognizer's per-call caps** first
+     * ([InkBudget]): a dense page — a full Manta page of firmware ink runs well past
+     * `MAX_INK_POINTS` — used to fail `InkCaps` before the bind, which every caller here could
+     * only report as "recognition isn't available". Over the stroke cap the page goes as several
+     * calls in writing order, their texts joined by a line break; over the point cap the strokes
+     * are decimated (endpoints kept). Blank chunks are dropped so a split never invents a line.
+     */
+    private suspend fun recognizePage(client: RecognizerClient, strokes: Collection<Stroke>, page: PageRef): String {
+        val chunks = InkBudget.fit(InkPayload.fromStrokes(strokes))
+        if (chunks.size > 1) Slog.d(TAG) { "recognize: ${strokes.size} strokes over the caps → ${chunks.size} calls" }
+        val texts = ArrayList<String>(chunks.size)
+        for (chunk in chunks) {
+            val text = client.recognizePage(chunk, page.width.toFloat(), page.height.toFloat())
+            if (text.isNotBlank()) texts += text
+        }
+        return texts.joinToString("\n")
     }
 
     /**

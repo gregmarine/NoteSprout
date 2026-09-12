@@ -248,7 +248,11 @@ pressure, colour or width crosses the boundary. The wire form is `int n · float
 reader of this version simply stops reading after `y`). `MAX_INK_POINTS` is capped at 60,000,
 sized in the constant's own comment as "≈480 KB of floats" — comfortably under the point past
 which a single Binder transaction risks the ~1 MB transaction-buffer ceiling, which is also why
-ink crosses as one bounded list rather than, say, a stream.
+ink crosses as one bounded list rather than, say, a stream. A whole page can exceed it (a full
+Manta page of firmware ink does): the document seed fits the page to both caps host-side before
+the call — `notebook/InkBudget`, several calls in writing order over the stroke cap, points
+decimated over the point cap — so the caps bound a *call*, never what a page may hold
+(`docs/document.md` § Seeding).
 
 **`RecognizerStatus`** is four plain `Int` constants (no enum, no parcelable — AIDL carries `int`
 natively): `READY` (0), `NEEDS_DOWNLOAD` (1), `DOWNLOADING` (2, covers checking/downloading/

@@ -357,6 +357,19 @@ recognizer ready ⇒ open empty, page stays seedable for a later visit). **The w
 before recognition runs, on every path** — seed, Bring in, and a flip alike. **Recognition is
 entirely host-side**: only text crosses the seam, never ink.
 
+**A dense page is fitted to the recognizer's caps, never refused** (post-freeze pruning
+2026-09-11, `notebook/InkBudget`). `RecognizerClient.recognizePage` is one Binder call under
+`MAX_INK_STROKES` / `MAX_INK_POINTS` (2,000 / 60,000 — the ~1 MB transaction budget), and a full
+Manta page of firmware ink runs well past the point cap: the host's `InkCaps` check threw before
+the bind, every seed path caught it as "recognition failed", and the editor could only say
+"recognition isn't available" for a recognizer that was READY. `DocumentSeedFlow.recognizePage`
+now runs every page — the open-time seed, Bring in, a flip's silent seed and the notebook merge —
+through `InkBudget.fit`: over the stroke cap the page goes as several calls in writing order,
+their texts joined by a line break (blank chunks dropped); over the point cap each stroke keeps
+its first point, every *stride*-th after it and its last (ML Kit resamples the polyline, so the
+recognizer sees the same shape). Pure and JVM-tested; `HeadingConvert`'s selection-sized
+`recognizeInk` keeps its own "too much ink" dialog — a heading over 60,000 points is not a page.
+
 `DocumentPageState` carries a `seeded` flag meaning "the read window holds a fresh draft the host
 has not stored yet" — the editor treats that state as unsaved and pushes `drafted = true` until a
 save actually commits it, which is what makes "open the editor once on a written page" the act of
@@ -626,6 +639,7 @@ build, and it never assigns its peer at all in release.
 | Failure | What happens |
 |---|---|
 | Bring in tapped with no recognizer ready | `SEED_UNAVAILABLE` typed refusal; the sheet still opens, but recognition never runs |
+| A page over the recognizer's per-call caps | Never a refusal since 2026-09-11: `InkBudget.fit` splits it into calls in writing order and decimates points to fit (see § Seeding) |
 | A drafted commit's parked watermark died before it landed | `NO_DRAFT_PENDING`; the editor downgrades — claim cleared, same text resent as an ordinary save, only provenance lost |
 | Merge cancelled mid-run | `MERGE_CANCELLED`; the volatile cancel flag is checked between pages (a no-op if the merge is idle), the editor stays on the page it was on, nothing written |
 | A save chunk is refused (cap exceeded, bad ordering) | The **whole save resets** — never a partial document on disk |
