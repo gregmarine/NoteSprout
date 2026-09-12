@@ -1,0 +1,1068 @@
+# Library — Notesprout SN subsystem doc
+
+Phase **R5**. The library is SN's home screen: a paginated card grid of folders and notebooks that
+**never scrolls**, plus everything that creates, renames, moves and deletes what is on it — and the
+two flat shelves (Pinned, Recent) that cut across the folder tree.
+
+Fresh code. Paper v0 (`git show 87277da:apps/notesprout_paper/...`) is the shape reference; the
+deliberate differences are listed at the end.
+
+---
+
+## Screens
+
+| Screen | Class | Purpose |
+|---|---|---|
+| Library | `library/LibraryActivity` | Browse, create, rename, move, delete, sort, page |
+| New notebook | `library/NewNotebookActivity` | Name + the template browser + Create |
+| Templates | `templates/TemplatesActivity` | The paper library — browse, or pick for a result ([`templates.md`](templates.md)) |
+| Folder picker | `library/FolderPickerActivity` | The Move destination picker — **either hierarchy** (`browseFolderType` + `rootLabel`), notebooks or templates |
+| Notebook | `notebook/NotebookActivity` | The drawing surface (R3) — see [`notebook.md`](notebook.md) |
+
+Every one of them opens with `IndexGuard.ready(this)` and takes `TopGuard.applyInsetPadding`.
+TopGuard's *guard* is 0 on Ratta (chrome flush at the top edge); the inset pass is still applied
+because it is how the bottom bar clears a navigation bar if the device has one.
+
+Identity travels as `EXTRA_NOTEBOOK_ID` + `EXTRA_NOTEBOOK_NAME` — **never a `File`**, never a
+passphrase.
+
+---
+
+## Chrome
+
+**Top bar** — the breadcrumb *is* the path, and everything you do *to* the library sits at the
+row's right edge:
+
+```
+[←]  Notebooks / … / Folder   [+Notebook] [+Folder] [Search] [Recents] [Pinned] [Sort] [Calendar] [Scratch pad]
+```
+
+`+Notebook` is `ic_notebook_plus` — Tabler `address-book` with the person taken out and a plus cut
+into the bottom-right corner, on `folder-plus`/`photo-plus`'s exact geometry, so the two create
+buttons read as a pair. (The plain `ic_plus` it replaced named nothing, and on the link picker it
+sat beside a second identical plus meaning "new page".)
+
+`Notebooks` is the root crumb; each ancestor follows, separated by ` / `; any crumb jumps straight
+there. `btnUp`'s back arrow appears left of the crumbs once you are below the root. **In a mode the
+breadcrumbs give way** to a title (`modeTitle`) — "Pinned", "Recent", or, on a search shelf, the
+**query itself, quoted** — and `btnCloseMode`, a **left arrow**, first child of the row, before the
+title; see [Modes](#modes) and [Search](#search-arc-20). `btnUp` and `btnCloseMode` share the same
+`ic_arrow_left` and never show at once: a shelf has no path to go up out of. Exactly one of
+`breadcrumbScroll` / `modeTitle` is ever visible.
+
+**Search** (arc 20 / Q1), `ic_search`, sits **between `+Folder` and `Recents`** — the user's
+placement call: it opens a shelf the way Pinned and Recents do, but what it finds is something you
+were on your way to open or create into. It asks for the query in a **dialog** and the shelf then
+wears it as its title — the template browser's shape, so the app's two searches are one
+interaction.
+
+**Calendar** (arc 23 / Y1, grown a second door at Y3), `btnCalendar` (`ic_calendar`, Tabler
+`calendar`, in `:sn-screen`), sits before `Scratch pad` — since Y4 the pad is always the LAST
+button on this bar, the user's call, so Calendar moved to just ahead of it — the calendar's first
+door; the notebook top bar's ([`notebook.md`](notebook.md)) is its second — and opens the calendar
+extension's screen through `CalendarEntry`: the pad's door shape exactly (a busy guard, the
+"Opening…" overlay, the
+store pre-opened on IO before any bind). **GONE without a trusted calendar**, refreshed on every
+`onResume`. It opens no `.soil` at all, so unlike every other door here it is **not** latched with
+`launching` — `CalendarEntry` carries its own one-showing guard, the way the pad's does. See
+[`docs/calendar.md`](calendar.md).
+
+**Bottom bar** — a `FrameLayout`, not a row:
+
+```
+[Backup] [Import]       |<  <  n / n  >  >|                [Templates] [debug ⋯]
+
+in a shelf:                 |<  <  n / n  >  >|                        [debug ⋯]
+```
+
+The pager takes `layout_gravity="center"` so it is centred on the **screen**, the left-hand group
+(`bottomLeft`) takes the default start gravity, and the right-hand group (`bottomRight`) takes
+`layout_gravity="end"`. That is the whole reason the bar is not a `LinearLayout`:
+`DebugMenu.install` appends the ⋯ into `bottomRight` at runtime and is a **no-op in release**, so a
+weight-centred pager would sit in a different place in the two build types. The pager stays
+`INVISIBLE` rather than `GONE` so the row never reflows. Every icon button carries a
+`contentDescription` and a `TooltipCompat` long-press hint naming it.
+
+**Backup** (arc 17 / K2), the far-left button — the user's placement call, with Import moved to
+sit right after it. Icon `ic_backup` (Tabler `archive`, drawn in `:sn-screen` — the K3 user call,
+replacing K2's `device-floppy`). A tap opens
+`BackupActivity` — see [`docs/backup.md`](backup.md). It is deliberately **not** latched with
+`launching`: that latch guards the doors onto a `.soil` (two NotebookActivities is two SQLCipher
+writers), and the backup screen opens no notebook.
+
+**Encryption** (arc 26 / U1, decision 5), right after Backup — `[Backup] [Encryption] [Import]`,
+measured on the Nomad. Icon `ic_lock` (Tabler `lock`, drawn in `:sn-screen`), hint "Encryption". A
+tap opens `EncryptionActivity`: the recovery key's status and count, **Reveal recovery key…**,
+**Change passphrase…** (U3) and **Forget on this device…**. The same kind of door as Backup — a
+chrome screen, no `.soil`, not latched. The arc's reference is `docs/encryption.md` (U7).
+
+**Import** (arc 16 / I1), just before Templates — the user's placement call. Icon `ic_import`: the
+`ic_notebook_plus` recipe (the create button's notebook-with-spine-tabs glyph) with an **input
+arrow** in the corner notch where the plus sits on that icon, pointing into the notebook — drawn
+this way on the user's own call after the Tabler file-import glyph read as "a file," not "a
+notebook." `ImportFlow` owns the button: `VISIBLE` only while at least one trusted importer
+extension is installed, re-discovered on every `onResume` (a package can be disabled or replaced
+under a standing screen) and **`GONE`, never `isEnabled = false`**, when none is — a disabled
+control is invisible on e-ink. A tap opens SAF `ACTION_OPEN_DOCUMENT` and hands off to the whole
+import pipeline; see [`docs/import.md`](import.md). Import sits on its own bar rather than on a
+notebook's long-press sheet on purpose: exporting is something you do *to* a notebook, importing is
+something you do to the library itself.
+
+With a trusted cloud provider installed (arc 25 "Drive" / V5), the tap asks one question first —
+*Import from*: *This device* / the provider's own name — before it opens anything; without one the
+tap behaves exactly as it always did, straight to the SAF picker. Choosing the cloud answer opens
+the same host-drawn browser the Backup and Export screens use, over the provider's own root, and a
+tapped file is downloaded and matched into the identical import pipeline below. See
+[`docs/import.md`](import.md) § "Import from the cloud" and [`docs/cloud.md`](cloud.md).
+
+The Templates screen is reachable from here only; paper is *picked* from New Notebook and from the
+notebook's page-template row, which go straight to `TemplatesActivity.pickIntent`.
+
+**Back press** peels one layer at a time: out of a mode, then up one folder, then out of the app.
+
+---
+
+## Modes
+
+`BrowseMode { NORMAL, PINNED, RECENTS, SEARCH }` (`data/prefs/BrowseState`). A mode is a **flat
+shelf with no path** — the folder tree is still there underneath, and closing the mode returns to
+exactly the folder you were in.
+
+`setMode(new)` is a no-op on the mode already showing; otherwise it writes `browseState.mode`,
+resets `pageIndex` to 0 and refreshes. `btnPinned` toggles PINNED ↔ NORMAL, `btnRecents` toggles
+RECENTS ↔ NORMAL, `btnCloseMode` (the left arrow at the row's head) and Back both go to NORMAL.
+**`btnSearch` deliberately does not toggle** — see [Search](#search-arc-20). The mode **persists
+across a relaunch** — except SEARCH, which `BrowseState` refuses to store in either direction.
+
+**Chrome in a mode** (`renderChrome`): breadcrumb scroll and `btnUp` hidden, `modeTitle` ("Pinned"
+/ "Recent" / the query) and `btnCloseMode` shown; `btnNewFolder` / `btnNewNotebook` hidden — a shelf
+is not a place to create into. Sort stays active **except in Search**, whose order is relevance. The
+active mode's top-bar button takes `isSelected = true`, so `bg_toolbar_button`'s border says which
+shelf you are on.
+
+**The bottom bar's actions go too** (arc 20, the user's call on seeing it): Backup, Encryption,
+Import and Templates all act on the library — the folder tree you are standing in — and a shelf is not standing
+anywhere. The **group** (`bottomLeft`) is hidden rather than its three buttons, because `ImportFlow`
+owns `btnImport`'s own visibility (GONE without an importer, re-checked every resume) and two owners
+of one flag is a race; `btnTemplates` is hidden on its own so the debug ⋯ beside it stays where a
+debug build put it. **The pager stays**: a shelf paginates like any other listing.
+
+Search is also the one mode nothing *switches* into: it is entered by an accepted query and by
+nothing else (`LibraryActivity` calls `setMode(SEARCH)` from the dialog's own callback), which is
+why the shelf can never be standing there empty.
+
+**What each shelf holds** — one `repo.pinnedNotebookIds()` read per refresh feeds every card's
+badge *and* the long-press sheet's Pin/Unpin label, so no card ever queries the index on its own:
+
+| Mode | Items | Order |
+|---|---|---|
+| NORMAL | folders + notebooks of the current folder | the current sort, folders first |
+| PINNED | the pinned notebooks, alive only | **the current sort** — the pin edge's `sortOrder` is recorded but deliberately unused for display |
+| RECENTS | `RecentsPrefs.entries()`, alive notebooks only | **stored order, newest first — never re-sorted** |
+| SEARCH | folders + notebooks matching the query, **anywhere in the tree** | folders first, then **relevance** ([`SearchAssembly`](#search-arc-20)) |
+
+Pinned uses the on-screen sort rather than pin order on purpose: a second, invisible arrangement
+would be one the user has no control to see. Recents refuses the sort for the opposite reason —
+it is a *history*, and Name ↑ would turn "what I was just working on" into an alphabet. The
+ordering/filtering rule is pure and JVM-tested in `library/RecentsAssembly` so it cannot drift into
+the Activity's sorting code. Reading the Recents shelf is also when the store is swept:
+`RecentsPrefs.pruneDeleted(aliveIds)` runs after the list is built, so dead ids cannot accumulate.
+
+A Recents card's second line is the **parent folder name** (root or unknown → "Notebooks"),
+memoised per refresh, instead of the last-modified stamp: on that shelf "where is it" is the useful
+thing.
+
+**Empty states** are one `TextView` whose text is set per mode before it is shown — "No notebooks
+yet" / "No pinned notebooks" / "No recent notebooks", and in Search one of **two** (see below).
+
+**Pin storage is an index list edge**, not a pref: a `list_item` row under the `PINNED_LIST_ID`
+sentinel (`IndexRepository.pin` / `unpin` / `pinnedNotebookIds`). It therefore lives in the
+encrypted index, travels with the library, and is scrubbed by `deleteEdgesTo` on any notebook
+delete. Only notebooks pin — the shelf is of things to write in, not of places.
+
+---
+
+## The grid
+
+`LibraryGrid` renders one page into the layout's `gridContainer`; `GridMath` (pure, JVM-tested)
+does the arithmetic:
+
+```
+columns      = max(1, floor(containerWidth / library_card_min_width))
+cardWidth    = containerWidth / columns          (minus one gap)
+cardHeight   = cardWidth × 1.4
+rows         = max(1, floor(containerHeight / cardHeight))
+cardsPerPage = columns × rows
+pageCount    = ceil(total / cardsPerPage)        — never 0; an empty folder is page 1 of 1
+```
+
+Measured **once**, against the container's real width and height, in a global-layout listener that
+waits for a non-zero size. `library_card_min_width` is a tier dimen: **140 dp base, 200 dp at
+sw720dp, 320 dp at sw960dp**. Both Supernotes land on 3 columns × 2 rows = 6 cards a page — the
+Nomad (1404 × 1872, density 1.875 → 749 dp wide) at 200 dp, the Manta (1920 × 2560, same density →
+1024 dp wide) at 320 dp.
+
+**Why the Manta needs its own bucket.** The 200 dp minimum was measured against the Nomad's panel;
+the Manta is 37 % wider but falls in the same `sw720dp` tier, so it took **five** columns and a
+cover shrank to about the size the base tier was trying to avoid. `values-sw960dp` (which only the
+Manta reaches) puts it back on three. The dimen only ever chooses the **column count** — the card
+then takes its even share of the band — so anything in 257 dp – 341 dp gives three there; 320 dp
+sits in the middle. The `sw720dp` toolbar dimens still apply on the Manta: Android falls back
+per resource *name*, and `values-sw960dp` defines only these two.
+
+The same dimen sizes the **template** cards (`TemplateCardGrid`) and the **page** cards
+(`PageCardGrid`, used by the link picker), so all three grids change together — which is the point
+of there being one dimen rather than three.
+
+The pager is hidden with `INVISIBLE`, not `GONE`, when there is one page — its slot must not
+collapse and shuffle the rest of the bar.
+
+### The flip (F3)
+
+A **one-finger horizontal swipe over the grid** turns the page — left for the next, right for the
+one before — the same gesture, and the same `core/SwipeMath` rule, the notebook flips its paper by:
+horizontal-dominant, at least 30 % of the way across, and either fast enough or simply long enough.
+`core/ListSwipe` is the recogniser, fed from `dispatchTouchEvent` and **consuming nothing**, so
+cards keep their taps and long-presses (a swipe is past the touch slop long before it fires, which
+cancels the card's click on the way). It arms only if the DOWN landed inside `gridContainer` — a
+drag along either bar is not a page turn — and the width in the distance rule is the **region's**,
+not the screen's. A stylus sequence is dropped whole: the pen writes, the hand navigates. A swipe at
+either end is a no-op, because it goes through the same `goToPage` the pager buttons do.
+
+The same flip is on every paginated list in the app: the folder picker, the link picker, the
+template browser (`docs/templates.md`), and the Contents and Recents panels (`docs/notebook.md`).
+
+**Empty-state trap:** `emptyState` is a sibling of the grid inside `gridContainer`. `bind()` removes
+only the `GridLayout` it added last. A `removeAllViews()` there would delete the empty message and
+no folder would ever look empty again once a card had rendered.
+
+### Cards
+
+- **Folder** — Tabler folder icon + name, centred.
+- **Notebook** — cover image, name, last-modified. The date line uses
+  `android.text.format.DateFormat.getMediumDateFormat` + `getTimeFormat`, so it follows the
+  device's own locale conventions rather than a hand-rolled pattern — unless the item carries a
+  `subtitle` (Recents' parent-folder line), which takes that row instead. Secondary text stays
+  inkBlack and gets *smaller*; `inkLight` is reserved for text meant not to be read.
+- **Pin badge** — a 24 dp `ic_pinned` in the cover's top-right corner, `GONE` unless the item is
+  pinned. It sits on `bg_pin_badge`, a solid paperWhite chip with a 1 dp inkBlack outline: a bare
+  glyph over a lined or dotted cover is unreadable on e-ink.
+- **No cover yet** → a small render of the notebook's own template kind
+  (`BuiltInTemplates.placeholder`), squeezed to a fixed 12 rows so a 3 cm card still reads as
+  "lined" / "dotted" / "grid". A Blank notebook shows a blank card, which is the honest picture.
+  The index's `templateKind` is the notebook's **birth record** and stays that: re-papering a page
+  (arc 12, [`notebook.md`](notebook.md)) deliberately does not write it, because with per-page
+  paper there is no longer one true answer for a whole notebook — and a real cover snapshot, minted
+  on every close, supersedes the placeholder anyway.
+- **Lock card** (arc 26 / U4, decision 11) → a `NOTEBOOK`-scope notebook (its own passphrase,
+  `ObjectSummary.keyScope`) shows the Tabler `ic_lock` at a third of the card's width in the cover's
+  place and **nothing else**: the index holds no cover for it (`IndexRepository.setEncryptionState`
+  nulls the blob and leaves `updatedAt` untouched — a rekey is not an edit — and
+  the seal never captures one), so the grid never fetches a thumbnail. `CardItem.Notebook.locked`.
+  Tapping it opens the notebook screen, which prompts (`NotebookPassphrasePrompt`) on every open.
+  **How a notebook becomes one (arc 26 / U5):** the New Notebook screen's *Key* radio row (*This
+  device's key* default / *Its own passphrase*), the sheet's *Change encryption scope…*, or an
+  import whose foreign passphrase the person chose to keep. The sheet's *Change passphrase…* on a
+  `GLOBAL` notebook redirects to the Encryption screen (global notebooks share the device key); on a
+  `NOTEBOOK` one it prompts the current, asks the new, re-keys. All of it is `crypto/ScopeChange`
+  over `SoilRekey` (`library/ScopeChangeFlow` is the dialogs); the notebook's own bar has no key
+  rows. Full model, rotation, scope, recovery and the failure table: `docs/encryption.md`.
+- **Text-document cover** (arc 19) → `TextCover`'s own render of the document's opening text takes
+  this slot instead, never the paper placeholder above (`LibraryCards.isTextDocument(flags)`
+  branches before the placeholder is ever reached); a not-yet-rendered or undecodable one falls back
+  to a centered `ic_file_text` glyph, no badge. See [Text documents](#text-documents-arc-19) below.
+- **Selection** (arc 6 / K2) — `LibraryGrid.bind` takes an optional `selectedId`; the matching
+  card gets `state_selected` on its background (`bg_selectable_card`: the 1 dp border thickens to
+  3 dp — never a colour, never a grey). It exists for the link picker, where browsing *is*
+  choosing; the library and the move picker pass nothing, and the unselected state is
+  byte-identical to `shape_bordered`, so their cards are unchanged.
+
+**Covers are lazy, one page at a time.** The DAO listing is blob-free (`ObjectSummary` has no
+`blob` column); `bindCurrentPage()` reads `repo.cover(id)` only for the notebooks in the visible
+slice, memoised in `coverCache` for the life of the listing and cleared on every `refresh()` so an
+edited notebook picks up its new cover. Several binds can be in flight at once (a page tap racing
+`onResume`), so blobs are fetched into a *local* map on IO and merged into `coverCache` back on
+Main — the shared map is only ever written single-threaded. The page label is rendered **after**
+the bind, so "n / N" can never name a page before its cards are on screen.
+
+Tap a folder to enter it, a notebook to open it. Long-press either for the action sheet:
+**Pin/Unpin · Rename · Move · Export… · Exclude/Include in backup · Delete** — the first row is
+notebooks-only, and its label comes from the card's own `pinned` flag (the listing already read
+the pinned list) rather than a fresh query.
+
+**Exclude from backup / Include in backup** (arc 17 / K2) is notebooks-only and always there — it
+needs no extension and no destination. The label carries the current state (the Pin/Unpin
+pattern, read from the listing's own `flags`) so the row never moves. The toggle flips notebook
+`flags` bit 1 (`NotebookFlags.EXCLUDE_FROM_BACKUP`) and **never bumps `updatedAt`** — it is both
+the library sort key and the backup's needs-copying flag, so a bump would re-flag the notebook
+the instant the user said not to back it up. Confirmed by toast (it only confirms what already
+happened). See [`docs/backup.md`](backup.md).
+
+**Export…** (arc 15 / E1) is notebooks-only too — a folder's sheet never even asks. Whether it
+shows depends on a trusted exporter extension being installed *right now*: `onCardLongPress` runs
+`ExtensionRegistry.exporters()` (an IO-dispatched package query) **before** raising a notebook's
+sheet, one beat later than a folder's, and the row is passed in as a plain boolean. That beat is an
+e-ink feedback gap like any other, so it is latched (`sheetPending`, arc-15 review): a second
+long-press in it would stack a second sheet, and a card tap in it drops the pending sheet rather
+than popping it over a departing library. It re-runs at
+every long-press rather than being cached — a package can be disabled or replaced under a standing
+library — and the row is **GONE**, never disabled, when none is installed: a control that cannot
+work is invisible on e-ink, and a sheet that grew a row after it was already up would move the
+user's finger. A tap hands off to `ExportActivity` with `EXTRA_NOTEBOOK_ID` / `EXTRA_NOTEBOOK_NAME`
+only — never a `File` — latched against a double-tap the same way every other door out of the
+library is. See [`docs/export.md`](export.md) for the screen itself. Since arc 30 / PE2 this is no
+longer the only door: the notebook's page sheet has an **Export page** row that enters the same
+screen at page scope (with a Scope row this door never shows — [`docs/export.md`](export.md) §
+Scope); the library's export is whole-notebook with no control, exactly as before. Since arc 31 /
+HV1 the same door offers **`NSE · Image Export`** (PNG) alongside PDF and Soil — a one-page notebook
+exports one file, a multi-page one goes **per-page into a folder** (a SAF tree pick locally, the
+cloud's own picked folder on that leg), one exporter call per page.
+
+**The calendar's own Export door** (arc 31 / HV4) also lands here: `CalendarEntry`'s `onExport`
+callback (wired at `calendar.open()`'s construction, alongside `onDrained`) is `onCalendarExport`
+— it latches `reopenCalendarAfterExport` and starts `ExportActivity.intent(this, target)` in
+**calendar mode** (no notebook, no `.soil` opened, no Scope/Source row —
+[`docs/export.md`](export.md) § Calendar mode). `onResume` consumes the latch and reopens the
+calendar once the Export screen is done, whatever the outcome — the page-sheet door's own rule,
+carried over. The latch is process-lifetime only: killed behind the Export screen, the calendar
+simply stays closed on the way back rather than reopening to a stale target.
+
+**Tags…** (arc 21 / W1) is notebooks-only too, for the same reason Export… is — a folder's sheet
+never even offers it. It sits between Export… and Exclude from backup, and it shows on the same
+beat and by the same latch as Export…'s exporter check (`tags.discover()` alongside
+`ExtensionRegistry.exporters()`), so one IO round-trip settles both rows before the sheet goes up.
+**GONE**, never disabled, when no trusted tag manager is installed. A tap opens the tag screen in
+BROWSE mode on that notebook (`TagManagerEntry.open`), identity carried on the bind rather than the
+Intent — the same rule every other tag door in this app follows. The screen itself, and the tag
+model behind it, are [`docs/tags.md`](tags.md)'s.
+
+---
+
+## Search (arc 20)
+
+Find a folder or a notebook **by name**, from anywhere in the library. `library/LibrarySearch` owns
+the field, the query and the cards; `core/FuzzyRank` and `library/SearchAssembly` are pure and
+JVM-tested. Content — ink, recognized text, documents — is **not** searched: names only, this arc.
+
+**Fuzzy means subsequence, not typo tolerance** (the user's explicit call). The query's letters must
+appear in the name **in order**, gaps allowed, so `mtg` finds "Meeting Notes" and `jrn` finds
+"20260825_Journal", while `bolg` finds nothing. Edit distance was offered and declined — **adding it
+needs a fresh decision.** Where the line falls is worth knowing: a *dropped* letter still finds its
+name (that is what a subsequence is), a *swapped or wrong* one does not.
+
+Ranking, best first — `FuzzyRank.Match`:
+
+| Tier | Meaning | Example for `notes` |
+|---|---|---|
+| EXACT | the name *is* the query | "Notes" |
+| PREFIX | the name begins with it | "Notes from Tuesday" |
+| WORD_START | it appears whole, starting a word | "Meeting Notes" |
+| SUBSTRING | it appears whole, mid-word | "Denotes" |
+| SUBSEQUENCE | the letters, in order, with gaps | "No one tells" |
+
+Below the tier: how many matched letters landed on a **word start** (a separator, a camel-case
+capital or the first digit after a letter), then how **tight** the run is, then the shorter name,
+then the name itself. The order is total and stable — the same search over the same library always
+produces the same page, which is the difference between a result and a shuffle.
+
+The subsequence pass runs **backwards then forwards**: the backward walk gives every character its
+latest possible position (and decides whether a subsequence exists at all), and the forward walk
+takes a word start when one is available before that ceiling. A plain left-to-right greedy scored
+"Meeting Team Group" no better than "Amount Given" for `mtg` — both land one letter on a word start
+by luck — which is a ranking that ranks nothing.
+
+**The shape of the shelf:**
+
+- **The whole library, always.** Two blob-free listings (`allFolders` + `allNotebooks`), ranked in
+  Kotlin. A search scoped to the folder you happen to be standing in would answer "no" for a
+  notebook two folders over — the one question a search exists to answer. It also means the
+  database does no matching at all: fuzzy cannot be a `LIKE`.
+- **Folders first, then relevance** (`SearchAssembly`). The library's containers-before-contents
+  rule outranks the score, everywhere. **Sort is GONE** while searching.
+- **A dialog asks; the shelf's title is the answer.** Tapping Search opens `NameDialog` — the
+  family's one "type something" surface — and an accepted query becomes the shelf. The Search
+  button **never toggles the mode off**: tapping it again re-opens the dialog with the last query
+  in it, because a second search is a different shelf, not a return to the tree (the ← arrow and
+  Back are the way out). Not live-as-you-type: every keystroke pause would be a whole card page
+  repainted, covers and all, on an e-ink panel. This is the template browser's shape, adopted here
+  on the user's call so the app's two searches are one interaction; an inline field in the top bar
+  was built first and replaced.
+- **Tapping a folder goes there and closes the search** — the shelf's job was to find the place.
+  Tapping a notebook opens it through the same one door (latch + "Opening…" overlay) as every
+  other card in this file. Long-press raises the ordinary action sheet, and any action that changes
+  a name or removes a row re-runs the query.
+- **Cards are the Recents shape**: every card's second line is its **parent folder's name**
+  (resolved from the folder listing already in hand — the subtitles cost no extra reads), because
+  on a flat shelf "where is it" beats "when". **Folder cards get one too** (`card_folder`'s
+  `folderParent`, GONE everywhere else): folder names are unique only per parent, so `Work/Notes`
+  and `Personal/Notes` would otherwise be the same card twice.
+- **One empty state**, "No folders or notebooks match that" — the shelf is only ever entered by an
+  accepted query, so a search shelf with nothing typed into it does not exist. A blank query is
+  refused by the dialog, in its **own** words ("Nothing to search for"), never the naming dialog's:
+  a query is not a name, and "that name won't work" answers a question the user did not ask.
+- **The query lives in memory only.** Prefs hold ids and enum names, never a display name, and a
+  typed query is a name. It survives a hop to another shelf and back within the process — restored
+  **select-all'd**, because retyping on the Supernote's on-screen keyboard is the expensive part —
+  and dies with the process. `BrowseMode.SEARCH` is likewise never persisted, in either direction:
+  a cold launch onto a query-less search shelf would be a screen where the library should be.
+
+**The keyboard.** It belongs to the dialog, which is the point of the dialog: `NameDialog` opens
+over the library, the IME opens over it when the field is tapped, and both are gone by the time the
+shelf draws — so nothing in the top bar holds focus, and no caret blinks on an EPD panel between
+searches. `LibraryActivity` is `adjustNothing` (the grid measures itself once against a real band —
+the New-notebook screen's reason; the dialog's own window pans for the IME regardless) and declares
+`keyboard|keyboardHidden`, so attaching a BT keyboard cannot destroy the library under a standing
+query.
+
+**The same matcher runs the template browser's Search shelf** ([`templates.md`](templates.md)) —
+one rule, so a name findable on one screen is findable on the other.
+
+### Tags join the query (arc 21 / W4, the fetch rebuilt on rows arc 22 / X3)
+
+The query now runs over names **and** tags, through the same `core/FuzzyRank` matcher and the same
+total order — `mtg` still finds "Meeting Notes" by name, and now finds a notebook tagged `meeting`
+by exactly the same rule, in one list rather than two. `FuzzyRank` itself did not change: arc 20's
+ranking of names is exactly as it was.
+
+`LibrarySearch` reads the tag extension through `TagClient.search(ctx, ref) { tags -> ids }`
+**at query time** (call-shaped — the pre-open rule applies here like everywhere else), and the read
+is two queries now, not one (arc 22 / X3, replacing W4's single whole-index `snapshot()` call): one
+pre-open and **one bind**, inside which the host pages the library's `tags`, runs its own
+`SearchAssembly.matchTags` over them to decide which ids the query actually touched, and then pages
+`assignmentsOf` for **only** those ids — chunked at `ASSIGNMENT_QUERY_TAGS` (500) per `IN (…)`. A
+query that matches no tag asks for no assignments at all. No tag extension installed means the
+shelf answers names only, silently: there is no control to hide for this, and a library without one
+is exactly arc 20's search.
+
+`SearchAssembly` grew a third group, drawn last: **folders → notebooks (name- or tag-matched,
+deduped, best rank) → page hits.** A notebook that matches by both name and tag still appears once,
+at whichever rank is better. A tag on a *page* is a different fact from a tag on a notebook — the
+whole point of tagging a page is that the page is the thing wanted back — so it surfaces as its own
+card, opening the notebook **at that page**.
+
+**Page-hit cards.** The name line reads `<Notebook> · Page N` and is `singleLine`: the notebook's
+own name ellipsizes rather than the whole line, so `· Page N` always survives instead of a long
+title eating the page number. The subtitle is `<folder> · <tag>`. The cover is the **notebook's
+own** cover snapshot — already in hand from the listing, no extra read, no `.soil` raster — so a
+page hit and its notebook look alike above the fold and the two text lines are what tell them
+apart. Tapping a page card opens the notebook at that page; **there is no long-press on one** — the
+action sheet acts on a notebook, and firing it from a card that names a page would act on something
+the card does not name.
+
+**A notebook card's subtitle** joins the matched tag to the parent folder (`folder · tag`) only
+**when the name did not match** — the subtitle exists to answer "why is this here", and a name
+match has already answered it. A notebook matching both keeps the plain folder line.
+
+**Page numbers cost a read.** A page's number is its position in its notebook's live page rows, and
+nothing outside that `.soil` knows it, so `library/PageNumbers` opens the file on IO — and only for
+a notebook that actually produced a page hit, never per hit and never for one that produced none.
+It is cheap in practice: raw keys persist in `DerivedKeyStore`, so a notebook that has ever been
+opened reopens without a KDF, and a notebook holding a tagged page has necessarily been opened (that
+is where the tag was applied from). The read is cached per process, keyed on the notebook's
+`updatedAt`, so a second search over an unchanged library opens no files at all. **A notebook that
+will not open contributes no page cards** — its notebook card is unaffected, and the shelf says less
+rather than saying something wrong.
+
+**Stale assignments are filtered, not pruned.** An assignment naming a deleted notebook, or a page
+the arc-17 purge removed, is tolerated in the extension's store and simply never surfaces — the
+merge iterates the library's own **live** notebook listing, so a row naming one that isn't in it is
+never looked at, and a page's aliveness is answered the same way against the notebook's live page
+rows. There is no filtering pass anywhere doing this on purpose; it falls out of reading through a
+live listing rather than a stored one. Actually removing dead rows from the store is a `BACKLOG.md`
+note, not this arc.
+
+**Matching and ranking run off Main, but not in the same place.** `SearchAssembly.matchTags` runs
+*inside* `TagClient.search`'s call block, on the IO thread the bind already occupies — pure CPU over
+at most 5,000 short strings, which is what lets it choose the `assignmentsOf` selection without a
+second bind. `SearchAssembly.rank`, the pass that folds tags into the name-ranked lists, still runs
+on `Dispatchers.Default` in `LibrarySearch.cards` because its caller is the listing coroutine and it
+walks every candidate. There is no whole-index decode to run off Main any more — a `tags`/
+`assignmentsOf` reply is an ordinary parcel, not a blob to be decoded.
+
+**The dialog's hint changes with availability** — "Folder or notebook name" with no tag manager
+installed, "Folder, notebook or tag" with one — the house rule about not claiming a control that
+cannot work, extended to a hint. `LibraryActivity` refreshes the tag entry from its own `onResume`
+for this, since the hint has no button of its own to keep it current.
+
+The arc-20 rules this leaves untouched: Sort stays GONE while searching; `BrowseMode.SEARCH` is
+never persisted in either direction, and neither is the query; every action re-runs the query, tag
+edits included; folders still come first. For the tag screen itself and the tag model, see
+[`docs/tags.md`](tags.md).
+
+---
+
+## Naming
+
+`NameRules` (pure, JVM-tested) is the single answer to "may it be called that":
+
+- non-empty after trim,
+- not `.` and not `..`,
+- characters from `[a-zA-Z0-9_\-. ]` only.
+
+Names never touch the filesystem — files are `<uuid>.soil` and structure lives in the index — but
+the whitelist stays so a name is always safe to drop into an export filename or a shell line.
+
+Uniqueness is a *database* question and is not in `NameRules`: `IndexRepository.nameTaken(parentId,
+type, name, excludeId)` counts alive siblings **of the same type under the same parent**. Rename
+excludes the item itself, so re-casing its own name is a rename and not a collision. An unchanged
+name is a no-op that just closes the dialog.
+
+`NameDialog` is the one "type a name" surface (new folder + rename). Its positive button is wired
+**after** `show()`: the stock `setPositiveButton` listener dismisses before anything can object,
+which would throw the user's typing away on every rejected character.
+
+A rejected name — bad characters or a duplicate — is a **problem dialog**, never a toast.
+
+---
+
+## Name schemes (arc 5)
+
+A folder can say what the notebooks created inside it should be called. `SchemeEngine` (pure
+Kotlin, JVM-tested) is the language; the index stores one row per folder; the library owns all
+the UI. Paper's arc-2 Naming *extension* is the reading reference — here the whole provider
+layer (AIDL, store, client, discovery) is gone and the feature is core.
+
+### The language (v2 = Paper's v1 + date-part/name tokens)
+
+Literal text (the core name charset) plus tokens:
+
+| token | expands to | example |
+|---|---|---|
+| `{date}` | `yyyyMMdd` | `20260822` |
+| `{time}` | `HHmmss` | `143005` |
+| `{year}` / `{month}` / `{day}` | `yyyy` / `MM` / `dd` | `2026` / `08` / `22` |
+| `{monthname}` / `{mon}` | `MMMM` / `MMM` | `August` / `Aug` |
+| `{weekday}` / `{wd}` | `EEEE` / `EEE` | `Saturday` / `Sat` |
+| `{n}` / `{n:K}` | next number, zero-padded to K (1–9), at most once | `07` |
+
+Three rules hold it together:
+
+- **Literals obey `NameRules`' charset** — validated against `NameRules.CHARSET` itself (the one
+  place the charset is written; a literal-only scheme is judged by `NameRules.validate`), so a
+  scheme can only produce a name the library would have accepted by hand. Belt-and-braces: the
+  library still runs `NameRules.isValid` **and the 100-char cap** on the expansion and falls back
+  to the timestamp if either fails — a counter that outgrows its declared width (the 100th
+  notebook under `{n:2}` with 97 literal chars) is never truncated, so over-cap degrades to the
+  default instead (S2).
+- **`{n}` is a sibling question, not stored state**: 1 + the highest number among the creation
+  folder's alive notebook names matching the scheme's anchored **skeleton** regex — every
+  date/time/name position a wildcard of the right shape (fixed digit widths; non-capturing
+  alternations of the 12 month / 7 weekday names, so the counter stays capture group 1). That
+  is what makes the run continue across days, months, and years. Numbers wider than K are
+  matched and never truncated. Nothing is persisted — a rename or delete just changes the answer.
+- **100-char cap counted at the worst-case expansion**, not the source: `{monthname}` is 11
+  characters of scheme but up to 9 of name.
+
+Numeric formatting is pinned to `Locale.US` (not `Locale.ROOT` — CLDR's root locale renders
+`MMMM`/`EEEE` as the abbreviated forms). The month/weekday **names** never come from a formatter
+at all (S2): expansion reads the engine's own hand lists by `Calendar` index — the same alphabet
+the skeleton alternates over — so neither a device-language change nor a CLDR data update
+(en_GB's "Sep" → "Sept" is the precedent) can make new expansions stop matching the skeleton and
+stall the counter. One authority, both uses; pinned by a 12-month + 7-weekday JVM test.
+Failures are codes (`SchemeEngine.Error`); the dialog maps them to sentences — the engine has
+no strings.
+
+### Storage
+
+Additive index row type `naming` (`ObjectType.NAMING`) in the `objects` table — **no schema
+change, no Room-hash change**; Paper filters listings by type so the rows are invisible to it.
+One row per folder: `parentId` = folder id (**null = the library root**), `name` = the scheme
+text. Set = upsert **in place** (`namingRowAny` reads the row *including a soft-deleted one*,
+so re-setting revives the same row — a folder never accumulates naming rows); clear = soft
+delete. `deleteFolderRecursive` soft-deletes each folder's naming row in the same transaction —
+a stranded alive row would be invisible, un-clearable, and would come back if the folder id
+were ever reused.
+
+### Resolution
+
+`resolveScheme`: **nearest ancestor wins** — the creation folder first, then up the (already
+cycle-guarded) `ancestry` chain, finally the root's `parentId = null` row; first alive scheme
+is the answer, none → the core timestamp default. `{n}` always counts siblings in the
+**creation folder**, never the scheme-holding ancestor's.
+
+### Entry points — four, one dialog
+
+1. **New-folder dialog** (`NewFolderFlow` — extracted whole in arc 6 / K3 so the link picker's
+   New folder is the *same* dialog, not a second implementation that can drift; the library
+   delegates with a refresh callback, the picker with navigate-in) — a second optional field: the
+   flow builds it with `SchemeDialog.buildField`, hands it to `NameDialog.show` as `extraField`,
+   and reads it back itself in its accept closure (rename passes nothing and knows nothing about
+   schemes). Both fields come from `NameDialog.input`, the one bordered single-line recipe, so the
+   two stacked inputs can never drift visibly apart. Order is deliberate: name rule → **scheme
+   validation** → duplicate check → create → save scheme. The scheme is validated *before* the
+   folder exists, so a mistyped token keeps the dialog; once the folder is created it stands — a
+   scheme that then fails to save is explained, not rolled back. The accept path is
+   re-entry-guarded (S2): it crosses a coroutine, and an e-ink double-tap on OK would otherwise
+   run two creates whose duplicate checks both read before either insert — two identically named
+   folders (rename carries the same guard for family consistency).
+2. **Folder long-press sheet** — "Default notebook name…" (`ic_cursor_text`). Folders only:
+   a scheme is a rule about what is created *inside* something.
+3. **Breadcrumb long-press** — any crumb **including the root** (the root has no card, so this
+   is its only way in). The long-press returns `true` so it never also navigates on release.
+4. **+Notebook** — the library resolves + expands *before* launching `NewNotebookActivity` and
+   hands the result in as `EXTRA_DEFAULT_NAME`; the screen stays naming-agnostic (a prefill
+   like any other, fully editable, Create-time duplicate check unchanged). The scheme→prefill
+   rules live in **`SchemePrefill`** (pure, extracted in arc 6 / K3, shared verbatim with the
+   link picker's New notebook): siblings are fetched lazily, only when the parsed scheme
+   actually holds a counter — nothing else reads them (S2) — and an expansion `NameRules` would
+   refuse (or that outgrew the cap) falls back to the caller's default rather than reaching a
+   screen that will reject it. The
+   launch shares the library's **one** `launching` latch with the notebook-card door (S2: in the
+   e-ink feedback gap the second tap is not always on the same control — two per-door flags
+   would let a card tap plus a + tap stack two screens); reset in `onResume` **and at the top of
+   the New-notebook result callback** — the callback runs *before* `onResume`, so without that
+   release the open of the just-created notebook would hit the still-armed latch and be silently
+   dropped (S2 regression, user-caught). A mid-resolve folder change drops the tap rather than
+   create elsewhere.
+
+`SchemeDialog` (the standalone editor): does its own current-scheme read before showing — a
+read failure explains itself and opens nothing (an empty field would silently offer to
+overwrite a scheme that is actually there). **Blank save = clear** — there is no separate
+remove control. Positive button wired after `show()` (the `NameDialog` pattern), click-guarded
+via `isClickable` (never `isEnabled` — invisible on e-ink). The help line is inkBlack made
+smaller, never inkLight — the token list is meant to be read.
+
+### The failure rule
+
+Naming never blocks what the user chose. An unresolvable/unparseable stored scheme, or any
+failure in the resolve path → timestamp default silently (`Log.w` — the degrade-not-throw rule:
+these run in `lifecycleScope`, which has no handler). Validation/save failures → problem
+dialogs that keep the user's text. Three distinct failure strings (folder-created-but-scheme-
+not, standalone save, standalone read) because one wording would read wrongly in two of the
+three places.
+
+---
+
+## Sort
+
+`SortRules` + `SortPrefs` (`sn_sort`, enum names only, default Name ↑).
+
+- Field `NAME | MODIFIED`, order `ASC | DESC` — four options in an action sheet, a check icon on
+  the active one.
+- Name compares case-insensitively (`Bravo` sits between `alpha` and `Charlie`).
+- Modified compares `updatedAt`, the index's real-edit timestamp.
+- **Folders always come before notebooks**, in every order. The chosen order applies inside each
+  group. Reversing a sort must not scatter the containers through the cards.
+
+---
+
+## Delete
+
+Confirm dialog first, with the item's name in the title.
+
+- Notebook: *Delete "X"?* / "This cannot be undone."
+- Folder: *Delete "X"?* / "This will permanently remove all notebooks and subfolders inside it.
+  This cannot be undone."
+
+Then, for each removed notebook:
+
+1. `IndexRepository.deleteNotebook` / `deleteFolderRecursive` — **soft** delete of the index rows
+   plus a hard delete of the pinned membership edges (`deleteEdgesTo`). `deleteFolderRecursive`
+   returns the ids of every notebook that was inside, which is what drives the rest. The whole
+   cascade runs in **one Room transaction** (R6): a process kill mid-walk must never strand an
+   alive subtree under a dead parent — unreachable in browse, un-deletable again, its `.soil`
+   files and cached keys never purged because the caller never learns those ids.
+2. `RecentsPrefs.remove(id)`.
+3. **Hard** delete of `soilFile(context, id)` and every sidecar from `sidecarsOf` (`-wal`, `-shm`,
+   `-journal`) — on IO.
+4. `KeyMaterial.invalidate(context, id)` — drops the raw key from **both** the process RAM map and
+   the Keystore. Leaving it would mean a future file that happened to reuse the id gets opened with
+   a key derived from a file that no longer exists.
+
+Deleting the folder you are standing in navigates out to its parent.
+
+---
+
+## Move
+
+`FolderPickerActivity` — the same grid, folders only, one verb.
+
+- Top bar: "Move to…" + breadcrumb + Cancel. Bottom bar: pagination + **Move here**.
+- The folder being moved is filtered out of every listing, so its own subtree can never be entered.
+  `IndexRepository.isSelfOrDescendant(destination, movingId)` backstops that at the moment of the
+  move (the ancestry walk is cycle-guarded at 50 hops — **there is no nesting depth cap**).
+- Cards do not long-press here.
+- A name collision in the destination is a problem dialog and the picker **stays open**, so the
+  user can walk somewhere else without starting the move over.
+
+Since arc 31 / HV2 the same class answers a second verb: `pickIntent`'s `browseFolderType` /
+`rootLabel` already let it browse either hierarchy (notebooks or templates), and a new `PickVerb`
+picks its own header/root/button chrome on top of that — `IMPORT` (default, this Move door's own
+shape) or `SAVE_TEMPLATE` ("Save to…" / root "Templates" / "Save here"), which the notebook's page
+sheet opens for **Save as template** ([`docs/notebook.md`](notebook.md);
+[`docs/templates.md`](templates.md) § Save as template).
+
+---
+
+## Creating a notebook
+
+`NewNotebookActivity`: a one-row header carrying the name field (pre-filled with
+`YYYYMMDD_HHmmss`, editable, fully selected) and **Create**, over the **whole template browser** —
+breadcrumbs, folders, shelves, import, both long-press sheets ([`templates.md`](templates.md)). The
+four radios are gone (arc 13 / G3); a tap ticks a card and the screen waits for Create.
+
+**A second, two-way radio — Handwritten / Text (arc 19)** — sits under the name bar: *Handwritten*
+is the default, *Text* flags the notebook as a [text document](#text-documents-arc-19), a notebook
+that opens straight into the document editor instead of onto paper. It is one bit, not a second
+screen, because the rest of the screen is identical either way: the template browser stays live for
+a text document too — its pages underneath are still pages, just ones nothing writes on until
+**Show pages** is asked for.
+
+The screen is **`adjustNothing`**, not `adjustResize`: it has a page on it, and resizing for the
+keyboard would squash the grid it measured itself against. The name field sits in the top row where
+the IME cannot reach it — which is also why the header is one row and not a title plus a field.
+
+The order is the format contract:
+
+1. mint a UUID — the id is both the filename and the notebook row's primary key;
+2. `SoilDatabase.create(context, id, soilFile(context, id), KeySession.get())` — encrypted from
+   birth, and it refuses to write over an existing file;
+3. **notebook** row: `parentId = ""`, `text` = name, `refId` = the page id (so a reopen knows where
+   to land);
+4. **template** row for whatever was picked: `text` = the [token](templates.md#the-token-is-the-identity)
+   (`LINED` / `DOTTED` / `GRID`, or `IMG#<8 hex>` for an imported picture), `width`/`height` = page
+   px, `blob` = lossless WEBP q100 rendered through `PagePaper.render` at the **page's** size.
+   **Blank writes no template row at all**;
+5. **page 1**: `order = 0`, `width`/`height` = the full portrait screen in pixels,
+   `refId` = the template row id, or `""` for Blank;
+6. `NotebookMetaStore.write` — the file's self-description, folder ancestry included, so it is
+   portable on its own;
+7. `db.seal(file)` — WAL checkpoint back into the file, close;
+8. **then** `IndexRepository.createNotebook(...)` (pageCount 1, `templateKind` =
+   `TemplatePicks.birthKind` — the kind's name, or `IMAGE` for an imported template, plus
+   `textDocument = true` when the Text radio was armed — see [Text documents](#text-documents-arc-19)).
+
+The index row is last on purpose: the index is the library's truth, so a crash anywhere earlier
+leaves an orphan file in `Garden/` — never a card pointing at nothing. A failure mid-way still
+seals (to close the handle), leaves the partial file on disk (**never delete data on failure**) and
+reports through a problem dialog.
+
+The whole thing runs on `Dispatchers.IO`. Create is guarded by a `creating` flag rather than
+`isEnabled = false` — a disabled control is invisible on e-ink.
+
+The passphrase comes from `KeySession` (process RAM only). If it is somehow absent the screen
+bounces back through `BootstrapActivity` the way `IndexGuard` does, rather than reaching step 2 and
+throwing with a half-typed name on screen.
+
+---
+
+## Text documents (arc 19)
+
+A **text document** is an ordinary notebook the library flagged at birth (or at import,
+[`docs/import.md`](import.md) § "The text importer") — same `.soil`, same pages underneath, same
+place in the folder tree — with one bit set that says its primary surface is the document editor,
+not paper. The feature itself, the editor, and the data model live in
+[`docs/document.md`](document.md); this is only the library's own half: how one gets created, how
+its card looks, and how it opens.
+
+**The flag rides two places, in step**: index row `flags` bit 2 (`NotebookFlags.TEXT_DOCUMENT = 4`)
+and `notebook_meta.textDocument` (an additive, codec-defaulting-`false` field — no `.soil` schema
+change). All three sites that ever refresh `notebook_meta` source `textDocument` from the index bit,
+never from whatever the previous meta happened to say — the same wipe-trap discipline every other
+meta field already follows. An import carries the bit across devices, so a text document stays one
+wherever it lands.
+
+**The cover is `TextCover`, not `CoverSnapshot`.** A handwritten notebook's card shows a snapshot of
+its paper; a text document has no paper surface to snapshot, so its card shows its own opening text
+instead — rendered at a fixed 600×800 canvas and constant density (never the device's own, so the
+same document's card reads the same size on the Nomad and the Manta), through `:markdown` onto a
+white page, legibility over fidelity: text simply clips at the bottom edge, no fade, no ellipsis.
+Both the create flow (an empty render, `""`, the instant the notebook exists — a card with no cover
+reads as an empty notebook for weeks otherwise) and the import path render one immediately; the
+editor's own close path re-renders it after a flush. A cover that has not landed yet, or would not
+decode, falls back to a centered `ic_file_text` glyph — **never** the paper placeholder a
+handwritten notebook's missing-cover state uses, which would picture the one thing a text document
+is not. **No badge** beyond the glyph itself (the user's call) — the cover alone is the card's whole
+identity.
+
+**Routing.** Opening a text document from any entry point — a card tap, Recents, Pinned, a cold
+relaunch — goes straight into the document editor; the canvas underneath is not loaded until asked
+for. The back arrow is the *one* leave door and always means "to the library" (the same rule a page
+document's editor follows, [`docs/notebook.md`](notebook.md) § Close & lifecycle) — a text document
+gets no exception from it. A header **Show pages** button, present in either editor scope, is the
+text-document-only way to the paper canvas: tapping it seals the notebook forward and lands the
+canvas on the page the editor was showing. An ordinary (handwritten) notebook never shows this
+button, and a text document opened this way never hijacks an unrelated notebook's own open.
+
+**Rename** happens from the editor, not the card: a text document's header title is tappable
+(nothing else here is), opening the family's own `NameDialog` recipe. The typed name crosses the
+extension seam to `IDocumentHost.renameNotebook`, and the **host** is the only judge of it — the
+same `NameRules` charset and the same sibling-uniqueness check (`IndexRepository.nameTaken`) every
+other rename in this file answers to. A refusal comes back as the exact sentence the library itself
+would show, and (the `NameDialog` pattern — positive button wired after `show()`) the dialog stays
+up with the typed text intact rather than dismissing on a rejected name.
+
+---
+
+## Templates
+
+The **library** of them — folders, import, export, the three shelves, and the one browser all three
+hosts share — is [`templates.md`](templates.md). What follows is only the three built-ins' own
+arithmetic, which is where the library's floor comes from.
+
+Split in two, on purpose:
+
+- **`data/template/TemplateGeometry`** — pure arithmetic, no `android.graphics`, JVM-tested. One
+  physical constant: **8 mm** between features, converted at the panel's real dpi
+  (`8 × dpi / 25.4`). Paper is measured in millimetres, so a template must be the same *size* on
+  any device.
+- **`data/template/BuiltInTemplates`** — the thin painter, plus the WEBP encode and the card
+  placeholder.
+
+| Kind | Geometry |
+|---|---|
+| Blank | no template row; page `refId = ""` |
+| Lined | horizontal rules from `linePositions`, first at **2 × spacing** — a writing sheet wants a top margin |
+| Dotted | dots at every grid intersection (`dotPositions`), first at 1 × spacing |
+| Grid | `gridPositionsX` + `gridPositionsY`, both from **1 × spacing**, symmetric |
+
+The grid must **not** borrow `linePositions` for its horizontals: the lined top margin would leave
+a double-height top row of cells. There is a test that says so.
+
+Feature sizes are authored at mdpi and scaled by dpi, floored at 1 px: `lineWidthPx` = 1 px at
+mdpi (≈ 1.9 px at 300 ppi), `dotRadiusPx` = 2 px at mdpi (≈ 3.75 px, matching Paper v0's on-device
+finding — a 1.5 px-authored dot still read faint). A literal 1 px rule on a
+300 ppi e-ink panel is 0.08 mm and renders as faint grey, not a line.
+
+Everything is **baked into the file at creation**, so changing a constant here affects new
+notebooks only — a page must not silently re-rule itself under old ink. **The three built-ins'
+output must stay bit-identical**: their thickness and dot constants are authored in *mdpi pixels*,
+not millimetres, and any arithmetic change needs that check ([`templates.md`](templates.md)).
+
+Blank, Lined, Dotted and Grid are also the four cards a user meets first: the three built-ins live
+in the reserved **Default** folder at the templates root, and Blank is card #1 there, forever.
+
+---
+
+## Prefs
+
+All of these live in `data/prefs/` and hold **ids and enum names only — never a display name**.
+Prefs are device-local plaintext; every name in this app lives in the encrypted index.
+
+| Store | File | Holds |
+|---|---|---|
+| `SortPrefs` | `sn_sort` | `field`, `order` |
+| `BrowseState` | `sn_view_state` | `folderId`, `mode` |
+| `SurfaceStack` (arc 32) | `sn_view_state`, key `surfaceStack` | JSON `List<SurfaceEntry(token, surface, notebookId?, viaLink)>`, bottom-first — the screens the user had open, so a cold launch can put the whole chain back; see [Launch restore](#launch-restore-arc-32) below |
+| `RecentsPrefs` | `sn_recents` | JSON `List<RecentEntry(notebookId, timestamp)>`, max 20, newest first |
+| `LinkTrail` (K4) | `sn_trail` | the link-follow walk-back stack, ids only, cap 50 — owned by the notebook's follow flow; see [`docs/links.md`](links.md) |
+
+`BrowseState`'s pre-arc-32 `lastOpenNotebookId` / `lastOpenViaLink` (K4 — a via-link notebook
+restored *as* via-link, so the persisted link trail survives a mid-chain process death) are
+**gone**, retired into `SurfaceStack`: on the first cold-launch read after the upgrade, a stored
+`lastOpenNotebookId` with no `surfaceStack` key is read as a one-entry `NOTEBOOK` stack (carrying
+`lastOpenViaLink`), and all three keys are removed together. The via-link rule itself is unchanged
+— see [`docs/links.md`](links.md).
+
+`SurfaceStack` holds ids and enum names only, like every other store here, and nothing in it is
+trusted as still existing: `LibraryActivity` re-validates every entry on the way back. A corrupt
+blob reads as an empty stack; an entry naming a surface this build does not know, or carrying a
+blank token, is dropped on its own — never the whole stack, never a crash.
+
+`RecentsPrefs` is written by **`NotebookActivity.onCreate`** (`record(id)` on every open, R3) and
+read by the Recents shelf (R5). Three things prune it: a notebook delete (`remove`), a folder
+delete (each notebook that was inside), and `pruneDeleted(aliveIds)` every time the shelf is built.
+A corrupt blob reads as an empty list rather than throwing — this is a convenience, never a source
+of truth.
+
+**Pin membership is not here.** It is an index list edge (see [Modes](#modes)); prefs hold only
+device-local browsing state.
+
+**Cold launch** restores `BrowseState.folderId`; if that folder is no longer alive in the index the
+library falls back to the root. Nothing in prefs is trusted as still existing. What screens were
+open on top of the library is a separate question — `SurfaceStack`'s, covered next.
+
+---
+
+## Launch restore (arc 32)
+
+A cold launch (`savedInstanceState == null`, and only on `BootstrapRoute.Next.LIBRARY` — the
+`RECOVERY_KEY` and `ENCRYPTION` routes never reach the library's cold-launch code, so the gate is
+structural) reopens the **whole chain** of screens the user had open, not just the last notebook:
+library → notebook → one extension screen over it, or library → the calendar, or the calendar's own
+pad door (the calendar latched beneath the pad). Back walks out exactly as it always has. The
+surfaces that can ride the stack are `NOTEBOOK`, `CALENDAR`, `SCRATCH_PAD` and `DOCUMENT_EDITOR`
+only (decision 1) — Templates, Backup, Encryption, Import, Tags, Export, Restore, every picker, New
+notebook and the sticky editor are never restore targets, because a surface that is not named
+cannot be restored.
+
+### The stack model
+
+`SurfaceStackCodec` (`data/prefs/SurfaceStack.kt`) is the pure algebra, JVM-tested and
+Context-free: `attach` appends a `SurfaceEntry`, or refreshes it in place when its token is already
+there (a same-process recreate must not duplicate itself); `markTop` drops everything above a
+token and is a no-op for a token that never attached; `pop` removes an entry by token wherever it
+sits; `decode`/`migrate` are the untrusted-input rules above. `SurfaceStack` is the prefs door over
+it — one in-memory list mirrored to `sn_view_state` on every mutation, Main thread only.
+
+**Tokens are per Activity/entry instance, not per surface** — the same notebook can legitimately
+be on the stack twice (a link followed into itself), and a screen that finishes itself into
+another (`switchToNotebook`, `closeAndLaunch` on a link follow) attaches the new instance's token
+before the old one pops its own.
+
+**Who maintains it:**
+
+- `NotebookActivity` mints a `stackToken` per instance (`UUID`, saved under `KEY_STACK_TOKEN` in
+  `onSaveInstanceState` so a same-process recreate refreshes in place, not a fresh attach),
+  attaches in `onCreate` where the old `lastOpenNotebookId` write used to be, `markTop`s as the
+  first line of `onResume`, and `pop`s at its four old clear sites (recovery declined, the
+  passphrase prompt cancelled, `failOpen`, `close`).
+- `LibraryActivity` `reset()`s in `onResume` — nothing can be above a resumed library, since an
+  extension screen over it is a result and the notebook is always finished before the library
+  resumes.
+- `ExtensionScreenEntry` / `DocumentEditorEntry` push their own `stackEntry` right after
+  `launcher.launch` actually launches (never at the tap — the open can still fail with nothing on
+  the glass before that), and pop synchronously at the top of `onResult` and in `close()`.
+
+Nothing ever pops or attaches from `onDestroy` — a killed process gets none, which is the whole
+point of a stack that survives it.
+
+**The calendar → pad latch is structural.** `onCalendarClosed` (library and notebook both) and the
+calendar's own pad door re-attach `calendar.stackEntry` immediately before `scratchPad.open()` in
+`openPadOverCalendar()` — the callback runs posted, so after the host's own `onResume` `markTop`
+has already dropped everything above it, and the re-attach lands the `CALENDAR` entry back on top
+before the pad's push goes above it. That is what keeps `CALENDAR` beneath `SCRATCH_PAD` in the
+persisted stack.
+
+### The replay
+
+On a cold launch, `LibraryActivity.onCreate` calls `stack.snapshotAndClear()` **before** `onResume`
+resets the stack — read once, cleared at once, so a target that fails to reopen is never retried on
+the next launch (`reopenLastNotebookIfNeeded`'s old discipline, kept). `replayStack()` (its
+successor) runs from the first-layout listener over the local copy through the pure
+`ReplayPlan.of(stack)`:
+
+- `Notebook(id, viaLink, above)` — a `NOTEBOOK` entry at the bottom, with the surfaces above it as
+  a `List<Surface>`;
+- `LibraryLevel(top, calendarBeneath)` — an extension screen open over the library itself, with
+  nothing beneath it;
+- `Nothing` — an empty stack, or one whose bottom cannot be stood on.
+
+`ReplayPlan.legalAbove` normalizes an above-list to the only two shapes SN can actually reopen —
+one screen, or `CALENDAR, SCRATCH_PAD` (exactly one extension screen is ever showing at a time, so
+nothing deeper exists) — cutting anything else to its longest legal prefix, and treating a
+`NOTEBOOK` first as nothing standing at all.
+
+**The notebook arm.** The three validity gates are kept verbatim: an alive index row, type
+`NOTEBOOK`, and its `.soil` present on disk. All three hold → `openNotebook(id, name, viaLink,
+resumeAbove = plan.above)` — still the one door into `NotebookActivity` — with the above-list
+riding `NotebookActivity.EXTRA_RESUME_ABOVE` as an `ArrayList<String>` of surface names, read once
+on a cold create (`ReplayPlan.decodeAbove`, the same unknown-name-dropped rule as the stack's own
+codec) and ignored on a task rebuild, exactly like `EXTRA_INITIAL_PAGE_ID`. The notebook itself
+raises the chain: `replayAbove()` runs as the last line of `loadCanvas`'s landing tail, after
+`opened = true` and after the "Opening…" overlay is down — so behind the own-key prompt by
+construction, since nothing above the notebook can stand before the open has succeeded — and is
+consumed once (`resumeAbove` cleared on read), so a second run of that tail (the text-document
+route defers it) never raises a second screen. `[CALENDAR]` / `[SCRATCH_PAD]` → the entry's
+`open()`; the pair → `openPadOverCalendar()` (the same three lines the calendar's own pad door
+uses: re-attach, latch, open); `[DOCUMENT_EDITOR]` → `documentEntry.open()` only when
+`session.documents.get(displayedPageId)` answers a row (decision 4 — no seed flow, no recognition,
+nothing staged; no document row drops the entry and the notebook comes back alone). A text
+document's own `openIntoEditor(launch = true)` consumes the above-list **first**, before its own
+launch: a bare `[DOCUMENT_EDITOR]` is silently absorbed (the route is already opening the editor),
+anything else above a text document is logged and dropped — there is no page for it to stand on.
+
+**The library-level arm.** `replayLibraryLevel` opens `calendar.open()` / `scratchPad.open()`, or
+the pad over the latched calendar (`openPadOverCalendar()`), each awaiting the entry's own
+`suspend fun discovered()` first rather than reading `isAvailable` — `refresh()`'s own discovery
+(fired from `onResume`) and this replay are two coroutines whose finishing order is a race, so a
+caller that awaits `discovered()` has the real answer instead of one it might lose the race to. A
+library-level `DOCUMENT_EDITOR` is logged and dropped — the editor only ever stands over a
+notebook, so it is not a shape the library can reopen.
+
+**Drop rules.** A notebook that is not alive, not type `NOTEBOOK`, or has no `.soil` on disk empties
+the **whole** chain — nothing above it can stand. A missing, untrusted, or below-floor extension
+ends the chain at that point (the library or notebook simply comes back alone). A document editor
+whose landing page has no document row is dropped (decision 4). Every drop is one `Slog.d` line
+naming the surface, never an id — the standing rule against logging identity. A target that fails
+is never retried on the next launch; the stack was already cleared on the way in.
+
+**Device-local by rule.** `SurfaceStack` is never backed up and never restored — the same rule as
+every other prefs store in this file. A whole-library restore (arc 27) relaunches through
+Bootstrap with `CLEAR_TASK`, so the replay after one runs against a stack this device wrote
+*before* the restore, and every entry is re-validated exactly as any other cold launch's is; a
+notebook the restore did not bring back is dropped like any other missing target.
+
+**Walked on the Nomad (RS1 + RS2):** a notebook opened into the calendar, the pad, or the document
+editor, each force-stopped and cold-started, came back with the extension screen resumed over
+`NotebookActivity` and its `restore:` log line; Back walked notebook → library with the stack
+shrinking to `[]` at each step. The calendar's own pad door restored pad-over-calendar, Back
+returning to the calendar. A library-level calendar, and the calendar's pad over the library, both
+restored. A dead notebook (deleted since the stack was written) with a `CALENDAR` entry above it
+dropped the whole chain to the library with one log line and an empty stack. An uninstalled
+calendar behind a `NOTEBOOK CALENDAR` stack came back to the notebook alone. A text document
+killed behind its editor came back into the editor exactly once — no `already showing`, no
+`restore:` line, because `openIntoEditor` had already consumed the entry. The pre-arc migration
+(a device left in a notebook under the old build) came up as a one-entry `NOTEBOOK` stack with
+both legacy keys gone. Crash log empty throughout.
+
+**Walk trap:** `am force-stop` the **host first**, then the extension process(es)
+(`…ext.calendar.dev` / `…ext.scratchpad.dev` / `…ext.document.dev`), in one shell command, before
+`am start`ing Bootstrap. An extension killed while the host still lives hands the host a cancelled
+result, whose `onResult` pops the entry before the process actually dies — the stack then reads as
+if the chain above the notebook had never existed, and the walk reports a drop that never
+happened. `am force-stop` on the host alone is *not* a device death either: an extension screen on
+top lives in its own process and stays on the glass, and `am start` is delivered to the
+already-running top-most instance rather than causing a cold launch.
+
+**Tests:** `SurfaceStackCodecTest` (15) + `ReplayPlanTest` (27, after RS2's +15) — the model, the
+codec's untrusted-input rules, the migration, every legal above-shape and its truncation, and
+`decodeAbove` against unknown / all-unknown / null / empty names.
+
+---
+
+## Deliberate differences from Paper v0
+
+- **Duplicate names and invalid names are problem dialogs, not toasts.** SN's standing rule: a
+  toast only confirms something that happened; anything explaining why a tap *didn't* work is a
+  dialog, because on e-ink a missed toast reads as "broken". Paper toasted these.
+- **`library_card_min_width` is a tier dimen (140 dp / 200 dp / 320 dp)** rather than Paper's
+  hardcoded "3 columns above 480 dp, else 2". Same result on a Nomad (3 columns), but the grid is
+  now dimen-driven like every other sizing decision, and `GridMath` is pure and testable — which is
+  what let the Manta be put back on three columns by adding one resource file (F4).
+- **`NameRules` returns a `Problem` enum**, not a hardcoded English string, so the wording lives in
+  `strings.xml`. Paper's `validateName` returned literals from an Activity companion.
+- **`NameDialog` is shared** between new-folder and rename instead of two near-identical copies.
+- **`LibraryGrid` is reused by the folder picker** instead of the picker rolling its own
+  `GridLayout` (which is why SN needs no `ids.xml` entry for a picker grid).
+- **Modes toggle from their own button** and are reachable from Back, and the active one's button
+  carries a selected border — Paper v0 had only the close button.
+- **The pinned shelf follows the on-screen sort**, not the pin edge's `sortOrder`.
+- **`openNotebook` is the one door into `NotebookActivity` (R6)** — a `launchingNotebook` latch set
+  on launch and reset in `onResume`. E-ink gives a tap no feedback for hundreds of ms, so users
+  double-tap; without the latch each tap would stack its own `NotebookActivity` — two concurrent
+  SQLCipher writers on one `.soil` (the documented lock-crash family). All three launch sites
+  (card tap — including the Pinned and Recents shelves — the new-notebook result, and the
+  cold-launch reopen) route through it.
+- **The "Opening…" overlay goes up at tap time (P1)** — that same door is
+  `OpeningOverlay.showThen(this) { startActivity(…) }` (`core/OpeningOverlay`, detail in
+  `docs/notebook.md`). Opening a notebook is the app's one slow navigation, and the destination's
+  own overlay can only appear once *its* first frame is drawn, leaving a dead gap after the tap.
+  The library raises the box first and the launch runs only after that frame is committed — which
+  is why the helper waits for `onPreDraw` and then `post`s: `Dispatchers.Main` is an async Handler,
+  so a coroutine (or a bare `startActivity` here) jumps the traversal's sync barrier and the box
+  never draws at all. It hides itself on the first resume after the pause, so returning from a
+  notebook finds a clean library, and it swallows touches while up — a second guard against the
+  double-tap the latch already covers.
+- **A damaged index file is never built over (R6)** — `SnIndex`'s probe-`Invalid` branch creates a
+  fresh encrypted index only when the file is genuinely absent (or zero bytes). An existing
+  non-empty file that fails the probe (an interrupted copy/restore remnant) is
+  `PrepareOutcome.DAMAGED_FILE`: `BootstrapActivity` shows the Retry/Close problem dialog with an
+  honest body — nothing created over it, nothing deleted (the never-delete-on-corruption family).
+  Bootstrap's boot catch also rethrows `CancellationException` and guards the failure dialog on
+  `isFinishing`/`isDestroyed` (Home during the first-boot KDF is not a boot failure).
+
+## Tests (JVM)
+
+| File | Covers |
+|---|---|
+| `library/GridMathTest` | columns/rows/cards-per-page against a real Nomad band, page count rounding, clamp after a delete, page slice ranges, degenerate inputs |
+| `library/NameRulesTest` | whitelist, `.`/`..`, blank/whitespace, control characters, dots that are legal |
+| `library/SortRulesTest` | all four orders, case-insensitivity, folders-first in both directions and on both fields, stability |
+| `library/SchemeEngineTest` | every token parses (v1 + v2, exact names only), each `Error` case, expansion-counted 100 cap (shrinking tokens not charged source length), fixed-clock expansion of all tokens, `{n}` counting (starts at 1, highest + 1 with gaps ignored, continues across days / months / weekdays — every date/name position a wildcard, padded + unpadded both count, width never truncates), anchored quoted-literal skeleton, counter stays capture group 1 behind name tokens, every expansion satisfies `NameRules`, every emitted month/weekday name matches the skeleton alphabet (all 12 + all 7 — the single-authority pin) |
+| `library/RecentsAssemblyTest` | stored order survives (anti-alphabetical, anti-chronological fixtures), dead ids dropped, duplicates collapsed to their newest position, empty inputs, and that an alive id never visited is not invented |
+| `library/SchemePrefillTest` (K3) | no-scheme/unparseable/refused expansions all fall back to null, siblings fetched only when the scheme holds a counter, a throwing sibling fetch never escapes, valid expansions pass through |
+| `data/TemplateGeometryTest` | 8 mm spacing at dpi, density-scaled feature sizes with the 1 px floor, lined top margin, grid symmetry, grid-≠-lined, dot intersections, Nomad-page counts |
+| `library/LibraryCardsTest` (arc 19 / M8) | `NotebookFlags.TEXT_DOCUMENT`'s card-level read — the one bit of the text-document card path that is pure |
+| `core/FuzzyRankTest` (arc 20 / Q1) | every tier, the word-start rules (separators / camel / first digit), word-starts and span as tie-breaks, the two-pass subsequence preferring word starts, what must **not** match (transposition, wrong letter, over-long query, blank), punctuation as literal, and `rank`'s total, stable order |
+| `library/SearchAssemblyTest` (arc 20 / Q1, grown arc 21 / W4) | folders before notebooks whatever the score says, relevance inside each group, non-matches dropped from both, a blank query finding nothing, an empty library; names-only with no tag index, a notebook found by a tag, the matched tag shown only when the name did not, a notebook matching both appearing once, the better of the two deciding rank, a tagged page as its own card naming its notebook, one card per page not per tag, pages and their notebook as separate rows, a tag on a gone notebook surfacing nothing, a non-matching tag bringing nothing with it, fuzzy tag matching and ranking, `isEmpty` over all three groups |

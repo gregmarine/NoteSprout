@@ -1,0 +1,128 @@
+package com.symmetricalpalmtree.notesproutsn.data.backup
+
+import com.symmetricalpalmtree.notesproutsn.data.index.FakeObjectDao
+import com.symmetricalpalmtree.notesproutsn.data.index.IndexRepository
+import com.symmetricalpalmtree.notesproutsn.data.index.ListIds
+import com.symmetricalpalmtree.notesproutsn.data.index.NotebookFlags
+import com.symmetricalpalmtree.notesproutsn.data.index.ObjectEntity
+import com.symmetricalpalmtree.notesproutsn.data.index.ObjectType
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * The backup row's store, and the exclude toggle's one non-negotiable: neither ever bumps a
+ * notebook's `updatedAt` — the library sort key **and** the needs-backup flag (og's rule; a bump
+ * would re-flag the notebook the moment it was backed up or toggled).
+ */
+class BackupStoreTest {
+
+    @Test
+    fun `config round-trips through the singleton row`() = runBlocking {
+        val dao = FakeObjectDao()
+        val store = BackupStore(dao)
+        assertEquals(BackupConfig(), store.read()) // absent row reads as a fresh config
+
+        val config = BackupConfig(treeUri = "content://tree/x", lastRunAt = 7L, stamps = mapOf("nb" to 3L))
+        assertTrue(store.write(config, now = 100L))
+        assertEquals(config, store.read())
+
+        val row = dao.rows[ListIds.BACKUP_ID]!!
+        assertEquals(ObjectType.BACKUP, row.type)
+        assertEquals(BackupConfig.VERSION, row.flags)
+    }
+
+    @Test
+    fun `a rewrite replaces the previous config whole`() = runBlocking {
+        val store = BackupStore(FakeObjectDao())
+        store.write(BackupConfig(treeUri = "content://tree/x", stamps = mapOf("a" to 1L)))
+        store.write(BackupConfig(treeUri = "content://tree/y"))
+        assertEquals(BackupConfig(treeUri = "content://tree/y"), store.read())
+    }
+
+    @Test
+    fun `exclude toggle sets and clears the bit without touching updatedAt`() = runBlocking {
+        val dao = FakeObjectDao()
+        val repo = IndexRepository(dao)
+        dao.upsert(
+            ObjectEntity(
+                id = "nb", type = ObjectType.NOTEBOOK, name = "N", parentId = null,
+                createdAt = 1L, updatedAt = 42L, flags = NotebookFlags.ENCRYPTED,
+            )
+        )
+
+        repo.setExcludeFromBackup("nb", excluded = true)
+        assertEquals(NotebookFlags.ENCRYPTED or NotebookFlags.EXCLUDE_FROM_BACKUP, dao.rows["nb"]!!.flags)
+        assertEquals(42L, dao.rows["nb"]!!.updatedAt)
+
+        repo.setExcludeFromBackup("nb", excluded = false)
+        assertEquals(NotebookFlags.ENCRYPTED, dao.rows["nb"]!!.flags)
+        assertEquals(42L, dao.rows["nb"]!!.updatedAt)
+    }
+
+    @Test
+    fun `clearStamp forgets one notebook and leaves the rest`() = runBlocking {
+        // The K3-review import rule: an import landing on an existing id can carry an OLDER
+        // updatedAt than the standing stamp, and og's D8 would then read "up to date" forever.
+        val store = BackupStore(FakeObjectDao())
+        store.write(BackupConfig(treeUri = "content://tree/x", stamps = mapOf("a" to 1L, "b" to 2L)))
+        store.clearStamp("a")
+        assertEquals(mapOf("b" to 2L), store.read().stamps)
+        store.clearStamp("never-stamped") // cheap no-op, never an error
+        assertEquals(mapOf("b" to 2L), store.read().stamps)
+    }
+
+    @Test
+    fun `clearStamp forgets both destinations' stamps`() = runBlocking {
+        // Arc 26 / U3: the reason for forgetting — the bytes changed under an unchanged updatedAt —
+        // holds for the cloud copy exactly as for the SAF one.
+        val store = BackupStore(FakeObjectDao())
+        store.write(BackupConfig(stamps = mapOf("a" to 1L, "b" to 2L), cloudStamps = mapOf("a" to 5L, "c" to 6L)))
+        store.clearStamp("a")
+        assertEquals(mapOf("b" to 2L), store.read().stamps)
+        assertEquals(mapOf("c" to 6L), store.read().cloudStamps)
+        store.clearStamp("c") // stamped only in the cloud map
+        assertEquals(mapOf("b" to 2L), store.read().stamps)
+        assertEquals(emptyMap<String, Long>(), store.read().cloudStamps)
+    }
+
+    @Test
+    fun `clearAllStamps empties both maps and keeps everything else`() = runBlocking {
+        // Decision 4: after a rotation every backup copy is under the old key; the next run must
+        // replace them all, and only the stamps say otherwise.
+        val store = BackupStore(FakeObjectDao())
+        val before = BackupConfig(
+            treeUri = "content://tree/x", lastRunAt = 9L, lastCopied = 3, cloudEnabled = true,
+            cloudDeviceFolder = "Nomad", stamps = mapOf("a" to 1L), cloudStamps = mapOf("a" to 2L),
+        )
+        store.write(before)
+        store.clearAllStamps()
+        assertEquals(before.copy(stamps = emptyMap(), cloudStamps = emptyMap()), store.read())
+        store.clearAllStamps() // idempotent (a resume repeats it)
+        assertEquals(before.copy(stamps = emptyMap(), cloudStamps = emptyMap()), store.read())
+    }
+
+    @Test
+    fun `a Replace import preserves the exclude flag`() = runBlocking {
+        // K3 review: importNotebookRow rewrote flags wholesale, silently dropping the user's
+        // "Exclude from backup" on an id-collision Replace.
+        val dao = FakeObjectDao()
+        val repo = IndexRepository(dao)
+        dao.upsert(
+            ObjectEntity(
+                id = "nb", type = ObjectType.NOTEBOOK, name = "N", parentId = null,
+                createdAt = 1L, updatedAt = 42L,
+                flags = NotebookFlags.ENCRYPTED or NotebookFlags.EXCLUDE_FROM_BACKUP,
+            )
+        )
+        repo.importNotebookRow("nb", "N2", null, 3, createdAt = 5L, updatedAt = 6L, templateKind = null)
+        assertEquals(
+            NotebookFlags.ENCRYPTED or NotebookFlags.EXCLUDE_FROM_BACKUP,
+            dao.rows["nb"]!!.flags,
+        )
+        // A fresh import (no existing row) starts unexcluded, as before.
+        repo.importNotebookRow("nb-new", "M", null, 1, createdAt = 5L, updatedAt = 6L, templateKind = null)
+        assertEquals(NotebookFlags.ENCRYPTED, dao.rows["nb-new"]!!.flags)
+    }
+}

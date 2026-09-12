@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Templates screen is now the browser and nothing else (arc 13 / G3): everything it used to
+     hold moved into view_template_browser so New Notebook and the notebook's page-paper picker
+     could host the same thing. What this screen adds is the close button, which it turns on. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/paperWhite">
+
+    <include
+        android:id="@+id/browser"
+        layout="@layout/view_template_browser"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+</LinearLayout>

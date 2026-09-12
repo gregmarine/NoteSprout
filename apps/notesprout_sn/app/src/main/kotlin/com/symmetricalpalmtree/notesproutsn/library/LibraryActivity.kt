@@ -1,0 +1,1175 @@
+package com.symmetricalpalmtree.notesproutsn.library
+
+import android.app.Activity
+import android.os.Bundle
+import android.util.Log
+import android.view.MotionEvent
+import android.view.View
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.TooltipCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import com.symmetricalpalmtree.notesproutsn.R
+import com.symmetricalpalmtree.notesproutsn.core.ActionSheetDialog
+import com.symmetricalpalmtree.notesproutsn.core.Dialogs
+import com.symmetricalpalmtree.notesproutsn.core.IndexGuard
+import com.symmetricalpalmtree.notesproutsn.core.ListSwipe
+import com.symmetricalpalmtree.notesproutsn.core.OpeningOverlay
+import com.symmetricalpalmtree.notesproutsn.core.Slog
+import com.symmetricalpalmtree.notesproutsn.core.TopGuard
+import com.symmetricalpalmtree.notesproutsn.backup.BackupActivity
+import com.symmetricalpalmtree.notesproutsn.bootstrap.BootstrapActivity
+import com.symmetricalpalmtree.notesproutsn.encryption.EncryptionActivity
+import com.symmetricalpalmtree.notesproutsn.crypto.KeyMaterial
+import com.symmetricalpalmtree.notesproutsn.crypto.KeyScope
+import com.symmetricalpalmtree.notesproutsn.data.backup.BackupPredicates
+import com.symmetricalpalmtree.notesproutsn.data.index.IndexRepository
+import com.symmetricalpalmtree.notesproutsn.data.index.ObjectSummary
+import com.symmetricalpalmtree.notesproutsn.data.index.ObjectType
+import com.symmetricalpalmtree.notesproutsn.data.prefs.BrowseMode
+import com.symmetricalpalmtree.notesproutsn.data.prefs.BrowseState
+import com.symmetricalpalmtree.notesproutsn.data.prefs.Surface
+import com.symmetricalpalmtree.notesproutsn.data.prefs.SurfaceEntry
+import com.symmetricalpalmtree.notesproutsn.data.prefs.SurfaceStack
+import com.symmetricalpalmtree.notesproutsn.data.prefs.RecentsPrefs
+import com.symmetricalpalmtree.notesproutsn.data.prefs.SortField
+import com.symmetricalpalmtree.notesproutsn.data.prefs.SortOrder
+import com.symmetricalpalmtree.notesproutsn.data.prefs.SortPrefs
+import com.symmetricalpalmtree.notesproutsn.data.sidecarsOf
+import com.symmetricalpalmtree.notesproutsn.data.soilFile
+import com.symmetricalpalmtree.notesproutsn.databinding.ActivityLibraryBinding
+import com.symmetricalpalmtree.notesproutsn.export.ExportActivity
+import com.symmetricalpalmtree.notesproutsn.extension.ExtensionRegistry
+import com.symmetricalpalmtree.notesproutsn.extension.CalendarEntry
+import com.symmetricalpalmtree.notesproutsn.extension.CalendarTarget
+import com.symmetricalpalmtree.notesproutsn.extension.ExtensionContract
+import com.symmetricalpalmtree.notesproutsn.extension.ScratchPadEntry
+import com.symmetricalpalmtree.notesproutsn.extension.TagManagerEntry
+import com.symmetricalpalmtree.notesproutsn.extension.TagShowing
+import com.symmetricalpalmtree.notesproutsn.importing.ImportFlow
+import com.symmetricalpalmtree.notesproutsn.notebook.NotebookActivity
+import com.symmetricalpalmtree.notesproutsn.templates.TemplatesActivity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * The home screen: folders and notebooks as a **paginated, non-scrolling card grid**.
+ *
+ * Three things define it:
+ *  - **Pages, not scroll.** The grid is measured against the real container once it exists and
+ *    holds exactly the cards that fit ([LibraryGrid] / [GridMath]). E-ink hates smooth scrolling;
+ *    a page turn is one clean refresh.
+ *  - **Breadcrumbs, not a tree.** The top bar is the path. Any crumb jumps there, back goes up one
+ *    level and exits at the root.
+ *  - **Covers are lazy, one page at a time.** The DAO listing is blob-free, so entering a folder of
+ *    forty notebooks reads forty rows and six covers, not forty covers.
+ *
+ * On top of that sit the **modes** (R5, grown arc 20): Pinned, Recents and Search. A mode is a flat
+ * shelf with no path — the breadcrumbs give way to a title (or, for Search, to the field itself) and
+ * a close button, and the create buttons stand down because there is no folder to create into. The
+ * mode persists in [BrowseState], so the shelf the user left is the shelf they come back to —
+ * except Search, which is the one shelf a relaunch never reopens ([LibrarySearch]).
+ */
+class LibraryActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityLibraryBinding
+    private lateinit var browseState: BrowseState
+    /** The screens that were open (arc 32 / RS1). Read once and cleared in [onCreate] on a cold
+     *  launch, reset on every resume — nothing can stand above a resumed library. */
+    private lateinit var stack: SurfaceStack
+    /** The cold-launch read of [stack], held locally until the grid can replay it. */
+    private var restoreStack: List<SurfaceEntry> = emptyList()
+    private lateinit var sortPrefs: SortPrefs
+    private lateinit var recentsPrefs: RecentsPrefs
+    private val repo by lazy { IndexRepository() }
+    /** The Scratch Pad's entry button (arc 11) — GONE unless a trusted extension is installed. */
+    private lateinit var scratchPad: ScratchPadEntry
+    private lateinit var calendar: CalendarEntry
+
+    /** The calendar's Scratch Pad door (arc 23 / Y4): the calendar closed asking for the pad, so the
+     *  pad opens, and a plain close of the pad brings the calendar back at its bookmark. A pad that
+     *  sent ink instead (never from here — the library takes no ink) would stay where it landed. */
+    private var reopenCalendarAfterPad = false
+
+    private fun onCalendarClosed(resultCode: Int) {
+        if (resultCode != ExtensionContract.RESULT_CALENDAR_OPEN_SCRATCH_PAD) return
+        openPadOverCalendar()
+    }
+
+    /**
+     * The pad raised with the calendar behind it — the calendar's own door (arc 23 / Y4) and the
+     * shape a `CALENDAR, SCRATCH_PAD` stack is put back in on a cold launch (arc 32 / RS2), so both
+     * roads run the same three lines.
+     *
+     * The latch is persisted **structurally**: a CALENDAR entry beneath the pad's, so a cold launch
+     * puts the chain back. The calendar's own entry popped itself at its result, and
+     * [onCalendarClosed] runs in a POSTED coroutine — after this screen's `onResume`, whose
+     * `markTop` has already dropped everything above it — so the re-attach lands on top and the
+     * pad's push goes above it. On the replay road the `onResume` reset has already run for the
+     * same reason: the first-layout listener fires after it.
+     */
+    private fun openPadOverCalendar() {
+        stack.attach(calendar.stackEntry)
+        reopenCalendarAfterPad = true
+        scratchPad.open()
+    }
+
+    private fun onPadClosed(resultCode: Int) {
+        if (!reopenCalendarAfterPad) return
+        reopenCalendarAfterPad = false
+        if (resultCode == RESULT_CANCELED) calendar.open()
+    }
+
+    /** The calendar's Export door (arc 31 / HV4): the calendar closed asking for the page it was
+     *  showing to be exported, so the Export screen opens at that target and the calendar comes back
+     *  at its bookmark once it is over — whatever the outcome, the page-sheet door's rule.
+     *
+     *  The latch survives only as long as this process does. Killed behind the Export screen, the
+     *  calendar simply stays closed on the way back, which is the honest fallback: the library is
+     *  where the person started, and its button is one tap away. */
+    private var reopenCalendarAfterExport = false
+
+    private fun onCalendarExport(target: CalendarTarget) {
+        reopenCalendarAfterExport = true
+        startActivity(ExportActivity.intent(this, target))
+    }
+    private lateinit var tags: TagManagerEntry
+
+    /** Import (arc 16) — the bottom bar's Import button (left group, right after Backup since
+     *  arc 17 / K2) and the whole pipeline behind it. GONE unless a trusted importer is installed. */
+    private lateinit var importFlow: ImportFlow
+
+    /** Search (arc 20 / Q1) — the top bar's field, the query behind it and the cards it produces. */
+    private lateinit var search: LibrarySearch
+
+    private var folderId: String? = null
+    private var pageIndex = 0
+    private var pageCount = 1
+    private var items = emptyList<CardItem>()
+
+    /** Which shelf is on screen. Restored from [BrowseState] on launch and written on every change. */
+    private var mode: BrowseMode = BrowseMode.NORMAL
+
+    /** Covers already fetched for this listing. Cleared on every [refresh] so an edit is picked up. */
+    private val coverCache = HashMap<String, ByteArray?>()
+    private var grid: LibraryGrid? = null
+    private var gridMeasured = false
+    private var coldLaunch = false
+
+    /** The one-finger flip over the card grid — the pager buttons' gesture twin. */
+    private val listSwipe = ListSwipe(
+        region = { if (::binding.isInitialized) binding.gridContainer else null },
+        onFlipNext = { goToPage(pageIndex + 1) },
+        onFlipPrevious = { goToPage(pageIndex - 1) },
+    )
+
+    private val newNotebookLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        // The result callback runs BEFORE onResume, so the launch latch armed by the + tap is
+        // still up here — release it first or the open of the just-created notebook is silently
+        // dropped (S2 regression, user-caught). The round-trip the latch guards is over.
+        launching = false
+        if (result.resultCode == Activity.RESULT_OK) {
+            val id = result.data?.getStringExtra(NewNotebookActivity.EXTRA_NOTEBOOK_ID)
+            val name = result.data?.getStringExtra(NewNotebookActivity.EXTRA_NOTEBOOK_NAME)
+            if (id != null && name != null) openNotebook(id, name)
+            lifecycleScope.launch { refresh() }
+        }
+    }
+
+    private val movePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) lifecycleScope.launch { refresh() }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        if (!IndexGuard.ready(this)) return
+        binding = ActivityLibraryBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+        // TopGuard is 0 on Ratta, so the breadcrumb bar sits flush at the top edge. The inset pass
+        // is still applied: it is how the *bottom* bar clears a navigation bar if one is present.
+        TopGuard.applyInsetPadding(binding.root)
+
+        browseState = BrowseState(this)
+        sortPrefs = SortPrefs(this)
+        recentsPrefs = RecentsPrefs(this)
+        folderId = browseState.folderId
+        mode = browseState.mode
+        coldLaunch = savedInstanceState == null
+        // Read BEFORE onResume resets it (two handlers on one piece of state: the read first), and
+        // cleared at once so a target that fails is never retried on the next launch.
+        stack = SurfaceStack(this)
+        if (coldLaunch) restoreStack = stack.snapshotAndClear()
+
+        // Built before the bars are wired: the Search button's listener reaches for it.
+        search = LibrarySearch(this, repo, tagsAvailable = { ::tags.isInitialized && tags.isAvailable }) {
+            // A new query is a new listing — never page 4 of the last one. Re-searching while the
+            // shelf is already up is not a no-op: it is a different shelf under the same button.
+            pageIndex = 0
+            if (mode == BrowseMode.SEARCH) lifecycleScope.launch { refresh() }
+            else setMode(BrowseMode.SEARCH)
+        }
+        wireBars()
+        // The Scratch Pad (arc 11). Built here because it registers an ActivityResult launcher, and
+        // one may not be registered after STARTED. No handoff to make: the library hosts no paper.
+        scratchPad = ScratchPadEntry(activity = this, button = binding.btnScratchPad, onClosed = { onPadClosed(it) })
+        binding.btnScratchPad.setOnClickListener { scratchPad.open() }
+        TooltipCompat.setTooltipText(binding.btnScratchPad, binding.btnScratchPad.contentDescription)
+        // The Calendar (arc 23 / Y1) — the pad's shape, the pad's reason for being built here.
+        calendar = CalendarEntry(
+            activity = this,
+            button = binding.btnCalendar,
+            onExport = { onCalendarExport(it) },
+            onClosed = { onCalendarClosed(it) },
+        )
+        binding.btnCalendar.setOnClickListener { calendar.open() }
+        TooltipCompat.setTooltipText(binding.btnCalendar, binding.btnCalendar.contentDescription)
+        // Tags (arc 21 / W1). No button of its own — the door is a row in the card sheet — but it
+        // registers an ActivityResult launcher, so it is built here for the same reason as the pad.
+        tags = TagManagerEntry(activity = this) {
+            // A tag screen that changed something changed what a standing query answers (arc 21 /
+            // W4) — the arc-20 rule that any action re-runs the query, applied to the one action
+            // that can add or remove a row without touching a name. Only in SEARCH: no other shelf
+            // is built out of tags.
+            if (mode == BrowseMode.SEARCH) lifecycleScope.launch { refresh() }
+        }
+        // Import (arc 16 / I1). Built here for the same reason as the pad: it registers two
+        // ActivityResult launchers (the document picker and the folder picker), and one may not be
+        // registered after STARTED.
+        importFlow = ImportFlow(
+            activity = this,
+            repo = repo,
+            button = binding.btnImport,
+            currentFolder = { folderId },
+            retireNotebook = { id -> retireNotebook(id) },
+            onImported = { refresh() },
+            // A text import ends in the editor, not in the library (arc 19 / M8): the same door
+            // every other open goes through, latch and overlay included.
+            openImported = { id, name -> openNotebook(id, name) },
+        )
+        binding.btnImport.setOnClickListener { importFlow.onTap() }
+        TooltipCompat.setTooltipText(binding.btnImport, binding.btnImport.contentDescription)
+        DebugMenu.install(this, binding.bottomRight)
+
+        // Arc 26 / U3: a rotation's completion dialog chose *Back up now* — the request rode the
+        // relaunch through Bootstrap (and the recovery-key screen if the key was minted) to here.
+        // Once per cold launch, never on a recreate.
+        if (coldLaunch && intent.getBooleanExtra(BootstrapActivity.EXTRA_THEN_BACKUP, false)) {
+            intent.removeExtra(BootstrapActivity.EXTRA_THEN_BACKUP)
+            startActivity(BackupActivity.intent(this))
+        }
+
+        // The grid cannot be sized until the band it lives in has been laid out.
+        binding.gridContainer.viewTreeObserver.addOnGlobalLayoutListener {
+            if (gridMeasured) return@addOnGlobalLayoutListener
+            val w = binding.gridContainer.width
+            val h = binding.gridContainer.height
+            if (w <= 0 || h <= 0) return@addOnGlobalLayoutListener
+            gridMeasured = true
+            grid = LibraryGrid(binding.gridContainer, ::onCardTap, ::onCardLongPress).also {
+                it.measure(this, w, h)
+                Slog.d(TAG) { "grid measured ${w}x$h → ${it.cardsPerPage} cards/page" }
+            }
+            lifecycleScope.launch {
+                repo.ensurePinnedListExists()
+                // A remembered folder may have been deleted since; fall back to the root.
+                folderId?.let { id -> if (repo.alive(id) == null) navigateTo(null, refreshNow = false) }
+                if (coldLaunch) replayStack()
+                refresh()
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        launching = false
+        // The library is resumed, so nothing is open above it: the notebook finished before this
+        // resume, and an extension screen over the library is a result that already popped itself.
+        if (::stack.isInitialized) stack.reset()
+        // Re-discovered on every resume: a package can be disabled or replaced under us. Guarded
+        // because an IndexGuard bounce returns from onCreate but still gets this callback.
+        if (::scratchPad.isInitialized) scratchPad.refresh()
+        if (::calendar.isInitialized) calendar.refresh()
+        // The calendar comes home after its export (arc 31 / HV4). Never on the resume that starts
+        // it: the entry's result runs in a posted coroutine, so the latch is not set yet when this
+        // resume runs — it is set on the way *into* the Export screen and read on the way back.
+        if (reopenCalendarAfterExport && ::calendar.isInitialized) {
+            reopenCalendarAfterExport = false
+            calendar.open()
+        }
+        if (::importFlow.isInitialized) importFlow.refresh()
+        // No button to show or hide, but the search dialog's hint asks whether tags are searchable
+        // (arc 21 / W4), and that answer goes stale the same way every other one does.
+        if (::tags.isInitialized) tags.refresh()
+        if (gridMeasured) lifecycleScope.launch { refresh() }
+    }
+
+    override fun onDestroy() {
+        // The guard bounce still runs this callback, and a `lateinit` teardown would crash on the
+        // way out of a task Android rebuilt after a background process kill.
+        if (IndexGuard.bounced(this)) { super.onDestroy(); return }
+        // A held bind must not outlive the screen that opened it, result or no result.
+        if (::scratchPad.isInitialized) scratchPad.close()
+        if (::calendar.isInitialized) calendar.close()
+        if (::tags.isInitialized) tags.close()
+        // The import flow holds the cloud connect door and, while it is up, the cloud browser
+        // (arc 25 / V5) — both are this window's.
+        if (::importFlow.isInitialized) importFlow.close()
+        super.onDestroy()
+    }
+
+    /**
+     * True from any launch out of the library until it is back on top — ONE latch for every door
+     * (notebook card *and* +Notebook), because in the e-ink feedback gap the second tap is not
+     * always on the same control: a card tap plus a + tap would otherwise each pass their own flag
+     * and stack two screens (S2 review finding).
+     */
+    private var launching = false
+
+    /**
+     * The one door into [NotebookActivity]. E-ink gives a tap no feedback for hundreds of ms, so
+     * users double-tap; without this latch each tap would stack its own NotebookActivity — two
+     * concurrent SQLCipher writers on one `.soil` (the documented lock-crash family). Reset in
+     * [onResume]: by then the second instance would already exist, so the latch has done its job.
+     *
+     * It is also where the wait becomes visible (P1): [OpeningOverlay] puts "Opening…" up *here*,
+     * at tap time, and the launch runs only once that frame has been drawn — the notebook then
+     * carries the same box from its own first frame until the page lands.
+     */
+    private fun openNotebook(
+        id: String,
+        name: String,
+        viaLink: Boolean = false,
+        pageId: String? = null,
+        /** The extension screens that stood above this notebook (arc 32 / RS2) — the replay's road
+         *  and nothing else's; the notebook raises them itself once its page is on the paper. */
+        resumeAbove: List<Surface> = emptyList(),
+    ) {
+        if (launching) return
+        launching = true
+        OpeningOverlay.showThen(this) {
+            startActivity(
+                NotebookActivity.intent(this, id, name, viaLink, initialPageId = pageId, resumeAbove = resumeAbove)
+            )
+        }
+    }
+
+    /**
+     * +Notebook. The folder's naming scheme is resolved and expanded **before** the New-notebook
+     * screen opens (two cheap index reads; no feedback — the tap takes a beat), and the result rides
+     * in as a prefill. Latched like [openNotebook], because the resolve puts a gap between the tap
+     * and the screen and a second tap in that gap would launch twice.
+     *
+     * Naming never blocks what the user asked for: no scheme, an unparseable one, or any failure at
+     * all means the screen opens with its own timestamp default.
+     */
+    private fun launchNewNotebook() {
+        if (launching) return
+        launching = true
+        val fid = folderId
+        lifecycleScope.launch {
+            val prefill = resolveAndExpand(fid)
+            // The beat is normally a few ms, but if the user has meanwhile left this folder the tap
+            // no longer means "here" — drop it rather than create somewhere else.
+            if (folderId != fid || isFinishing || isDestroyed) {
+                launching = false
+                return@launch
+            }
+            newNotebookLauncher.launch(NewNotebookActivity.intent(this@LibraryActivity, fid, prefill))
+        }
+    }
+
+    /**
+     * The scheme governing [fid] (nearest ancestor, then the root), expanded against the folder's
+     * live notebook names so `{n}` counts the right siblings — which [SchemePrefill] fetches only
+     * when the scheme actually holds a counter; nothing else in the expansion reads them. Null when
+     * there is no scheme, or when anything at all goes wrong: a naming scheme is never worth a
+     * crash, and this runs in `lifecycleScope`, which has no handler.
+     *
+     * Only the two index reads live here — the rules are [SchemePrefill]'s, shared with the link
+     * picker's New notebook (K3) so a scheme cannot mean two different things.
+     */
+    private suspend fun resolveAndExpand(fid: String?): String? = try {
+        SchemePrefill.expand(repo.resolveScheme(fid), System.currentTimeMillis()) {
+            repo.notebooks(fid).map { it.name }
+        }
+    } catch (e: Exception) {
+        // The resolve is the caller's own read, so its failure is caught here rather than inside.
+        Log.w(TAG, "scheme resolve failed — using the default", e)
+        null
+    }
+
+    /**
+     * The screens that were open when the process died (arc 32 / RS1 — the [SurfaceStack]) — put
+     * them back on top of the library. A notebook comes back only when its index row is still
+     * alive, it is a NOTEBOOK, **and** its `.soil` exists (never mint a ghost file); a notebook
+     * that fails any gate empties the whole chain, since nothing above it can stand. The stack was
+     * read once and cleared in `onCreate`, so nothing here is retried on the next launch.
+     *
+     * A chain above the notebook is **handed down** as `EXTRA_RESUME_ABOVE` — the notebook raises
+     * it itself once its page is on the paper, because an extension screen can only be launched by
+     * the host screen it sits over. A library-level entry (the calendar or the pad over the library
+     * itself, the calendar's pad door included) is opened here, through the same entries a tap goes
+     * through, each one awaiting its own discovery first: the `onResume` refresh and this replay
+     * are two coroutines whose finishing order is a race. An extension that is not installed is one
+     * log line naming the surface — never an id.
+     */
+    private fun replayStack() {
+        val stack = restoreStack
+        restoreStack = emptyList()
+        when (val plan = ReplayPlan.of(stack)) {
+            is ReplayPlan.Notebook -> {
+                // Reopen the way it was open (K4): a via-link notebook restored without the flag
+                // would read as a fresh open, clear the persisted trail, and lose the walk-back.
+                lifecycleScope.launch {
+                    val s = repo.alive(plan.id)
+                    if (s == null || s.type != ObjectType.NOTEBOOK) {
+                        Slog.d(TAG) { "restore: the notebook is gone — chain dropped" }
+                        return@launch
+                    }
+                    val exists = withContext(Dispatchers.IO) { soilFile(this@LibraryActivity, plan.id).exists() }
+                    if (!exists) {
+                        Slog.d(TAG) { "restore: the notebook has no .soil — chain dropped" }
+                        return@launch
+                    }
+                    openNotebook(s.id, s.name, plan.viaLink, resumeAbove = plan.above)
+                }
+            }
+            is ReplayPlan.LibraryLevel -> replayLibraryLevel(plan)
+            ReplayPlan.Nothing -> Unit
+        }
+    }
+
+    /**
+     * The screen that stood over the library itself (arc 32 / RS2) — one screen, or the calendar's
+     * pad door as the pad with the calendar latched behind it. Nothing deeper exists here.
+     *
+     * The `onResume` reset has already run by the time this does (the first-layout listener fires
+     * after it), so the attach and the entry's own push land on an empty stack, which is exactly
+     * what the glass will look like.
+     */
+    private fun replayLibraryLevel(plan: ReplayPlan.LibraryLevel) {
+        Slog.d(TAG) { "restore: reopening ${plan.top} over the library" }
+        lifecycleScope.launch {
+            when (plan.top) {
+                Surface.CALENDAR -> {
+                    if (!calendar.discovered()) {
+                        Slog.d(TAG) { "restore: the calendar is not installed — dropped" }
+                        return@launch
+                    }
+                    if (standingForReplay()) calendar.open()
+                }
+                Surface.SCRATCH_PAD -> {
+                    if (!plan.calendarBeneath) {
+                        if (!scratchPad.discovered()) {
+                            Slog.d(TAG) { "restore: the scratch pad is not installed — dropped" }
+                            return@launch
+                        }
+                        if (standingForReplay()) scratchPad.open()
+                        return@launch
+                    }
+                    if (!calendar.discovered()) {
+                        Slog.d(TAG) { "restore: the calendar is not installed — chain dropped" }
+                        return@launch
+                    }
+                    if (!standingForReplay()) return@launch
+                    if (!scratchPad.discovered()) {
+                        Slog.d(TAG) { "restore: the scratch pad is not installed — the calendar comes back alone" }
+                        if (standingForReplay()) calendar.open()
+                        return@launch
+                    }
+                    if (!standingForReplay()) return@launch
+                    openPadOverCalendar()
+                }
+                // Not a shape this screen can produce — the editor only ever stands over a
+                // notebook — so it is dropped rather than guessed at.
+                Surface.DOCUMENT_EDITOR -> Slog.d(TAG) { "restore: library-level DOCUMENT_EDITOR dropped" }
+                Surface.NOTEBOOK -> Unit   // ReplayPlan never answers LibraryLevel(NOTEBOOK).
+            }
+        }
+    }
+
+    /** Still worth raising a screen over — re-asked after every suspension in [replayLibraryLevel]. */
+    private fun standingForReplay(): Boolean = !isFinishing && !isDestroyed
+
+    override fun onPause() {
+        super.onPause()
+        if (::browseState.isInitialized) browseState.folderId = folderId
+    }
+
+    // ── Chrome ───────────────────────────────────────────────────────────────
+
+    private fun wireBars() = with(binding) {
+        // A mode button toggles its own shelf: tapping Pinned while pinned is up goes back to the
+        // folder you were in, so the same button is always the way out of what it opened.
+        btnPinned.setOnClickListener { setMode(if (mode == BrowseMode.PINNED) BrowseMode.NORMAL else BrowseMode.PINNED) }
+        btnRecents.setOnClickListener { setMode(if (mode == BrowseMode.RECENTS) BrowseMode.NORMAL else BrowseMode.RECENTS) }
+        // Search does NOT toggle like the other two (arc 20): it always opens the dialog, and while
+        // the shelf is up it opens it again with the last query in it — a second search is a
+        // different shelf, not a return to the tree. The left arrow and Back are the way out.
+        btnSearch.setOnClickListener { search.openDialog() }
+        btnCloseMode.setOnClickListener { setMode(BrowseMode.NORMAL) }
+        btnTemplates.setOnClickListener { startActivity(TemplatesActivity.intent(this@LibraryActivity)) }
+        // Backup (arc 17 / K2), the bottom bar's far-left button. Not latched with `launching`:
+        // that latch guards the doors onto a `.soil` (two NotebookActivities is two SQLCipher
+        // writers), and the backup screen opens no notebook — it is a plain chrome screen, and the
+        // Activity's own singleTop-less relaunch is harmless.
+        btnBackup.setOnClickListener { startActivity(BackupActivity.intent(this@LibraryActivity)) }
+        // Encryption (arc 26 / U1) — the same kind of door as Backup: a chrome screen, no `.soil`.
+        btnEncryption.setOnClickListener { startActivity(EncryptionActivity.intent(this@LibraryActivity)) }
+        btnSort.setOnClickListener { showSortSheet() }
+        btnNewFolder.setOnClickListener { showNewFolderDialog() }
+        btnNewNotebook.setOnClickListener { launchNewNotebook() }
+        btnUp.setOnClickListener { navigateUp() }
+        btnFirst.setOnClickListener { goToPage(0) }
+        btnPrev.setOnClickListener { goToPage(pageIndex - 1) }
+        btnNext.setOnClickListener { goToPage(pageIndex + 1) }
+        btnLast.setOnClickListener { goToPage(pageCount - 1) }
+
+        listOf(btnPinned, btnRecents, btnSearch, btnCloseMode, btnTemplates, btnBackup, btnEncryption, btnSort,
+               btnNewFolder, btnNewNotebook, btnUp, btnFirst, btnPrev, btnNext, btnLast)
+            .forEach { TooltipCompat.setTooltipText(it, it.contentDescription) }
+    }
+
+    /**
+     * Switch shelves. A no-op on the mode already showing, so a redundant tap costs no refresh.
+     *
+     * [BrowseState] refuses to store [BrowseMode.SEARCH] (a cold launch onto a query-less search
+     * shelf would be a screen where the library should be), so entering search leaves the remembered
+     * shelf as it was and leaving search writes the one being returned to.
+     */
+    private fun setMode(newMode: BrowseMode) {
+        if (mode == newMode) return
+        val leaving = mode
+        mode = newMode
+        browseState.mode = newMode
+        pageIndex = 0
+        Slog.d(TAG) { "mode → $newMode" }
+        lifecycleScope.launch { refresh() }
+    }
+
+    /**
+     * The top bar and the create buttons, per mode. In a mode there is no path — the breadcrumbs
+     * give way to the shelf's name and a close button, and New folder / New notebook stand down
+     * because a shelf is not a place to create into.
+     */
+    private fun renderChrome() = with(binding) {
+        val inMode = mode != BrowseMode.NORMAL
+        val searching = mode == BrowseMode.SEARCH
+        breadcrumbScroll.visibility = if (inMode) View.GONE else View.VISIBLE
+        // Exactly one of the two ever occupies the row's middle: the path, or the shelf's name —
+        // which for Search is the query itself, the answer the dialog collected.
+        modeTitle.visibility = if (inMode) View.VISIBLE else View.GONE
+        btnCloseMode.visibility = if (inMode) View.VISIBLE else View.GONE
+        btnNewFolder.visibility = if (inMode) View.GONE else View.VISIBLE
+        btnNewNotebook.visibility = if (inMode) View.GONE else View.VISIBLE
+        // Sort goes only on the search shelf: relevance IS its order (arc 20), so the control could
+        // only fight an ordering it cannot change. Pinned and Recents keep it — Pinned is ordered by
+        // it, and Recents deliberately ignores it without pretending it is gone.
+        btnSort.visibility = if (searching) View.GONE else View.VISIBLE
+        btnPinned.isSelected = mode == BrowseMode.PINNED
+        btnRecents.isSelected = mode == BrowseMode.RECENTS
+        btnSearch.isSelected = searching
+        // The bottom bar's actions go with the create buttons, for the same reason: Backup,
+        // Encryption, Import and Templates all act on the library — the folder tree you are standing in — and a shelf
+        // is not standing anywhere. The **group** is hidden rather than its buttons, because
+        // `ImportFlow` owns btnImport's own visibility (GONE without an importer, re-checked every
+        // resume) and two owners of one flag is a race. The pager stays: a shelf paginates like any
+        // other listing, and the debug ⋯ stays where a debug build put it.
+        bottomLeft.visibility = if (inMode) View.GONE else View.VISIBLE
+        btnTemplates.visibility = if (inMode) View.GONE else View.VISIBLE
+
+        if (inMode) {
+            btnUp.visibility = View.GONE
+            modeTitle.text = when (mode) {
+                BrowseMode.PINNED -> getString(R.string.mode_title_pinned)
+                BrowseMode.RECENTS -> getString(R.string.mode_title_recents)
+                else -> search.title()
+            }
+        } else {
+            renderBreadcrumb()
+        }
+    }
+
+    private fun renderBreadcrumb() {
+        val ink = ContextCompat.getColor(this, R.color.inkBlack)
+        lifecycleScope.launch {
+            val ancestry = repo.ancestry(folderId)
+            val container = binding.breadcrumbContainer
+            val rootLabel = getString(R.string.library_root)
+            container.removeAllViews()
+            // Long-press any crumb — the root included — to set that folder's default notebook name.
+            // The root has no card to long-press, so this is its only way in.
+            container.addView(
+                crumb(rootLabel, ink, onClick = { navigateTo(null) },
+                    onLongClick = { openSchemeDialog(null, rootLabel) })
+            )
+            for (ref in ancestry) {
+                container.addView(separator(ink))
+                container.addView(
+                    crumb(ref.name, ink, onClick = { navigateTo(ref.id) },
+                        onLongClick = { openSchemeDialog(ref.id, ref.name) })
+                )
+            }
+            binding.breadcrumbScroll.post { binding.breadcrumbScroll.fullScroll(View.FOCUS_RIGHT) }
+        }
+        binding.btnUp.visibility = if (folderId == null) View.GONE else View.VISIBLE
+    }
+
+    private fun crumb(label: String, color: Int, onClick: () -> Unit, onLongClick: () -> Unit): TextView {
+        val d = resources.displayMetrics.density
+        return TextView(this).apply {
+            text = label
+            textSize = 16f
+            setTextColor(color)
+            setPadding((6 * d).toInt(), (8 * d).toInt(), (6 * d).toInt(), (8 * d).toInt())
+            setOnClickListener { onClick() }
+            // true: a long-press that already did its work must not also navigate on release.
+            setOnLongClickListener { onLongClick(); true }
+        }
+    }
+
+    /** The scheme editor, for a folder card, a breadcrumb, or the root ([folderId] null). */
+    private fun openSchemeDialog(folderId: String?, folderName: String) =
+        SchemeDialog.open(this, repo, folderId, folderName)
+
+    private fun separator(color: Int): TextView = TextView(this).apply {
+        text = " / "
+        textSize = 16f
+        setTextColor(color)
+    }
+
+    private fun renderPager() {
+        // INVISIBLE, not GONE: the pager keeps its slot so the bar's other controls never shift.
+        binding.pager.visibility = if (pageCount > 1) View.VISIBLE else View.INVISIBLE
+        binding.pageLabel.text = getString(R.string.page_indicator, pageIndex + 1, pageCount)
+    }
+
+    // ── Listing ──────────────────────────────────────────────────────────────
+
+    private suspend fun refresh() {
+        renderChrome()
+        coverCache.clear()
+        // One read of the pinned list per refresh: every card's badge and the sheet's Pin/Unpin row
+        // come from it, so no card ever asks the index on its own.
+        val pinnedIds = repo.pinnedNotebookIds()
+        items = when (mode) {
+            BrowseMode.NORMAL -> normalItems(pinnedIds.toSet())
+            BrowseMode.PINNED -> pinnedItems(pinnedIds)
+            BrowseMode.RECENTS -> recentItems(pinnedIds.toSet())
+            BrowseMode.SEARCH -> search.cards(pinnedIds.toSet())
+        }
+
+        binding.emptyState.setText(
+            when (mode) {
+                BrowseMode.NORMAL -> R.string.library_empty
+                BrowseMode.PINNED -> R.string.library_pinned_empty
+                BrowseMode.RECENTS -> R.string.library_recents_empty
+                // The shelf is only ever entered by an accepted query, so there is one answer
+                // here and not two: nothing in the library is called that.
+                BrowseMode.SEARCH -> R.string.library_search_empty
+            }
+        )
+        binding.emptyState.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+        pageCount = GridMath.pageCount(items.size, grid?.cardsPerPage ?: 1)
+        pageIndex = GridMath.clampPage(pageIndex, pageCount)
+        bindCurrentPage()
+    }
+
+    /**
+     * Is this notebook's card a **lock** rather than a cover (arc 26 / U4, decision 11)?
+     *
+     * In the library the answer is the scope alone — a notebook-scoped notebook shows a lock even
+     * once it has been unlocked this process, because there is no cover in the index to show
+     * instead (`setEncryptionState` nulls the blob when the scope changes) and a card that
+     * silently changed picture after an unlock would be a second, invisible state to learn. The
+     * link picker, whose grid is a chooser rather than a shelf, uses the live unlock set instead.
+     *
+     * The scope rides the listing's own `SUMMARY_COLS` — no extra query, no blob.
+     */
+    private fun isLocked(s: ObjectSummary): Boolean = KeyScope.of(s.keyScope) == KeyScope.NOTEBOOK
+
+    private suspend fun normalItems(pinnedIds: Set<String>): List<CardItem> {
+        val all = repo.folders(folderId) + repo.notebooks(folderId)
+        return SortRules.foldersFirst(all, sortPrefs.field, sortPrefs.order).map {
+            if (it.type == ObjectType.FOLDER) CardItem.Folder(it)
+            else CardItem.Notebook(it, pinned = it.id in pinnedIds, locked = isLocked(it))
+        }
+    }
+
+    /**
+     * The pinned shelf, in the **library's current sort**, not pin order. The membership edge does
+     * carry a `sortOrder`, but making it the display order would give the user a second, invisible
+     * arrangement to reason about; a shelf that obeys the sort control on screen is the honest one.
+     */
+    private suspend fun pinnedItems(pinnedIds: List<String>): List<CardItem> {
+        val summaries = pinnedIds.mapNotNull { repo.alive(it) }
+        return SortRules.sort(summaries, sortPrefs.field, sortPrefs.order)
+            .map { CardItem.Notebook(it, pinned = true, locked = isLocked(it)) }
+    }
+
+    /**
+     * The recents shelf: **stored order, never re-sorted** ([RecentsAssembly]) — this is a history,
+     * and Name ↑ would turn "what I was just working on" into an alphabet. The second line is the
+     * parent folder rather than a date, because "where is it" is the useful thing here; the folder
+     * names are memoised so a run of notebooks from one folder is a single lookup.
+     *
+     * Reading the shelf is also when the store is swept: ids whose rows are gone are pruned out of
+     * the prefs for good, so the list cannot accumulate ghosts.
+     */
+    private suspend fun recentItems(pinnedIds: Set<String>): List<CardItem> {
+        val entries = recentsPrefs.entries()
+        val alive = LinkedHashMap<String, ObjectSummary>(entries.size)
+        for (e in entries) {
+            if (e.id in alive) continue
+            val s = repo.alive(e.id) ?: continue
+            if (s.type != ObjectType.NOTEBOOK) continue
+            alive[e.id] = s
+        }
+        val order = RecentsAssembly.visibleIds(entries, alive.keys)
+        val folderNames = HashMap<String, String>()
+        val cards = order.mapNotNull { id ->
+            val s = alive[id] ?: return@mapNotNull null
+            val parent = s.parentId
+            val subtitle = if (parent == null) getString(R.string.recents_parent_root)
+            else folderNames.getOrPut(parent) { repo.alive(parent)?.name ?: getString(R.string.recents_parent_root) }
+            CardItem.Notebook(s, pinned = id in pinnedIds, subtitle = subtitle, locked = isLocked(s))
+        }
+        recentsPrefs.pruneDeleted(alive.keys)
+        return cards
+    }
+
+    /**
+     * Bind this page's cards, fetching only the covers it needs. Several of these can be in flight
+     * at once (a page tap racing `onResume`), so the blobs are read into a *local* map on IO and
+     * merged into [coverCache] back on Main — the shared map is only ever written single-threaded.
+     */
+    private suspend fun bindCurrentPage() {
+        val g = grid ?: return
+        val range = GridMath.pageRange(pageIndex, g.cardsPerPage, items.size)
+        val missing = range
+            // A page card shows its **notebook's** cover (arc 21 / W4) and its summary is that
+            // notebook's, so it asks for a cover like any other card — and two page hits from one
+            // notebook share the fetch, because the map is keyed by notebook id.
+            // A locked card draws a lock and never a thumbnail (arc 26 / U4): asking for its cover
+            // would be a blob read for a picture that will not be painted — and, for a notebook
+            // whose scope changed, a read of a column already nulled.
+            .mapNotNull {
+                items[it].takeIf { c -> c !is CardItem.Folder && !(c is CardItem.Notebook && c.locked) }
+                    ?.summary?.id
+            }
+            .distinct()
+            .filter { it !in coverCache }
+        if (missing.isNotEmpty()) {
+            val fetched = withContext(Dispatchers.IO) {
+                HashMap<String, ByteArray?>(missing.size).apply { missing.forEach { put(it, repo.cover(it)) } }
+            }
+            coverCache.putAll(fetched)
+        }
+        g.bind(items, pageIndex, coverCache)
+        // After the bind: the indicator must never name a page before its cards are on screen.
+        renderPager()
+    }
+
+    // ── Navigation ───────────────────────────────────────────────────────────
+
+    private fun navigateTo(id: String?, refreshNow: Boolean = true) {
+        folderId = id
+        pageIndex = 0
+        browseState.folderId = id
+        if (refreshNow) lifecycleScope.launch { refresh() }
+    }
+
+    private fun navigateUp() {
+        val current = folderId ?: return
+        lifecycleScope.launch {
+            val ancestry = repo.ancestry(current)
+            navigateTo(if (ancestry.size >= 2) ancestry[ancestry.size - 2].id else null)
+        }
+    }
+
+    private fun goToPage(index: Int) {
+        val clamped = GridMath.clampPage(index, pageCount)
+        if (clamped == pageIndex) return
+        pageIndex = clamped
+        lifecycleScope.launch { bindCurrentPage() }
+    }
+
+    /** Back peels one layer at a time: out of a mode, then up a folder, then out of the app —
+     *  except while an import runs, when it does not peel at all (a Binder call cannot be
+     *  cancelled, so leaving would abandon the flow past its verification and cleanup). */
+    @Suppress("OVERRIDE_DEPRECATION")
+    override fun onBackPressed() = when {
+        ::importFlow.isInitialized && importFlow.isImporting -> importFlow.showBusyGuard()
+        mode != BrowseMode.NORMAL -> setMode(BrowseMode.NORMAL)
+        folderId != null -> navigateUp()
+        else -> @Suppress("DEPRECATION") super.onBackPressed()
+    }
+
+    // ── Cards ────────────────────────────────────────────────────────────────
+
+    private fun onCardTap(item: CardItem) = when (item) {
+        is CardItem.Folder -> enterFolder(item.summary.id)
+        is CardItem.Notebook -> openNotebook(item.summary.id, item.summary.name)
+        // A page found by a tag opens its notebook **at that page** (arc 21 / W4). The page id
+        // rides the Intent, which is what ids do — it is the link-follow's own extra, and the one
+        // mechanism the notebook already has for "open here". The tag that found it does not
+        // travel: it is the user's own words, and the notebook has no use for it.
+        is CardItem.Page -> openNotebook(item.summary.id, item.summary.name, pageId = item.pageId)
+    }
+
+    /**
+     * Enter a folder — from the tree, or from a **search result**, which is the only shelf that
+     * holds folder cards at all.
+     *
+     * From a shelf it also leaves the shelf: going there *is* the result (arc 20 — the search's job
+     * was to find the place), and staying on the shelf would leave the breadcrumbs, Back and the
+     * create buttons all describing a folder the user cannot see. One refresh, not two: the mode is
+     * changed in place and [navigateTo] does the listing.
+     */
+    private fun enterFolder(id: String) {
+        if (mode != BrowseMode.NORMAL) {
+            mode = BrowseMode.NORMAL
+            browseState.mode = BrowseMode.NORMAL
+        }
+        navigateTo(id)
+    }
+
+    /**
+     * The action sheet. A **notebook's** sheet is raised one beat later than a folder's: whether it
+     * offers **Export…** depends on whether a trusted exporter extension is installed *right now*
+     * (arc 15 / E1), and discovery is a package query on IO. It re-runs at every open rather than
+     * being cached — a package can be disabled or replaced under a standing library — and the row
+     * is **GONE**, never disabled, when there is none: a control that cannot work is invisible on
+     * e-ink, and a sheet that grew a row after it was already up would move the user's finger.
+     */
+    private fun onCardLongPress(item: CardItem) {
+        if (item !is CardItem.Notebook) { showCardSheet(item, canExport = false, canTag = false); return }
+        // The IO beat between the long-press and the sheet is an e-ink feedback gap like any other
+        // (arc-15 review): a second long-press in it would stack a second sheet, and a card tap in
+        // it would pop the sheet over a departing library. One latch closes the gap; a sheet that
+        // is up is modal, so nothing needs to guard past the show.
+        if (sheetPending || launching) return
+        sheetPending = true
+        lifecycleScope.launch {
+            val canExport: Boolean
+            val canTag: Boolean
+            try {
+                canExport = ExtensionRegistry.exporters(this@LibraryActivity).isNotEmpty()
+                // Same beat, same reason: a tag manager can be disabled or replaced under a
+                // standing library, and the row is GONE — never disabled — when there is none.
+                canTag = tags.discover()
+            } finally {
+                sheetPending = false
+            }
+            if (isFinishing || isDestroyed || launching) return@launch
+            showCardSheet(item, canExport, canTag)
+        }
+    }
+
+    /** True while a notebook sheet's exporter discovery is in flight — long-press to show. */
+    private var sheetPending = false
+
+    private fun showCardSheet(item: CardItem, canExport: Boolean, canTag: Boolean) {
+        val s = item.summary
+        val isFolder = item is CardItem.Folder
+        val sheet = ActionSheetDialog(this).title(s.name)
+        // Only notebooks pin — the pinned list is a shelf of things to write in, not of places.
+        // The current state comes from the listing's own pinned read, not a fresh index query.
+        (item as? CardItem.Notebook)?.let { nb ->
+            val label = if (nb.pinned) R.string.action_unpin else R.string.action_pin
+            sheet.addAction(R.drawable.ic_pinned, getString(label)) { togglePin(s.id, nb.pinned) }
+        }
+        // Only folders hold a naming scheme — it is a rule about what is created *inside* something.
+        if (isFolder) {
+            sheet.addAction(R.drawable.ic_cursor_text, getString(R.string.action_naming)) {
+                openSchemeDialog(s.id, s.name)
+            }
+        }
+        sheet
+            .addAction(R.drawable.ic_edit, getString(R.string.action_rename)) { showRenameDialog(s) }
+            .addAction(R.drawable.ic_move_folder, getString(R.string.action_move)) { showMovePicker(s) }
+        // Notebooks only, and only with an exporter installed. Export always works from the sealed,
+        // cold file — which is exactly what the library context guarantees and the notebook screen
+        // could not, which is why this is the only entry point.
+        if (canExport) {
+            sheet.addAction(R.drawable.ic_download, getString(R.string.action_export)) { showExport(s) }
+        }
+        // Tags (arc 21 / W1) — notebooks only: a folder is a place, and a place is not tagged. GONE
+        // without a tag manager installed, like every other extension-backed row.
+        if (canTag && !isFolder) {
+            sheet.addAction(R.drawable.ic_tag, getString(R.string.action_tags)) { showTags(s) }
+        }
+        // The key rows (arc 26 / U5, D4) — notebooks only (a folder holds no file and no key), and
+        // both are always there whatever the scope: what each one *does* is the scope's answer
+        // ([ScopeChange.route]), so a `GLOBAL` notebook's Change passphrase… is a redirect to the
+        // Encryption screen rather than a row that vanished. The scope comes from the card the
+        // sheet was raised on — the listing already read it, so no row asks the index again.
+        (item as? CardItem.Notebook)?.let { nb ->
+            val scope = if (nb.locked) KeyScope.NOTEBOOK else KeyScope.GLOBAL
+            sheet.addAction(R.drawable.ic_lock, getString(R.string.action_change_passphrase)) {
+                startScopeChange { it.changePassphrase(s.id, s.name, scope) }
+            }
+            sheet.addAction(R.drawable.ic_lock, getString(R.string.action_change_scope)) {
+                startScopeChange { it.changeScope(s.id, s.name, scope) }
+            }
+        }
+        // Exclude from backup (arc 17 / K2) — notebooks only, and always there: it needs no
+        // extension and no destination. The state comes from the listing's own `flags`, not a
+        // fresh read, and the label carries it (the Pin/Unpin pattern) so the row never moves.
+        (item as? CardItem.Notebook)?.let { nb ->
+            val excluded = BackupPredicates.isExcluded(nb.summary.flags)
+            val label = if (excluded) R.string.action_include_backup else R.string.action_exclude_backup
+            sheet.addAction(R.drawable.ic_backup, getString(label)) { toggleExcludeFromBackup(s.id, excluded) }
+        }
+        sheet
+            .addAction(R.drawable.ic_trash, getString(R.string.action_delete)) {
+                if (isFolder) confirmDeleteFolder(s) else confirmDeleteNotebook(s)
+            }
+            .show()
+    }
+
+    /**
+     * The tag screen for one notebook. Identity travels as id + name **over the bind**, not in the
+     * Intent — a name is the user's own words, and so is every tag it will show (arc 21 / W1).
+     *
+     * Not latched with [launching]: this door is the extension's screen, launched for a result the
+     * way the scratch pad's is, and [TagManagerEntry] carries its own one-showing guard.
+     */
+    private fun showTags(s: ObjectSummary) {
+        tags.open(
+            TagShowing(
+                notebookId = s.id,
+                pageId = null,
+                targetLabel = s.name,
+                mode = TagShowing.MODE_BROWSE,
+            ),
+        )
+    }
+
+    /**
+     * A key row's whole flow ([ScopeChangeFlow], arc 26 / U5) under the library's one launch latch:
+     * the re-key is seconds long with a dialog over it, and a second tap in that time — on a card,
+     * on `+`, on the row again — must do nothing at all. The latch drops when the flow ends
+     * (cancelled, failed or done), and only a change that actually landed rebuilds the grid: the
+     * card is a lock now, or a cover has gone.
+     */
+    private fun startScopeChange(start: (ScopeChangeFlow) -> Unit) {
+        if (launching) return
+        launching = true
+        start(
+            ScopeChangeFlow(this) { changed ->
+                launching = false
+                if (changed) lifecycleScope.launch { refresh() }
+            }
+        )
+    }
+
+    /** Identity travels as id + name — never a `File`. Latched with every other door out (S2). */
+    private fun showExport(s: ObjectSummary) {
+        if (launching) return
+        launching = true
+        startActivity(ExportActivity.intent(this, s.id, s.name))
+    }
+
+    /**
+     * Pin membership is an index list edge ([IndexRepository.pin] / [IndexRepository.unpin]), not a
+     * pref — it belongs to the library, travels with it, and is scrubbed by a delete. The refresh
+     * is what makes the badge (and this row's own label) agree with it again.
+     */
+    private fun togglePin(notebookId: String, currentlyPinned: Boolean) {
+        lifecycleScope.launch {
+            if (currentlyPinned) repo.unpin(notebookId) else repo.pin(notebookId)
+            refresh()
+        }
+    }
+
+    /**
+     * Flip the exclude-from-backup bit (arc 17 / K2). [IndexRepository.setExcludeFromBackup] does
+     * **not** bump `updatedAt` — deliberately, and nothing here may add a touch: `updatedAt` is both
+     * the library's Last-modified sort key and the backup's needs-copying flag, so a bump would
+     * re-flag the notebook the instant the user said not to back it up.
+     *
+     * The refresh is what makes the sheet's own label agree next time it is raised — the listing's
+     * `flags` are where it reads the state from.
+     */
+    private fun toggleExcludeFromBackup(notebookId: String, currentlyExcluded: Boolean) {
+        lifecycleScope.launch {
+            repo.setExcludeFromBackup(notebookId, !currentlyExcluded)
+            // A toast, because it only confirms what already happened (the toast-vs-dialog rule).
+            val message = if (currentlyExcluded) R.string.backup_included_toast else R.string.backup_excluded_toast
+            Toast.makeText(this@LibraryActivity, message, Toast.LENGTH_SHORT).show()
+            refresh()
+        }
+    }
+
+    // ── New folder / rename ──────────────────────────────────────────────────
+
+    /**
+     * New folder — the dialog, its validation order and its words all live in [NewFolderFlow],
+     * shared with the link picker (K3). The library's own half is what happens afterwards: the new
+     * folder is a card in the listing on screen, so the grid is rebuilt.
+     */
+    private fun showNewFolderDialog() = NewFolderFlow.show(this, repo, folderId) { refresh() }
+
+    private fun showRenameDialog(s: ObjectSummary) {
+        // Same re-entry guard as the New-folder accept — a double-fired rename is harmless today
+        // (same name, same row), but the guard keeps the whole dialog family one shape.
+        var accepting = false
+        NameDialog.show(
+            this,
+            titleRes = R.string.rename_title,
+            confirmRes = R.string.action_rename,
+            initial = s.name,
+        ) { name, dismiss ->
+            if (accepting) return@show
+            if (name == s.name) { dismiss(); return@show }
+            val problem = NameRules.validate(name)
+            if (problem != null) {
+                Dialogs.problem(this, R.string.name_problem_title, NameDialog.problemMessage(this, problem))
+                return@show
+            }
+            accepting = true
+            lifecycleScope.launch {
+                try {
+                    // Excluding the item itself: re-casing its own name is a rename, not a collision.
+                    if (repo.nameTaken(s.parentId, s.type, name, s.id)) {
+                        val msg = if (s.type == ObjectType.NOTEBOOK) R.string.rename_duplicate_notebook else R.string.rename_duplicate_folder
+                        Dialogs.problem(this@LibraryActivity, R.string.name_problem_title, getString(msg, name))
+                        return@launch
+                    }
+                    repo.rename(s.id, name)
+                    dismiss()
+                    refresh()
+                } finally {
+                    accepting = false
+                }
+            }
+        }
+    }
+
+    // ── Delete ───────────────────────────────────────────────────────────────
+
+    private fun confirmDeleteNotebook(s: ObjectSummary) = confirm(
+        titleRes = R.string.delete_notebook_title,
+        bodyRes = R.string.delete_notebook_body,
+        name = s.name,
+    ) {
+        lifecycleScope.launch {
+            repo.deleteNotebook(s.id)
+            recentsPrefs.remove(s.id)
+            withContext(Dispatchers.IO) { purgeNotebookFile(s.id) }
+            refresh()
+        }
+    }
+
+    private fun confirmDeleteFolder(s: ObjectSummary) = confirm(
+        titleRes = R.string.delete_folder_title,
+        bodyRes = R.string.delete_folder_body,
+        name = s.name,
+    ) {
+        lifecycleScope.launch {
+            val removed = repo.deleteFolderRecursive(s.id)
+            removed.forEach { recentsPrefs.remove(it) }
+            withContext(Dispatchers.IO) { removed.forEach { purgeNotebookFile(it) } }
+            // Standing inside the folder that just went: step out to where it used to be.
+            if (folderId == s.id) navigateTo(s.parentId) else refresh()
+        }
+    }
+
+    private fun confirm(titleRes: Int, bodyRes: Int, name: String, onConfirm: () -> Unit) {
+        Dialogs.style(
+            AlertDialog.Builder(this)
+                .setTitle(getString(titleRes, name))
+                .setMessage(bodyRes)
+                .setPositiveButton(R.string.delete_confirm) { _, _ -> onConfirm() }
+                .setNegativeButton(R.string.cancel, null)
+                .create()
+        ).show()
+    }
+
+    /**
+     * Retire a notebook that an import replaced (arc 16 / I1) — **the library's own delete**, not a
+     * second one: same soft delete, same recents scrub, same file purge, so a replaced notebook goes
+     * exactly where a deleted one goes and nothing about it is special-cased. Called only after the
+     * import has fully committed; cancelling anywhere earlier never reaches it.
+     */
+    private suspend fun retireNotebook(id: String) {
+        repo.deleteNotebook(id)
+        recentsPrefs.remove(id)
+        withContext(Dispatchers.IO) { purgeNotebookFile(id) }
+    }
+
+    /**
+     * The file half of a delete. The index row is soft-deleted (and its pinned edges scrubbed) by
+     * the repository; the bytes are a hard delete — file, SQLite sidecars, and the cached raw key,
+     * which must go or a future notebook that happened to reuse the id would be opened with a key
+     * derived from a file that no longer exists. IO thread.
+     */
+    private fun purgeNotebookFile(notebookId: String) {
+        val file = soilFile(this, notebookId)
+        val ok = !file.exists() || file.delete()
+        sidecarsOf(file).forEach { it.delete() }
+        KeyMaterial.invalidate(this, notebookId)
+        Slog.d(TAG) { "purged $notebookId (file removed: $ok)" }
+    }
+
+    // ── Move ─────────────────────────────────────────────────────────────────
+
+    private fun showMovePicker(s: ObjectSummary) =
+        movePickerLauncher.launch(FolderPickerActivity.intent(this, s.id, s.type, s.name, s.parentId))
+
+    // ── Sort ─────────────────────────────────────────────────────────────────
+
+    private fun showSortSheet() {
+        val field = sortPrefs.field
+        val order = sortPrefs.order
+        fun tick(f: SortField, o: SortOrder) = if (field == f && order == o) R.drawable.ic_check else null
+        ActionSheetDialog(this)
+            .title(getString(R.string.cd_sort))
+            .addAction(tick(SortField.NAME, SortOrder.ASC), getString(R.string.sort_name_asc)) {
+                applySort(SortField.NAME, SortOrder.ASC)
+            }
+            .addAction(tick(SortField.NAME, SortOrder.DESC), getString(R.string.sort_name_desc)) {
+                applySort(SortField.NAME, SortOrder.DESC)
+            }
+            .addAction(tick(SortField.MODIFIED, SortOrder.ASC), getString(R.string.sort_modified_asc)) {
+                applySort(SortField.MODIFIED, SortOrder.ASC)
+            }
+            .addAction(tick(SortField.MODIFIED, SortOrder.DESC), getString(R.string.sort_modified_desc)) {
+                applySort(SortField.MODIFIED, SortOrder.DESC)
+            }
+            .show()
+    }
+
+    private fun applySort(field: SortField, order: SortOrder) {
+        sortPrefs.field = field
+        sortPrefs.order = order
+        pageIndex = 0
+        lifecycleScope.launch { refresh() }
+    }
+
+    /**
+     * Observer only — the grid's cards keep every tap and long-press (see [ListSwipe]).
+     *
+     * Except under an import: the overlay swallows taps at the *view* level, but dispatch reaches
+     * this observer first, so a swipe would flip the grid — an EPD frame under a box that says the
+     * app is busy — behind it.
+     */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (!(::importFlow.isInitialized && importFlow.isImporting)) listSwipe.onTouchEvent(ev)
+        return super.dispatchTouchEvent(ev)
+    }
+
+    private companion object {
+        const val TAG = "LibraryActivity"
+    }
+}

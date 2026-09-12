@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The sticky note editor (arc 28 / H5, decision 3; restructured arc 33 / F2): the note's paper is
+  full-bleed — the whole window — with one floating top bar (Back, the three tools, a centred
+  "Sticky Note" title) laid over it, the notebook's own shape (activity_notebook.xml).
+
+  A shown bar's opaque paperWhite covers the ink beneath it and the pen refuses there by exclusion
+  (pushExclusions pushes the bar's rect like any other); hidden, the bar is GONE and the paper is
+  written to its top edge. The PaperView is added into paperContainer programmatically, and
+  paperContainer is the FIRST child: in a FrameLayout a later sibling sits ON TOP, so the floating
+  bars come last and the topBar's buttons stay reachable.
+
+  No bottom bar (bottom bars are pager-only), no cancel (every stroke is already a row), no title.
+  Chrome sits flush at the top edge — the top guard is 0 on Ratta.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/paperWhite">
+
+    <FrameLayout
+        android:id="@+id/paperContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <LinearLayout
+        android:id="@+id/topBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="@color/paperWhite"
+        android:orientation="vertical">
+
+        <!-- A FrameLayout, not a row: the title is centred on the SCREEN whatever flanks it
+             (the pad's shape). Back saves-and-closes — there is no ✓ (the user's walk call:
+             Back already does the one thing a ✓ would); the tools are the notebook's, fixed. -->
+        <FrameLayout
+            android:id="@+id/topBarRow"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/toolbar_bar_thickness"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp">
+
+            <TextView
+                android:id="@+id/title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:ellipsize="end"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:singleLine="true"
+                android:text="@string/sticky_editor_title"
+                android:textColor="@color/inkBlack"
+                android:textSize="16sp" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_gravity="start"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnBack"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:contentDescription="@string/cd_back"
+                    android:src="@drawable/ic_arrow_left" />
+
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnPen"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:contentDescription="@string/cd_tool_pen"
+                    android:src="@drawable/ic_pen" />
+
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnEraser"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:contentDescription="@string/cd_tool_eraser"
+                    android:src="@drawable/ic_eraser" />
+
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnLasso"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:contentDescription="@string/cd_tool_lasso"
+                    android:src="@drawable/ic_lasso" />
+            </LinearLayout>
+        </FrameLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/inkBlack" />
+    </LinearLayout>
+
+    <!-- The lasso's floating bar — Snap · Copy · Cut · Delete, built in code. Positioned by
+         margins (SelectionAnchor.place) in the root's coordinates. -->
+    <LinearLayout
+        android:id="@+id/selectionBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:background="@drawable/shape_dialog_bordered"
+        android:orientation="horizontal"
+        android:padding="4dp"
+        android:visibility="gone" />
+
+    <!-- The eraser button's sub-bar (arc 29 / LE2) — Point / Lasso, hung under the armed eraser
+         button by SelectionAnchor.placeUnder. Buttons are built in code (EraserBar, :sn-screen).
+         **Last child of the root**: a floating bar must be a later sibling than anything it could
+         overlap, and the top bar's buttons are inside the earlier LinearLayout. -->
+    <LinearLayout
+        android:id="@+id/eraserBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:background="@drawable/shape_dialog_bordered"
+        android:orientation="horizontal"
+        android:padding="4dp"
+        android:visibility="gone" />
+
+    <!-- The collapsed chrome (arc 36 / C2) — what shows while the bar is hidden: the corner tool
+         button at top-right wearing the armed tool's glyph, and, hung under it on a tap, the mini
+         toolbar and its overflow row, which is Back alone here (buttons built in code —
+         CollapsedChrome, :sn-screen). The button is GONE while the bar shows; ChromeToggle flips it
+         with it. All three are the last children: this screen has no opening overlay, and a
+         floating bar must be a later sibling than anything it could overlap. -->
+    <androidx.appcompat.widget.AppCompatImageButton
+        android:id="@+id/collapsedKnob"
+        style="@style/Widget.Notesprout.ToolbarButton"
+        android:layout_gravity="top|end"
+        android:layout_margin="8dp"
+        android:background="@drawable/shape_dialog_bordered"
+        android:src="@drawable/ic_pen"
+        android:visibility="gone"
+        android:contentDescription="@string/collapsed_tools" />
+
+    <LinearLayout
+        android:id="@+id/collapsedBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:background="@drawable/shape_dialog_bordered"
+        android:orientation="horizontal"
+        android:padding="4dp"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/collapsedOverflow"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:background="@drawable/shape_dialog_bordered"
+        android:orientation="horizontal"
+        android:padding="4dp"
+        android:visibility="gone" />
+</FrameLayout>

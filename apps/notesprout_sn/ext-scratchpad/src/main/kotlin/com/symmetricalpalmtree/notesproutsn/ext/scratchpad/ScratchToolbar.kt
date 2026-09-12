@@ -1,0 +1,121 @@
+package com.symmetricalpalmtree.notesproutsn.ext.scratchpad
+
+import android.view.View
+import android.widget.ImageButton
+import android.widget.TextView
+import androidx.appcompat.widget.TooltipCompat
+import com.symmetricalpalmtree.gpaper.core.PaperView
+import com.symmetricalpalmtree.gpaper.core.Tool
+import com.symmetricalpalmtree.gpaper.core.model.StrokeStyle
+import com.symmetricalpalmtree.notesproutsn.core.InkColorCodec
+import com.symmetricalpalmtree.notesproutsn.notebook.PaperToolbar
+import com.symmetricalpalmtree.notesproutsn.notebook.PenIdle
+
+/**
+ * The pad's chrome (arc 11 / J4, grown in J5): Back, the title and — when a notebook is behind us —
+ * Send on the top bar; the three tools and the page arrows on the bottom one. The tool half is
+ * `:sn-screen`'s [PaperToolbar] — the whole reason that module exists — and this adds what is the
+ * pad's own: the fixed tool values, Send, the page arrows, and the page indicator behind the
+ * frame-silence gate.
+ *
+ * **The tools are fixed, and they are the notebook's.** PEN · black · [PEN_WIDTH_PX], eraser
+ * [ERASER_RADIUS_PX] — no panels, no colour, nothing remembered. Since arc 29 / LE3 the eraser has
+ * two kinds, reached the notebook's way: a second tap on the armed eraser opens the shared
+ * `EraserBar` (Point · Lasso) — the screen owns the bar, this just forwards the re-tap. Smart lasso and scribble erase are
+ * armed by the screen before the listener attaches: a pad one tap from the notebook that lassoed
+ * differently would read as a bug.
+ *
+ * **Send exists only when there is somewhere to send to** (J5): the pad opened from the library has
+ * no notebook behind it, so the button is absent rather than present-and-failing — GONE, never
+ * disabled, and never a visible no-op.
+ *
+ * **The arrows no-op at a bound, never disable.** A greyed control is invisible on e-ink (the
+ * standing rule), so the buttons always look the same and simply do nothing at page 1 or page N.
+ *
+ * **The indicator waits for the pen.** Never present an app frame while [PaperView.isPenActive] —
+ * the rule is SN-wide, and this bar is the pad's only text that changes.
+ */
+class ScratchToolbar(
+    private val paper: PaperView,
+    bottomBar: View,
+    btnBack: ImageButton,
+    btnPen: ImageButton,
+    btnEraser: ImageButton,
+    btnLasso: ImageButton,
+    private val btnSend: ImageButton,
+    private val btnPrevPage: ImageButton,
+    private val btnNextPage: ImageButton,
+    private val pageIndicator: TextView,
+    onBack: () -> Unit,
+    /** Send this whole page to the notebook. Never called when [sendEnabled] is false — the button is GONE. */
+    onSend: () -> Unit,
+    onPrevPage: () -> Unit,
+    onNextPage: () -> Unit,
+    /** A tap on the already-armed eraser (arc 29 / LE3): the screen toggles the eraser sub-bar. */
+    onEraserReTap: () -> Unit,
+    /** Any actual tool change — the screen closes the sub-bar that belonged to the old tool. */
+    onToolTapped: () -> Unit,
+    sendEnabled: Boolean,
+    /** After every sync (arc 36) — the collapsed chrome's corner button repaints from here. */
+    onSynced: () -> Unit = {},
+) {
+
+    private val tools: PaperToolbar
+
+    init {
+        paper.tool = Tool.PEN
+        paper.penColor = InkColorCodec.BLACK
+        paper.penWidth = PEN_WIDTH_PX
+        paper.penStyle = StrokeStyle.PEN
+        paper.eraserRadius = ERASER_RADIUS_PX
+
+        tools = PaperToolbar(
+            bar = bottomBar,
+            btnBack = btnBack,
+            btnPen = btnPen,
+            btnEraser = btnEraser,
+            btnLasso = btnLasso,
+            paper = paper,
+            onBack = onBack,
+            onEraserReTap = onEraserReTap,
+            onToolTapped = onToolTapped,
+            onSynced = onSynced,
+        )
+
+        listOf(btnPrevPage, btnNextPage, btnSend).forEach {
+            TooltipCompat.setTooltipText(it, it.contentDescription)
+        }
+        btnPrevPage.setOnClickListener { releaseRenderIfIdle(); onPrevPage() }
+        btnNextPage.setOnClickListener { releaseRenderIfIdle(); onNextPage() }
+        btnSend.visibility = if (sendEnabled) View.VISIBLE else View.GONE
+        btnSend.setOnClickListener { releaseRenderIfIdle(); onSend() }
+        pageIndicator.text = ""
+    }
+
+    /** Make the tool buttons honest — driven from `PaperListener.onToolChanged`, never from a tap:
+     *  smart lasso arms LASSO and restores PEN on its own. */
+    fun sync(tool: Tool) = tools.sync(tool)
+
+    /** Arm [tool] from the host side and sync the buttons — what the eraser sub-bar's pick lands on. */
+    fun arm(tool: Tool) = tools.arm(tool)
+
+    /** `n / N`, presented only once the pen is idle (the frame-silence rule). */
+    fun setPage(number: Int, total: Int) {
+        val text = pageIndicator.context.getString(R.string.scratch_page_indicator, number, total)
+        whenPenIdle { pageIndicator.text = text }
+    }
+
+    private fun whenPenIdle(action: () -> Unit) = PenIdle.whenIdle(paper, pageIndicator, action)
+
+    /** The [PaperView.releaseRender] contract: pen-gated, or a tap inside the pen-up tail can cost
+     *  a live stroke. While the pen is active nobody is looking at a pressed state anyway. */
+    private fun releaseRenderIfIdle() = PenIdle.releaseRenderIfIdle(paper)
+
+    companion object {
+        /** The one pen width, in px — the notebook's, so the two surfaces write identically. */
+        const val PEN_WIDTH_PX = 3f
+
+        /** The one eraser hit radius, in px — g-paper's default, and the notebook's. */
+        const val ERASER_RADIUS_PX = 15f
+    }
+}

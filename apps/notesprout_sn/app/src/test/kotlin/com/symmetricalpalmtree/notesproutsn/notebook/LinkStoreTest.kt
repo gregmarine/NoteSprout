@@ -1,0 +1,424 @@
+package com.symmetricalpalmtree.notesproutsn.notebook
+
+import com.symmetricalpalmtree.gpaper.core.model.Stroke
+import com.symmetricalpalmtree.gpaper.core.model.StrokePoint
+import com.symmetricalpalmtree.notesproutsn.data.soil.DocumentRepository
+import com.symmetricalpalmtree.notesproutsn.data.soil.FakeDocumentDao
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * The link store's re-parent model on the shared serial [SoilWriter]: a wrap flips children's
+ * `parentId` page → link (never copies), unlink flips back, remove/restore carry the wrapped
+ * children, move shifts row + children together, and [LinkStore.deepChildIds] sees grandchildren.
+ * Runs against [FakeSoilDao] with a pass-through transaction — the ordering and re-parent logic
+ * are what is under test, not Room.
+ */
+class LinkStoreTest {
+
+    private val payload = LinkPayload.encode(LinkPayload.CHROME_UNDERLINE, LinkPayload.KIND_PAGE, null, "target")
+
+    private fun stroke(id: String) = Stroke(id = id, points = listOf(StrokePoint(1f, 2f), StrokePoint(3f, 4f)))
+
+    private fun heading(id: String) = Heading(
+        id = id, text = "## T-$id", level = 2, x = 1f, y = 2f, width = 100f, height = 40f, order = 0,
+    )
+
+    private fun link(id: String, strokes: List<Stroke>, headings: List<Heading>) = PageLink(
+        id = id, payload = payload, chrome = LinkPayload.CHROME_UNDERLINE,
+        x = 0f, y = 0f, width = 120f, height = 60f, order = 0,
+        strokes = strokes, headings = headings,
+    )
+
+    /** Store + writer + the sibling stores that seed the fake table the way the screen does. */
+    private fun make(dao: FakeSoilDao): Triple<LinkStore, SoilWriter, Pair<StrokeStore, HeadingStore>> {
+        val writer = SoilWriter {}
+        val links = LinkStore(dao, writer) { block -> block() }
+        return Triple(links, writer, StrokeStore(dao, writer) to HeadingStore(dao, writer))
+    }
+
+    private suspend fun seed(dao: FakeSoilDao, writer: SoilWriter, stores: Pair<StrokeStore, HeadingStore>) {
+        val (strokes, headings) = stores
+        strokes.commit("page", stroke("s1"))
+        strokes.commit("page", stroke("s2"))
+        headings.create("page", heading("h1"))
+        writer.drain()
+    }
+
+    @Test
+    fun `create re-parents the children under the link in one enqueue`() = runBlocking {
+        val dao = FakeSoilDao()
+        val (links, writer, stores) = make(dao)
+        seed(dao, writer, stores)
+
+        links.create("page", link("l1", listOf(stroke("s1"), stroke("s2")), listOf(heading("h1"))))
+        writer.drain()
+
+        assertEquals("page", dao.rows["l1"]!!.parentId)
+        assertEquals("l1", dao.rows["s1"]!!.parentId)
+        assertEquals("l1", dao.rows["s2"]!!.parentId)
+        assertEquals("l1", dao.rows["h1"]!!.parentId)
+        // The page's loose content no longer contains the wrapped rows…
+        assertTrue(dao.liveContentIds("page").isEmpty())
+        // …but the deep set carries link + grandchildren.
+        assertEquals(setOf("l1", "s1", "s2", "h1"), links.deepChildIds("page").toSet())
+        writer.close()
+    }
+
+    /**
+     * The page's `document` row is in the deep set (arc 19 / M2) — which is what makes a page
+     * delete, its undo, and a page copy carry the user's draft with the page it belongs to. It
+     * joins at the **page** level only: a link never wraps a document.
+     */
+    @Test
+    fun `the deep set carries the page's document`() = runBlocking {
+        val dao = FakeSoilDao()
+        val (links, writer, stores) = make(dao)
+        seed(dao, writer, stores)
+        val docs = DocumentRepository(FakeDocumentDao(dao), dao) { "doc-1" }
+        docs.saveDrafted("page", "# Draft", srcUpdatedAt = 1_756_500_000_000L)
+
+        assertTrue("doc-1" in links.deepChildIds("page"))
+        // Still only the page's own loose ink at one level — the document is not "content on it".
+        assertEquals(setOf("s1", "s2", "h1"), dao.liveContentIds("page").toSet())
+        writer.close()
+    }
+
+    @Test
+    fun `create assigns tail z-order among the page's links`() = runBlocking {
+        val dao = FakeSoilDao()
+        val (links, writer, stores) = make(dao)
+        seed(dao, writer, stores)
+        links.create("page", link("l1", listOf(stroke("s1")), emptyList()))
+        links.create("page", link("l2", listOf(stroke("s2")), emptyList()))
+        writer.drain()
+        assertEquals(0, dao.rows["l1"]!!.order)
+        assertEquals(1, dao.rows["l2"]!!.order)
+        writer.close()
+    }
+
+    @Test
+    fun `unlink releases the children back to the page and soft-deletes the row`() = runBlocking {
+        val dao = FakeSoilDao()
+        val (links, writer, stores) = make(dao)
+        seed(dao, writer, stores)
+        val l = link("l1", listOf(stroke("s1"), stroke("s2")), listOf(heading("h1")))
+        links.create("page", l)
+        links.unlink("page", l)
+        writer.drain()
+
+        assertNotNull(dao.rows["l1"]!!.deletedAt)
+        assertEquals("page", dao.rows["s1"]!!.parentId)
+        assertEquals("page", dao.rows["h1"]!!.parentId)
+        assertNull(dao.rows["s1"]!!.deletedAt)
+        assertEquals(setOf("s1", "s2", "h1"), dao.liveContentIds("page").toSet())
+        writer.close()
+    }
+
+    @Test
+    fun `relink reverses an unlink in place`() = runBlocking {
+        val dao = FakeSoilDao()
+        val (links, writer, stores) = make(dao)
+        seed(dao, writer, stores)
+        val l = link("l1", listOf(stroke("s1")), listOf(heading("h1")))
+        links.create("page", l)
+        links.unlink("page", l)
+        links.relink("page", l)
+        writer.drain()
+
+        assertNull(dao.rows["l1"]!!.deletedAt)
+        assertEquals("l1", dao.rows["s1"]!!.parentId)
+        assertEquals("l1", dao.rows["h1"]!!.parentId)
+        writer.close()
+    }
+
+    @Test
+    fun `remove soft-deletes the link and everything it wraps, restore revives all of it`() = runBlocking {
+        val dao = FakeSoilDao()
+        val (links, writer, stores) = make(dao)
+        seed(dao, writer, stores)
+        val l = link("l1", listOf(stroke("s1"), stroke("s2")), listOf(heading("h1")))
+        links.create("page", l)
+        links.remove(listOf(l))
+        writer.drain()
+        assertNotNull(dao.rows["l1"]!!.deletedAt)
+        assertNotNull(dao.rows["s1"]!!.deletedAt)
+        assertNotNull(dao.rows["h1"]!!.deletedAt)
+        assertTrue(links.deepChildIds("page").isEmpty())
+
+        links.restore("page", listOf(l))
+        writer.drain()
+        assertNull(dao.rows["l1"]!!.deletedAt)
+        assertNull(dao.rows["s1"]!!.deletedAt)
+        assertNull(dao.rows["h1"]!!.deletedAt)
+        // Children still hang off the link, not the page.
+        assertEquals("l1", dao.rows["s1"]!!.parentId)
+        writer.close()
+    }
+
+    @Test
+    fun `move shifts the row, re-encodes stroke children and shifts heading children`() = runBlocking {
+        val dao = FakeSoilDao()
+        val (links, writer, stores) = make(dao)
+        seed(dao, writer, stores)
+        val l = link("l1", listOf(stroke("s1")), listOf(heading("h1")))
+        links.create("page", l)
+        writer.drain()
+
+        links.move(listOf("l1"), 10f, -5f)
+        writer.drain()
+        assertEquals(10f, dao.rows["l1"]!!.x)
+        assertEquals(-5f, dao.rows["l1"]!!.y)
+        assertEquals(11f, dao.rows["h1"]!!.x)   // heading seeded at x=1
+        val movedStroke = StrokeRows.toStroke(dao.rows["s1"]!!)!!
+        assertEquals(11f, movedStroke.points[0].x)   // stroke point seeded at x=1
+        assertEquals(-3f, movedStroke.points[0].y)   // y=2 - 5
+        writer.close()
+    }
+
+    @Test
+    fun `move in either direction round-trips (the undo replay contract)`() = runBlocking {
+        val dao = FakeSoilDao()
+        val (links, writer, stores) = make(dao)
+        seed(dao, writer, stores)
+        val l = link("l1", listOf(stroke("s1")), listOf(heading("h1")))
+        links.create("page", l)
+        links.move(listOf("l1"), 7f, 3f)
+        links.move(listOf("l1"), -7f, -3f)
+        writer.drain()
+        assertEquals(0f, dao.rows["l1"]!!.x)
+        assertEquals(1f, dao.rows["h1"]!!.x)
+        assertEquals(1f, StrokeRows.toStroke(dao.rows["s1"]!!)!!.points[0].x)
+        writer.close()
+    }
+
+    @Test
+    fun `loadPage decodes links with their children, strokes in writing order`() = runBlocking {
+        val dao = FakeSoilDao()
+        val (links, writer, stores) = make(dao)
+        seed(dao, writer, stores)
+        links.create("page", link("l1", listOf(stroke("s1"), stroke("s2")), listOf(heading("h1"))))
+        writer.drain()
+
+        val loaded = links.loadPage("page")
+        assertEquals(1, loaded.size)
+        val l = loaded[0]
+        assertEquals("l1", l.id)
+        assertEquals(LinkPayload.CHROME_UNDERLINE, l.chrome)
+        assertEquals(listOf("s1", "s2"), l.strokes.map { it.id })
+        assertEquals(listOf("h1"), l.headings.map { it.id })
+        writer.close()
+    }
+
+    @Test
+    fun `updatePayload rewrites text only`() = runBlocking {
+        val dao = FakeSoilDao()
+        val (links, writer, stores) = make(dao)
+        seed(dao, writer, stores)
+        val l = link("l1", listOf(stroke("s1")), emptyList())
+        links.create("page", l)
+        val edited = LinkPayload.encode(LinkPayload.CHROME_NONE, LinkPayload.KIND_NOTEBOOK, "nb", null)
+        links.updatePayload("l1", edited)
+        writer.drain()
+        assertEquals(edited, dao.rows["l1"]!!.text)
+        assertEquals(0f, dao.rows["l1"]!!.x)
+        writer.close()
+    }
+
+    @Test
+    fun `relink revives in place — the snapshot's stale order never rewrites the row's z-order`() = runBlocking {
+        val dao = FakeSoilDao()
+        val (links, writer, stores) = make(dao)
+        seed(dao, writer, stores)
+        // Two links so the second lands at a store-assigned order the host snapshot (order = 0)
+        // does not know — the K5 review's overlap-tap scenario.
+        links.create("page", link("l1", listOf(stroke("s1")), emptyList()))
+        val snapshot = link("l2", listOf(stroke("s2")), emptyList())   // order = 0 in the snapshot
+        links.create("page", snapshot)
+        writer.drain()
+        assertEquals(1, dao.rows["l2"]!!.order)
+
+        links.unlink("page", snapshot)
+        links.relink("page", snapshot)                                  // undo of the unlink
+        writer.drain()
+        assertNull(dao.rows["l2"]!!.deletedAt)
+        assertEquals("l2", dao.rows["s2"]!!.parentId)
+        assertEquals(1, dao.rows["l2"]!!.order)                         // kept, not the snapshot's 0
+        writer.close()
+    }
+
+    // ── Arc 28 (H1): a link may wrap texts, shapes and stickies ─────────────
+
+    private fun text(id: String) =
+        PageText(id = id, text = "wrapped **text**", x = 1f, y = 2f, width = 80f, height = 30f, order = 0)
+
+    private fun shape(id: String) = PageShape(
+        id = id, type = ShapeType.RECTANGLE, cx = 1f, cy = 2f, width = 40f, height = 20f,
+        strokeWidth = ShapeRows.DEFAULT_STROKE_WIDTH_PX, rotationDeg = 0f, aspectLocked = false,
+        pointCount = ShapeFlags.DEFAULT_POINTS, order = 0,
+    )
+
+    private fun note(id: String) = PageSticky(
+        id = id, x = 1f, y = 2f, width = 72f, height = 72f, contentW = 1404, contentH = 1800, order = 0,
+    )
+
+    /** The three object stores plus a link store, over one writer and one fake table. */
+    private class ObjectFixture(dao: FakeSoilDao) {
+        val writer = SoilWriter {}
+        val links = LinkStore(dao, writer) { block -> block() }
+        val texts = TextStore(dao, writer)
+        val shapes = ShapeStore(dao, writer)
+        val stickies = StickyStore(dao, writer) { block -> block() }
+    }
+
+    /** A page carrying one of each new kind, the note with a stroke of content, then a link
+     *  wrapping all three. Returns the link **with its note's content read** — the snapshot a
+     *  delete's undo needs (`StickyStore.withContent`). */
+    private suspend fun wrapAllKinds(dao: FakeSoilDao, f: ObjectFixture): PageLink {
+        f.texts.create("page", text("t1"))
+        f.shapes.create("page", shape("sh1"))
+        f.stickies.create("page", note("n1"))
+        f.writer.drain()
+        f.stickies.setContent("n1", listOf(stroke("c1")))
+        f.writer.drain()
+        val wrapping = link("l1", emptyList(), emptyList()).copy(
+            texts = listOf(text("t1")), shapes = listOf(shape("sh1")), stickies = listOf(note("n1")),
+        )
+        f.links.create("page", wrapping)
+        f.writer.drain()
+        return wrapping.copy(stickies = listOf(f.stickies.withContent(note("n1"))))
+    }
+
+    @Test
+    fun `loadPage decodes a link's wrapped texts, shapes and stickies — the note icon-only`() = runBlocking {
+        val dao = FakeSoilDao()
+        val f = ObjectFixture(dao)
+        wrapAllKinds(dao, f)
+
+        val l = f.links.loadPage("page").single()
+        assertEquals(listOf("t1"), l.texts.map { it.id })
+        assertEquals(listOf("sh1"), l.shapes.map { it.id })
+        assertEquals(listOf("n1"), l.stickies.map { it.id })
+        // The page never reads inside a note.
+        assertTrue(l.stickies.single().strokes.isEmpty())
+        f.writer.close()
+    }
+
+    @Test
+    fun `move shifts wrapped text, shape and sticky rows — never a note's content`() = runBlocking {
+        val dao = FakeSoilDao()
+        val f = ObjectFixture(dao)
+        wrapAllKinds(dao, f)
+
+        f.links.move(listOf("l1"), 10f, -5f)
+        f.writer.drain()
+        assertEquals(11f, dao.rows["t1"]!!.x)
+        assertEquals(-3f, dao.rows["t1"]!!.y)
+        assertEquals(11f, dao.rows["sh1"]!!.x)     // a shape's x IS its centre; a delta still works
+        assertEquals(11f, dao.rows["n1"]!!.x)
+        // The note's ink is in the note's own space and does not travel with the icon.
+        assertEquals(1f, StrokeRows.toStroke(dao.rows["c1"]!!)!!.points[0].x)
+        assertEquals(2f, StrokeRows.toStroke(dao.rows["c1"]!!)!!.points[0].y)
+        f.writer.close()
+    }
+
+    @Test
+    fun `remove and restore carry a wrapped note's content with the link`() = runBlocking {
+        val dao = FakeSoilDao()
+        val f = ObjectFixture(dao)
+        val snapshot = wrapAllKinds(dao, f)
+        assertEquals(listOf("c1"), snapshot.stickies.single().childIds)
+
+        f.links.remove(listOf(snapshot))
+        f.writer.drain()
+        for (id in listOf("l1", "t1", "sh1", "n1", "c1")) {
+            assertNotNull("$id should be soft-deleted", dao.rows[id]!!.deletedAt)
+        }
+        assertTrue(f.links.deepChildIds("page").isEmpty())
+
+        f.links.restore("page", listOf(snapshot))
+        f.writer.drain()
+        for (id in listOf("l1", "t1", "sh1", "n1", "c1")) {
+            assertNull("$id should be alive again", dao.rows[id]!!.deletedAt)
+        }
+        // Everything hangs where it did: the note under the link, its ink under the note.
+        assertEquals("l1", dao.rows["n1"]!!.parentId)
+        assertEquals("n1", dao.rows["c1"]!!.parentId)
+        f.writer.close()
+    }
+
+    @Test
+    fun `restore is bounded by the snapshot — an icon-only one revives the note but not its ink`() = runBlocking {
+        // Why a delete of a link holding stickies must snapshot through StickyStore.withContent:
+        // nothing can read soft-deleted children back, so ids not captured before the delete are
+        // not revivable afterwards.
+        val dao = FakeSoilDao()
+        val f = ObjectFixture(dao)
+        val full = wrapAllKinds(dao, f)
+        val iconOnly = full.copy(stickies = listOf(note("n1")))
+
+        f.links.remove(listOf(iconOnly))
+        f.writer.drain()
+        assertNotNull(dao.rows["c1"]!!.deletedAt)   // remove reads the live children itself
+        f.links.restore("page", listOf(iconOnly))
+        f.writer.drain()
+        assertNull(dao.rows["n1"]!!.deletedAt)
+        assertNotNull(dao.rows["c1"]!!.deletedAt)   // …but the undo could not name it
+        f.writer.close()
+    }
+
+    @Test
+    fun `removeWithContent deletes a wrapping link in writer order and hands back its notes' content`() = runBlocking {
+        // Arc 34 / M6: the link that wraps a sticky is deleted on the spot too; the snapshot its
+        // undo needs is read inside the job, ahead of the soft-delete.
+        val dao = FakeSoilDao()
+        val f = ObjectFixture(dao)
+        val full = wrapAllKinds(dao, f)
+        val iconOnly = full.copy(stickies = listOf(note("n1")))
+
+        val snapshot = f.links.removeWithContent(listOf(iconOnly))
+        f.writer.drain()
+        assertNotNull(dao.rows["l1"]!!.deletedAt)
+        assertNotNull(dao.rows["n1"]!!.deletedAt)
+        assertNotNull(dao.rows["c1"]!!.deletedAt)
+
+        val got = snapshot.await().single()
+        assertEquals(listOf("c1"), got.stickies.single().strokes.map { it.id })
+        assertEquals(listOf("c1"), got.stickies.single().childIds)
+
+        f.links.restore("page", listOf(got))
+        f.writer.drain()
+        assertNull(dao.rows["l1"]!!.deletedAt)
+        assertNull(dao.rows["n1"]!!.deletedAt)
+        assertNull(dao.rows["c1"]!!.deletedAt)   // named by the snapshot, so revived
+        f.writer.close()
+    }
+
+    @Test
+    fun `restore revives in place too, and still upserts a row that never existed`() = runBlocking {
+        val dao = FakeSoilDao()
+        val (links, writer, stores) = make(dao)
+        seed(dao, writer, stores)
+        links.create("page", link("l1", listOf(stroke("s1")), emptyList()))
+        val snapshot = link("l2", listOf(stroke("s2")), emptyList())
+        links.create("page", snapshot)
+        writer.drain()
+
+        links.remove(listOf(snapshot))
+        links.restore("page", listOf(snapshot))                         // undo of the delete
+        writer.drain()
+        assertNull(dao.rows["l2"]!!.deletedAt)
+        assertEquals(1, dao.rows["l2"]!!.order)                         // kept, not the snapshot's 0
+
+        // A row missing entirely (never written) still lands from the snapshot.
+        val ghost = link("l9", emptyList(), emptyList())
+        links.restore("page", listOf(ghost))
+        writer.drain()
+        assertNotNull(dao.rows["l9"])
+        writer.close()
+    }
+}

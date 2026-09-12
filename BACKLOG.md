@@ -749,3 +749,535 @@ MAX in landscape gives roughly 40% of the height to the Notebooks band whether o
 in it, leaving Tasks and Events 3 and 4 rows. A fix means content-dependent band weights or a
 `layout-land/` variant of the wide layout (which must carry an identical id set — see
 `docs/today-dashboard.md`). Portrait on MAX and both orientations on G102 are unaffected.
+
+## g-paper — MARKER live ink differs from its baked appearance on Ratta (deferred from Notesprout SN R3)
+
+Reported in the Notesprout SN R3 eye check (2026-08-21): a MARKER stroke visibly changes when it
+bakes. Documented engine behaviour, not a host bug — `StrokeStyle`'s mapping table gives Ratta no
+semi-transparent live style, so live MARKER draws as `NEEDLE` (plain uniform line) and the baked
+stroke is core's engine-independent semi-transparent flat-cap rendering. Live ink is defined as a
+best-effort preview; the bake is the truth. A better live approximation (if the 0…31 Ratta pen-code
+sweep offers one, e.g. a grey pen code) would be a g-paper change (`~/git/g-paper`, bump + republish)
+— explicitly deferred out of the initial ratta arc by the user.
+
+## Paper + Notesprout SN — R6 review findings accepted (not fixed) in the SN freeze (2026-08-22)
+
+The Notesprout SN R6 `/code-review high` pass fixed its 10 top correctness findings in SN
+(`apps/notesprout_sn`, see RATTA_PLAN.md R6 Outcome). The following were **explicitly accepted**
+— most are byte-identical in Paper, so a real fix is a family-wide change:
+
+- **Paper twin of the damaged-index fix (the one worth doing):** `PaperIndex`'s probe-`Invalid`
+  branch (`apps/notesprout_paper/.../PaperIndex.kt` ≈ line 68) still treats an existing-but-damaged
+  `notesprout.db` (e.g. a truncated restore remnant) as a fresh install and creates a new encrypted
+  index over it — the data-loss case SN now refuses with `PrepareOutcome.DAMAGED_FILE`. Port SN's
+  guard when Paper is next unfrozen.
+- StrokeCodec forward-compat/truncation gaps — codec bytes are the frozen family format; any change
+  must land in Paper and SN together with fixture regeneration.
+- `PRAGMA auto_vacuum = INCREMENTAL` in `SoilDatabase.onCreate` is a no-op (Room's onCreate runs
+  after tables exist, so the pragma silently does nothing). Same in Paper; new files simply have
+  auto_vacuum off, matching every existing file. Fix family-wide or drop the pragma.
+- Case-sensitive sibling-name collision check ("Notes" and "notes" can coexist) — Paper parity,
+  cosmetic; UUID filenames mean no filesystem conflict.
+- Library perf niggles (SN): cover WEBP decode on Main in card bind, occasional double refresh on
+  resume, `pinnedNotebookIds`' per-id `alive()` reads pull the full row (cover blob included), and
+  `StrokeStore.commit`'s per-stroke `MAX("order")` query. All small at SN's data sizes.
+- FolderPicker/Library breadcrumb logic duplication; dead API surface (`SoilCrypto.createRaw`
+  unused by SN's create path, unused `SoilDao` methods) — cleanup, not correctness.
+
+## Notesprout SN — N3 (arc 3) review findings accepted (not fixed) in the headings freeze (2026-08-22)
+
+The arc-3 `/code-review high` pass (N0–N2 range) fixed 8 of its 10 confirmed correctness findings
+in SN (see RATTA_PLAN.md N3 Outcome). Two were **explicitly accepted**:
+
+- **`StrokeSegmenter` fragment-merge guard can fold a genuine short line into an adjacent full
+  line** (`apps/notesprout_sn/ext-mlkit/.../StrokeSegmenter.kt` ≈ line 129): the
+  `minOf(sizes) <= 3` guard has no x-range/gap check, so a 1–3-stroke cursive line whose box
+  overlaps a descender-inflated neighbour >40 % merges and interleaves both lines' ink. Affects
+  `recognizePage` only, which has **no consumer in the shipped app** since N3 removed the debug
+  "Recognize page" row (the heading flow uses `recognizeInk`). Tuning it blind risks regressing the
+  real fragment cases it exists for — revisit with device data when `recognizePage` gains a
+  consumer (page-text pipeline, documents).
+- **`MarkdownParser` lets any `N. text` line interrupt a paragraph** (CommonMark restricts
+  paragraph interruption to `1.`): `"…came out in\n1986. It sold well."` becomes a numbered list
+  item. **og's parser behaves identically** (`isBlockStart` uses the same unrestricted
+  `orderedItemRegex`), and og's two test suites are SN's locked behaviour reference — fixing SN
+  alone would render the same document differently across the family. Fix in og first, then port.
+
+Below-cap cleanup notes from the same review, recorded so they aren't re-found: host
+`RecognizerClient.recognizePage` is now dead surface (kept — the AIDL contract retains the call for
+future engines, same acceptance shape as R6's `createRaw`); `NotebookActivity` exceeds the
+~800-line rule (written reason added to its class KDoc in N3); `ext-mlkit` logs via
+`if (BuildConfig.DEBUG) Log.d` (module has no Slog; the gate satisfies the rule's zero-release-cost
+intent); `Dialogs.problem` duplication in `RecognizerReadiness.showDownloadFailed`, dead
+`problemTitleRes` default, `SelectionToolbar`/`NameDialog`-family duplication, per-draw markdown
+parse in `HeadingRenderer`, mirrored `SELECTION_BOX_INFLATE_PX` constant (deliberate, commented).
+
+## Notesprout SN — S2 (arc 5) review findings accepted (not fixed) in the naming freeze (2026-08-22)
+
+The arc-5 `/code-review high` pass (S1 range) fixed 9 of its 10 findings in SN (see RATTA_PLAN.md
+S2 Outcome). One was **explicitly accepted**:
+
+- **`resolveScheme` is N+1 on top of `ancestry`'s per-hop walk** (`IndexRepository.kt`): for a
+  folder D deep, D `summaryById` reads plus up to D+1 `namingRowAny` reads run sequentially in the
+  + tap's pre-launch gap (bounded ~101 round-trips by the 50-hop cap; realistic depths are
+  single-digit ms). Same family as R6's accepted library perf niggles. If it ever shows on device:
+  one query — `WHERE type='naming' AND deletedAt IS NULL AND (parentId IN (:ancestorIds) OR
+  parentId IS NULL)` — plus an in-memory nearest-first pick over the ancestry list.
+
+Refuted-but-noted from the same review, recorded so it isn't re-found: the naming-row table has no
+UNIQUE(parentId) constraint and `namingRowAny` is an unordered `LIMIT 1`, so two concurrent
+`setScheme` writers *could* create twin rows — provably unreachable through today's click-guarded,
+modal UI, and adding an index would touch the Room-validated schema (the format contract with
+Paper). Revisit only alongside a family-wide schema change. Also refuted: Cancel-during-save window
+(app-wide established pattern, sub-human-reaction window, no harm).
+
+## Notesprout SN — K5 (arc 6) review findings accepted (not fixed) in the links freeze (2026-08-23)
+
+The arc-6 `/code-review high` pass (K1–K4 range) fixed 9 of its 10 findings in SN (see
+RATTA_PLAN.md K5 Outcome). One was **partially fixed, remainder accepted**:
+
+- **Breadcrumb builders are hand-rolled in three screens** (`LinkPickerActivity`,
+  `FolderPickerActivity`, `LibraryActivity` — `label()`/`crumb()`/`separator()` near-verbatim
+  copies). The behavioural drift the review caught (the picker showed the *start* of a deep path
+  instead of the current folder) was fixed in K5 by adding the library's
+  `post { fullScroll(FOCUS_RIGHT) }`; the 14sp-vs-16sp size difference and the extraction of one
+  shared `Breadcrumbs` builder (long-press as an optional parameter — the `NewFolderFlow` move)
+  remain deferred. Worth doing the next time any crumb styling or tap-target rule changes, so the
+  change lands once instead of three times.
+
+- **No search in the link picker** — carried from K2 exactly as Paper deferred it (recorded at the
+  arc's picker-modes decision; repeated here so the arc has one findings ledger).
+
+## Notesprout SN — arc 11 (Scratch Pad) J6 review ledger (2026-08-25)
+
+The J1–J5 arc-range `/code-review high` raised six items. Five were fixed in J6 (see RATTA_PLAN.md
+J6 Outcome) and one was refuted. Two things are carried, neither of them SN bugs:
+
+- **Paper carries the same `TRANSFER_MAX_CHUNKS` derivation bug SN just fixed.** SN inherited `34`
+  = `ceil(MAX_TRANSFER_STROKES / TRANSFER_CHUNK_STROKES)` from Paper's shipped arc-6 values, and it
+  is not an upper bound on what the chunker produces: a chunk also closes when the *next* stroke
+  would cross the point cap, so a transfer inside both whole-transfer caps can chunk into more than
+  34 and the drain reports a legal transfer as truncated, leaving ink on the pad. SN's constant is
+  now computed from the other four (= 74, both close reasons counted) with three shape tests.
+  `apps/notesprout_paper/` has the same constant, the same one-sided derivation, and the same test
+  pinning it. Not fixed here — Paper is on `main` and out of this arc's range. Worth a small
+  targeted fix the next time Paper's `:extension-api` is opened.
+
+- **The pad/notebook colour clamp is asymmetric, and deliberately so.** The host forces inbound ink
+  to opaque black; the extension does not clamp the colour of ink the host sends it. Recorded in
+  `apps/notesprout_sn/docs/extensions.md` § Boundary audit rather than "fixed": SN's ink is fixed
+  black so the host has no other colour to send, the sender is signature-matched, and the untrusted
+  direction is the one that clamps. Revisit only if SN ever gains colour ink — at which point the
+  pad's fixed-tool rule changes too, and both belong in the same change.
+
+**Refuted, recorded so it is not re-raised:** "the store binder's `pending` ThreadLocal leaks a
+4 MiB `SharedMemory` because `DebugMenu.runStoreProbe` calls `getLarge` in-process, where
+`onTransact` never runs." That probe was deleted in J3 — there is no in-process caller — and
+`onTransact`'s `finally` already calls `pending.remove()`.
+
+## Notesprout SN — arc 15 (Export) E3 review ledger (2026-08-27)
+
+The E1–E2 arc-range `/code-review high` surfaced 28 unique verified candidates; the ten surviving
+correctness findings were **all fixed in E3** (see RATTA_PLAN.md E3 Outcome). Carried here: the
+items the review confirmed but cut under its output cap, accepted rather than fixed at the freeze.
+
+- **`openDestination`'s plain-`"w"` fallback never truncates.** Providers differ on which write
+  modes they accept, so `"rwt"` → `"wt"` → `"w"` is tried in order — but a provider that rejects
+  the truncating modes, opens `"w"` in place over a *longer* pre-existing overwrite target, and
+  answers **neither** `OpenableColumns.SIZE` nor `statSize` would leave the old file's trailing
+  bytes after the new content, passing both size checks (the on-disk check is skipped when the
+  provider won't answer at all). Three provider quirks have to coincide, and the local DocumentsUI
+  path always accepts `"rwt"` — accepted. If picked up: a best-effort
+  `FileOutputStream(pfd.fileDescriptor).channel.truncate(0)` after a plain-`"w"` open closes most
+  of it.
+- **`NotebookSession.refreshMeta` does not carry `exportedAt`/`appVersionCode` forward** — the next
+  notebook open after an export rewrites `notebook_meta` without them, so the *Garden* file's
+  export stamp is transient (every export re-stamps its own artifact, which is the copy that
+  travels, so nothing user-visible is wrong). Worth aligning the two writers the next time
+  `NotebookMeta` changes.
+- **Cleanups cut under the cap, none behavioural:** `describe()` binds run sequentially at
+  discovery (one exporter installed today); `Ready.bytes` duplicates `Ready.file.length()`;
+  `ExportArtifact`'s cache copy uses `copyTo`'s default 8 KiB buffer where `:ext-soil` streams at
+  64 KiB; `prepare()` hand-rolls a variant of the `readOnce` open→work→seal ritual (it needs the
+  meta write, which `readOnce`'s read-only contract refuses); `versionCode()` is a third copy of
+  the same helper; `ExportKeying`'s `plan`/`apply` split forces a nullable passphrase parameter.
+
+## g-paper / Notesprout SN — a transferred selection drags worse than a hand-lassoed one (open, 2026-08-25)
+
+**Symptom (user, Nomad, arc 11 / J6):** after a scratch-pad transfer in either direction, dragging
+the resulting selection feels sluggish; an ordinary hand-lassoed selection drags smoothly. Not a
+showstopper — the drag lands where it should, nothing is lost.
+
+**Still open.** Two hypotheses were tested on the device and **both were disproved** — recorded here
+so nobody spends the time again:
+
+1. **The firmware dash trail painting under the app-drawn ghost.** `RattaPaperView` never overrides
+   `onSelectionDragVisual`, so the `firmwareInkSuppressed` flip at drag start is never pushed to the
+   firmware — suppression rests on `updateLassoDragHoverSuppress` winning the race from the hover
+   stream (overlay law 3), with a down-time backstop whose own comment says it is "too late for this
+   contact's first dashes". A `0.1.7` adding `override fun onSelectionDragVisual(active) { if (active)
+   fullScreenDisable() else applyToolToFirmware() }` was built, published, pinned and installed:
+   **user reported no change in behaviour.** The change was reverted (unproven engine changes do not
+   ride into an arc freeze) — but **the gap it names is real** and is worth closing on its own merits
+   the next time gpaper-ratta is opened: the base documents the hook, `OnyxPaperView` implements it,
+   Ratta ignores it, and the `false` edge would also cover drag-cancel and dismiss-mid-drag, which
+   never reach the existing lift-time `applyToolToFirmware`.
+
+2. **Per-frame drag cost scaling with selection size.** `CanvasPaperView.onDraw` rebuilds every
+   dragged stroke from raw points each frame (`StrokeRenderer.draw` per stroke in `dragStrokes`,
+   main thread), so a rasterize-once drag layer looked like the fix. The measurement that suggested
+   it was **confounded**: the fast drags were pen and the slow ones finger. Rasterizing the drag
+   layer once at drag start is still a defensible optimization, but it is **not** established as
+   this bug's cause.
+
+**What the instrumented run actually measured** (temporary `DBG` logging in `lassoDragMove` /
+`lassoDragFinish` / the Ratta suppress points; sample counts + throttled invalidate counts):
+
+| drag | input | selected | sample rate | frame rate |
+|---|---|---|---|---|
+| transferred | pen | 1 | 432 Hz | 16 Hz |
+| hand-lassoed | pen | 1 | 431 Hz | 16 Hz |
+| transferred | finger | 10 | 47 Hz | 12 Hz |
+| hand-lassoed | finger | 10 | 56 Hz | 13 Hz |
+
+Reading: the repaint rate is flat everywhere (the 60 ms `LASSO_REFRESH_INTERVAL_MS` throttle caps it
+at ~16 Hz), so the felt sluggishness is **pen/finger input sampling**, not frames. The pen samples at
+~430 Hz and the finger at ~50 Hz — that gap is the EMR digitizer vs the touch panel and explains most
+of the table. **The residual worth chasing is the matched finger pair: 47 Hz transferred vs 56 Hz
+hand-lassoed, one sample each**, with the user confirming the transferred one still felt worse at
+equal stroke count. Everything else is confound.
+
+**Next step if picked up:** one controlled run — same ink, same stroke count, one drag each of
+{pen, finger} × {transferred, hand-lassoed} — with the same instrumentation, to see whether the
+finger-pair residual survives. A stylus contact logs `down inside box` and a finger does not, which
+is the cheap way to tell the two apart in a trace. Note `dragStrokes` is emptied before
+`onSelectionDragVisual(false)`, so a drag-summary log must read `selection?.strokeIds?.size`, not
+`dragStrokes.size`.
+
+## Notesprout SN — arc 16 "Import" I2 (2026-08-28): one review finding accepted + deferred items
+
+The I2 `/code-review high` pass (arc range `e9101fb..HEAD`, 10 findings) fixed nine in SN —
+including the two Replace-import data-loss paths (`placeInGarden` now swaps by one atomic
+`rename(2)` over the live target with no fallback copy, and the same-device keying pass-through
+now pays a whole-file `integrity_check`) — and refactored the two duplication findings into
+shared code (`ExportKeying.exportAndKeyToPrimary`, `SoilStreams.streamCopy`). One was
+**explicitly accepted, not fixed**:
+
+- **Imported names can't be edited under `NameRules`' charset**
+  (`apps/notesprout_sn/.../importing/ImportNames.kt` + `library/NameRules.kt`): `ImportNames.clean`
+  deliberately admits characters (parentheses, unicode) the typed-name charset
+  (`^[a-zA-Z0-9_\-. ]*$`) forbids — mangling `Field notes (2)` at import would rename the user's
+  notebook for no benefit, and that decision stands. The cost: any later *edit* of such a name in
+  the rename dialog fails validation until the whole name is retyped in the restricted alphabet
+  (confirming unchanged is a no-op and still works). Fixing it means deciding what the library's
+  naming rules *are* for non-typed names (relax the charset? accept chars already present in the
+  current name?) — a user-facing naming-scheme decision, not a patch. Raise it with the user
+  before touching either side.
+
+Deferred by the arc-16 wizard (not findings):
+- **No open-with / share-to intent filters** for `.soil` on SN — the library Import button is the
+  only entry this arc; a future arc may add the receive-intent path (og has one).
+
+## Notesprout SN — arc 19 "Document" M11 (2026-08-31): review ledger + og upstream bugs
+
+The M11 `/code-review high` pass (arc range `17b0b9f..HEAD`, ~20.5k insertions) confirmed 15
+correctness findings + 6 cleanup items; the user chose **fix everything** and all 21 were fixed
+(one candidate was refuted — the proofread double-sheet, blocked by the modal dialog). Nothing
+was accepted-instead-of-fixed this arc. Ledger items that outlive the arc:
+
+- **og carries two markdown-engine bugs SN now deliberately diverges from** (found at M11,
+  verified byte-identical in og's `core/markdown/`):
+  1. `MarkdownReflow`'s **join branch drops a hard break's two trailing spaces** — a wrapped
+     line ending in an explicit Markdown line break loses it on reflow, and reflow stops being
+     idempotent (`reflow(reflow(x)) != reflow(x)`). og's own class doc says trimming it "would
+     silently delete the very thing this rule exists to protect".
+  2. `MarkdownFormatter.toggleBlock` (og: the format-bar block toggles) **stamps the block
+     marker onto blank separator lines** inside a multi-line selection — "alpha\n\nbeta" +
+     numbered list → "1. alpha\n2. \n3. beta", an empty item the user never asked for.
+  Both are fixed in SN's `:markdown` (pinned by test). Fixing og means porting the same two
+  changes into `apps/notesprout_android/.../core/markdown/` — small, test-covered, worth doing
+  next time og's markdown engine is touched.
+- **`SoilDao.hasLiveDocument` blankness — accepted residual mismatch** (recorded in the query
+  KDoc): the SQL TRIM set covers ASCII whitespace (space/tab/LF/VT/FF/CR) but not U+001C–U+001F
+  or Unicode spaces Kotlin's `isBlank()` accepts; a foreign-written document row whose text is
+  only those exotic characters would list an exporter that then refuses honestly. Nothing in the
+  family writes such rows.
+- **Deferred by the arc-19 wizard** (not findings): Page-Index-style selection-merge for the
+  notebook document (SN has no Page Index; auto-merge + the Merge sheet cover it — revisit on
+  demand); open-with/share-to for `.md`/`.txt` (the arc-16 single-entry lock stands); images
+  beyond og's source-level placeholder.
+
+## Notesprout SN — arc 21 "Tags" W4 (2026-09-01): the extension store is key/value — CLOSED by arc 22 "Tables" (2026-09-01)
+
+**The extension store should offer rows and columns, not just keys and values.** Raised by the
+user at W4's phase start, examined, and **declined for arc 21** — W4 shipped on the blob. It is
+recorded here because it is not a preference; it is the cause of several unrelated-looking things.
+
+`IExtensionStore` (arc 11 / J2) is `get` / `put` / `delete` / `keys` over byte arrays, plus the
+`putLarge` / `getLarge` ashmem pair. The file underneath is **already SQLite** — host-owned,
+encrypted under the global key at `Garden/<pkg>.db` — so only the seam hides the fact. Every
+extension since has therefore serialized its structure into values, and pays for it:
+
+- **Tags** (`TagCodec`) hold what is plainly a relational model — tags, and assignments joining a
+  tag to a notebook and optionally a page — in **one 4 MiB store value**. That is where
+  `WORST_CASE_BYTES` comes from, why `MAX_TAGS` / `MAX_TAG_ASSIGNMENTS` / `MAX_TAG_CHARS` exist as
+  numbers rather than as anything a user would recognise, and why W4 had to write ids in base64url
+  (`CompactId`) to keep the caps the wizard set. A search merge decodes the **whole** index per
+  query rather than asking a question of it.
+- **The scratch pad** stores `pages` (one page id per line) and `page/<id>` blobs of encoded ink.
+  Its user-visible **4 MiB page ceiling** — `ScratchDocument` tracking the exact encoded size and
+  removing the stroke that would cross the line, behind a "page full" dialog — exists for exactly
+  this reason and for no other.
+
+The change would be an **appended** table facility on `IExtensionStore` (the compatible-append
+recipe the interface's own KDoc already used for `putLarge`), the host implementing it over the
+store's own SQLite file, and each extension migrating at its own pace. Nothing else in the family
+needs to move. It would delete `TagCodec` and its arithmetic outright and lift the pad's ceiling.
+
+Needs a fresh user decision and an arc of its own — it is a seam change every extension inherits.
+
+**→ Decided and SHIPPED 2026-09-01 as Arc 22 "Tables"** (`apps/notesprout_sn/RATTA_PLAN.md`
+§ Arc 22 ledger; the reference is `apps/notesprout_sn/docs/extensions.md` § the extension store).
+Not the appended facility sketched above — a **replacement**: `IExtensionStore` v6 is `schemaVersion`
+/ `applySchema` / `exec` / `query` / `next` / `close` over gated parameterized SQL (`StoreSql`
+validates every statement, `StoreCodec` carries statements and rows, ≤ 4 MiB chunks over the
+arc-11 ashmem carrier), `API_VERSION` 5 → 6 with the first version **floor** for the three
+store-taking points, the KV API and the `kv` table gone, Room gone from the store file, and
+**no migration** — an arc-11-shaped store is wiped on its first open (`0.1.0-ratta` is unreleased,
+the user's call). Everything the entry predicted was deleted: `TagCodec`, `CompactId`,
+`WORST_CASE_BYTES` and the tag caps' size arithmetic (the caps stay as `COUNT(*)` policy);
+`ScratchPageCodec`, `PageFullException` and the pad's 4 MiB page ceiling; the editor's line codecs.
+**This entry is closed.**
+
+## Notesprout SN — arc 21 "Tags" W5 (2026-09-01): a restore screen — ✅ CLOSED by arc 27 "Restore" (2026-09-06)
+
+**Closed.** Arc 27 built the whole-library restore this entry deferred — index, notebooks and stores
+from either leg, replace-all behind the Backup screen's *Restore from a backup…* row; the aside-swap
+ordering, "replace all" against a moved-on library (it replaces, no merge, no undo) and the
+cross-device key (the staged index is proved openable under a key the user supplies **before**
+anything live is touched) are all answered in `apps/notesprout_sn/RESTORE_PLAN.md` § Decisions,
+and the reference is `apps/notesprout_sn/docs/restore.md`. The manual copy-back stays documented
+as the way to recover ONE store without replacing the library. The original entry follows.
+
+**W5 put every extension store into the backup set; it did not add a way to put one back.** The
+user's phase-start call: W5 ships backup only, the manual copy-back is documented
+(`apps/notesprout_sn/docs/backup.md` § Extension stores), and a restore screen is deferred here.
+
+Arc 17 shipped the same shape for the library itself — backup, no restore — because a single
+notebook already comes back through arc 16's Import, every backup file being a self-describing
+`.soil`. **A store has no such door**: it is not a notebook, no importer claims it, and recovering
+one means a shell copy of `Garden/<pkg>.db` (plus its `-wal` if the backup carries one, both or
+neither) with the app closed.
+
+A restore arc would cover the whole backup folder in one screen — index, notebooks and stores —
+and its hard parts are the ones arc 17 named and left: the aside-swap ordering, what "replace all"
+means against a library that has moved on since the backup, and the fact that a store's ciphertext
+is keyed to the device that wrote it (a restore across devices needs the source device's recovery
+key, exactly as an encrypted import does). Needs a user decision on scope before it is planned.
+
+## Notesprout SN — arc 21 "Tags" W6 (2026-09-01): pruning dead tag assignments (rewritten after arc 22)
+
+**Deleting a notebook or a page does not remove the tag assignments naming it.** Deliberate for
+arc 21, and correct as far as the user can see — nothing dead ever surfaces — but rows accumulate
+and nothing removes them.
+
+Aliveness is answered at **query time** and never in the store. `SearchAssembly.rank` reads tags
+*through* the index's own live notebook listing, so an assignment naming a deleted notebook is
+simply never looked at; a page's aliveness is a different question with a different source (the
+notebook's live page rows, which only the host can read) and `PageNumbers` answers it the same way.
+The extension is not the side that knows: it holds ids, and the index that says which ids are alive
+is the host's. That is the shape the seam wants — the extension owns tags, the host owns the
+library — so a pruning pass cannot be a background job inside `:ext-tags`.
+
+**Arc 22 "Tables" (2026-09-01) dissolved the hard half.** The assignments are rows in the
+extension's own `assignment` table now (`apps/notesprout_sn/docs/tags.md` § the data model), so
+a prune is one statement — `DELETE FROM assignment WHERE notebookId NOT IN (…)` (and, per notebook
+asked about, `… WHERE notebookId = ? AND pageId <> '' AND pageId NOT IN (…)`) — inside one `exec`
+transaction, with no codec, no blob budget and no `TagWrites` lock (both are gone). Two shapes
+remain to choose between: the live-id list riding the statement's binds (under the seam's 999-bind
+cap, so a library past that many notebooks needs a second shape) or a declared `live_notebook`
+table filled in the same batch and joined with `NOT IN (SELECT …)`. The cost of leaving it is
+smaller than it was — a dead assignment is one indexed row, not 53 bytes of a 4 MiB value — but
+`MAX_TAG_ASSIGNMENTS` (50 000, a `COUNT(*)` policy check now) still counts dead rows, so a library
+that deletes tagged notebooks for a very long time would still meet a cap about a number the user
+has no way to see.
+
+Still open, unchanged by arc 22: **when it runs** (a backup pass? the arc-17 close purge? a
+Tags-screen visit?) and the rule that removing a tag's last assignment may **not** delete the tag —
+by the arc-21 lifecycle rule a prune leaves tags behind on purpose. Wants a user decision on the
+trigger.
+
+## Notesprout SN — arc 22 "Tables" X3 (2026-09-01): the search shelf queries twice on return
+
+**Returning to the library's search shelf from a tag screen runs the search query twice** —
+`onChanged` and the resume re-list fire about 10 ms apart, each a full `tags` → `assignmentsOf`
+merge. Arc 21 / W4's shape, observed (not introduced) during X3's Nomad walk. Cheap today (the
+whole merge measured 52–78 ms on a 2-tag index), so it was left; worth a one-shot latch when the
+shelf's return path is next touched.
+
+## Notesprout SN — arc 22 "Tables" X2 (2026-09-01): a wiped store keeps its file size
+
+**The legacy wipe frees pages but never runs `VACUUM`**, so an arc-11 store that held 4.3 MB of
+kv rows is still a 4.3 MB file after it becomes an empty table store. Cosmetic — the freed pages are
+reused — and `VACUUM` is on the seam's runtime denylist for extensions by design; if a compaction is
+ever wanted it is a host-side step in the format ladder (arc 17's seal-time purge is the precedent),
+not something an extension asks for.
+
+## Notesprout SN — arc 23 "Calendar" Y1 (2026-09-02): deleting a period
+
+**Nothing in this arc ever deletes a `period` row.** `CalendarStore.kt` has no `DELETE FROM
+period` statement anywhere — strokes are `INSERT OR REPLACE` / `DELETE … WHERE id = ?`, but a
+`period` (and its `page`s) are minted with `INSERT OR IGNORE` on the first stroke and never
+removed after. A compensated multi-batch placement failure (Y3) drops its strokes by id and
+**leaves a minted empty period/page behind**; an emptied page (every stroke on it erased) keeps
+its row too — an empty page is not the same thing as a placement that never happened.
+
+A future prune is one `DELETE` under the schema's declared `ON DELETE CASCADE` (deleting a
+`period` cascades its `page`s, which cascade their `stroke`s) — mechanically cheap. **WHEN it
+should run is the open question**: a backup pass, the arc-17 seal-time purge, a "clear this empty
+month" affordance in the calendar itself, or never at all (empty rows cost one index row and one
+join miss, nothing more). Needs a fresh user decision before it is planned; this is the same shape
+as the arc-21 dead-tag-assignment entry above, and the same non-answer — aliveness is cheap to
+leave alone until someone asks for a prune trigger.
+
+## Notesprout SN — arc 23 "Calendar" Y1 (2026-09-02): a date-change receiver for the today ring
+
+**The Month/Week today ring can go stale if the screen is left open across midnight.**
+`CalendarTemplate` re-bakes on every navigation and on `onResume` only when the date changed
+(confirmed in `CalendarActivity.kt` — there is no `BroadcastReceiver`, no
+`ACTION_DATE_CHANGED`/`ACTION_TIME_TICK` registration anywhere in `:ext-calendar`); a calendar
+screen sitting open and idle past midnight keeps ringing yesterday's number until the user
+navigates or the Activity resumes. og's calendar carries a date-change receiver for exactly this;
+SN deliberately does not — a planner call at Y1 (`RATTA_PLAN.md` § Arc 23, `CalendarTemplate`:
+"no receiver; a planner call the user may revisit"), traded for the simplicity of "re-bake only on
+a reason to re-bake." Revisit only if a user actually leaves the screen open across midnight and
+notices — a receiver is a small, well-understood addition (the pad and the tag screen already show
+the pattern for a proper unregister) whenever that day comes.
+
+## Notesprout SN — arc 23 "Calendar" (2026-09-02): calendar export
+
+**No exporter reads the calendar store.** `ACTION_NOTEBOOK_EXPORTER`'s descriptors are generic,
+but every exporter that exists (`:ext-soil`, `:ext-pdf`) takes a *notebook* as its source — the
+calendar's `period`/`page`/`stroke` rows live in a different file (`Garden/<pkg>.ext.calendar.db`)
+that no export path opens. A calendar PDF or `.soil`-shaped export is a legitimate later want (the
+Day/Week/Month pages are ordinary paper once rendered) but it is a new decision, not a gap in this
+arc's scope — the arc-23 wizard never asked for one, and the pad has never had one either. Whoever
+picks this up should decide first whether it is a new `sourceKind` on the existing exporter point
+or a reason the exporter contract needs to know about a non-notebook source at all.
+
+## Notesprout SN — arc 23 "Calendar" (2026-09-02) → arc 24 "Events" close (2026-09-04): tasks / the day window / history / day notes / the Today dashboard as later extensions
+
+**Arc 23 was a writable Month/Week/Day surface and nothing else, on the user's explicit call; arc
+24 has since closed the "events" line of this entry.** og's calendar carries attached events with
+reminders, a materialized task/routine system, a four-view "day window" (Events/Note/Notebooks/
+History), day notes, and a Today dashboard that reads across all of it. At arc 23's wizard all of
+it was named and set aside (`RATTA_PLAN.md` § Arc 23: "Not in this arc, on the user's call: events,
+tasks, reminders, the day window, history, day notes, calendar export, the Today dashboard. Each
+may become its own extension later — a fresh user decision each time.").
+
+**Events are done.** Arc 24 "Events" (Z1–Z6, user decision 2026-09-02, frozen 2026-09-04) built
+og's events — with reminders and three recurring scopes (this / following / all) — inside
+`:ext-calendar` itself, with no eighth extension point: `EventsActivity` (the day's list) and
+`EventEditorActivity` (one event) as two in-process, `exported="false"` Activities launched from
+`CalendarActivity`, and `CalendarSchema.V2` adding the events tables alongside V1's. That shipped
+shape answers the entry's own "whose seam" question for events — the calendar's own store and
+process, not a new point — and no notification plumbing was needed to get there because SN events
+carry no notifications of any kind (a look-ahead *Upcoming* section only, per
+`apps/notesprout_sn/RATTA_PLAN.md` § Arc 24).
+
+The remaining list — **tasks/routines, the day window, history, day notes, calendar export, the
+Today dashboard** — is still open, and the shape question arc 23 posed for it still stands: "should
+these exist" is answered per item by a future user decision, but "whose seam do they live behind"
+is not. Tasks/routines and a day window/Today dashboard that reads *across* the calendar and the
+library still fit no current extension point (every existing point, `:ext-calendar` included, is
+scoped to one notebook, one store, or one showing) and any one of them could still be the
+**EIGHTH** extension point, which — per the arc-21/22/23/24 pattern — needs its own explicit grant
+before anyone writes a line of code toward it.
+
+## Notesprout SN — arc 23 "Calendar" Y2 (2026-09-02): the day picker narrows in month mode
+
+**Cosmetic, left as is.** `DayPickerDialog` is content-sized, and flipping it into month mode (a
+3×4 year grid) narrows the dialog relative to its day-grid width — noticed during Y2's Nomad walk
+when an adb tap landed outside the narrowed dialog and cancelled it (a walk procedure slip, not a
+functional bug). Not fixed on the user's call; revisit only if it reads as a real usability issue
+by eye.
+
+## Notesprout SN — arc 23 "Calendar" Y4 (2026-09-02): a transfer at the caps is unmeasured
+
+**`PLACE_TIMEOUT_MS` (10 s) has been measured only at 19 strokes (119 ms).** A transfer at
+`MAX_TRANSFER_STROKES` — which, with the mint lead and `touchPage`, is more statements than one
+`exec` batch holds — runs as two compensated batches on the extension's Binder thread, and how long
+that takes on the Nomad has never been observed (adb cannot draw a lasso, and no test notebook holds
+ten thousand strokes on one page). The Y4 review's fix keeps a slow placement from leaving half its
+rows behind: the host **settles** a timed-out last chunk (`HeldBinding.settle`, the budget again) and
+treats a late return as the success it is, and `finish()` settles before `end()` so the store is
+never revoked between an extension's batches. What is still owed is the number — seed a page with a
+cap-sized selection (a `.soil` written by hand, or the pasted-selection trick run in a loop) and read
+`receiveInk: N strokes placed … in N ms` off the Nomad; if it approaches the budget, the budget moves,
+not the rule. Applies to the pad and the calendar alike (one shared client since Y4).
+
+## Notesprout SN — arc 24 "Events" Z1 (2026-09-02): a THIS-scope note past the batch cap loses the edit, not just the ink
+
+**A THIS-scope edit whose note exceeds one `exec` batch (> 4 MiB or > 10 000 statements of ink on
+one event note) and then fails on a later batch leaves the exception already landed on the
+original event and the compensation deleting the override** — so that occurrence is gone until
+re-added, not merely un-noted. `EventStore.edit(scope)` composes `EventWrites.editWithScope` /
+`editLandsUnder` as ordinary multi-batch writes, and a THIS-scope edit is, underneath, "delete this
+occurrence's prior override (if any), insert a fresh `event_exception` row, insert the note's
+stroke op log" — if the note batch is the one that fails, the occurrence-level write already
+committed. Under the cap (the overwhelming case — a page of handwriting plus a text note) it is one
+transaction and this does not apply. Condition to act: anyone actually observes a multi-batch note
+in the field, i.e. a single event note running past 4 MiB or 10 000 ink statements.
+
+## Notesprout SN — arc 24 "Events" Z4 (2026-09-03): every navigation pays the six-query marks read
+
+**Every navigation — a Day AM↔PM (`half`) flip included — re-runs `EventStore.marksFor`'s full six
+queries**, because `CalendarDocument.show(next, refreshMarks)` only skips the store round-trip when
+`next` is already showing, and a half flip is a different `CalendarTarget`. Left as measured-fine at
+Z4 (a Month page's 42 cells cost the same six queries as a single Day half). Cache marks across a
+same-day half flip only if it is ever observed to read slow on the Nomad — measure before changing.
+
+## Notesprout SN — arc 24 "Events" Z4 (2026-09-03): the `+` glyph overflow is unprovable on the Nomad
+
+**`GridMarks`' overflow `+` (Month/Week cells past the ones og's six glyphs — cake · heart ·
+suitcase · people · clock · dot — can fit) has only ever been exercised on the JVM.** A Nomad
+Month cell measures roughly 198 px, wide enough to hold all six distinct types before overflow is
+reachable, so no on-device walk has ever forced it. Nothing to do unless a narrower device arrives.
+
+## Notesprout SN — arc 24 "Events" Z2/Z3 (2026-09-03): events have no door but the calendar's own button
+
+**Events are reachable ONLY through `CalendarActivity`'s `btnEvents`** — no library or notebook
+entry point, no Today-dashboard surfacing, no search over event titles, no export of events (the
+arc-23 "calendar export" gap above applies to events too), and no notifications of any kind (only
+the in-app *Upcoming* look-ahead). Each of these was a planner call at Z2/Z3, not an oversight, and
+each is a fresh user decision to open — none is implied by anything else in this arc.
+
+## Notesprout SN — arc 24 "Events" Z2 (2026-09-03): the editor holds one reminder while the store keeps three
+
+**`EventEditorActivity`/`EventDraft.withReminder` carries at most ONE reminder, while
+`EventRules.REMINDERS_MAX` and the store underneath it allow three.** Saving an event that somehow
+already holds more than one reminder back through the editor reduces its reminder list to the one
+the editor shows. Revisit only if someone wants several reminders on one event; the store's cap
+does not need to move to get there, only the editor's `RemindDialog`.
+
+## Notesprout SN — arc 24 "Events" Z5b (2026-09-04): cosmetic — "Weekly" reads twice at interval 1
+
+**Left as is.** At interval 1, `RepeatDialog`'s details screen shows its own "Weekly" title with
+`EventWording.repeatGlance`'s sentence line reading "Weekly" directly underneath it — the same word
+twice, once as heading and once as the interval-1 wording. Cosmetic only; not fixed on the user's
+call.
+
+## Notesprout SN — arc 24 "Events" Z3 (2026-09-03): a note stroke that exits the area keeps its out-of-area points
+
+**A stroke that starts inside an event's note area and is dragged out of it keeps its full,
+un-clipped points in the stored model** — the firmware paints nothing past the view's edge and the
+committed render clips to the view, so what the person sees stays consistent, but `NoteWrite`'s
+saved geometry does not. Accepted at Z3; clip at write time only if it ever matters in practice —
+there is no export of notes to make the extra geometry visible today.
+
+## Notesprout SN — arc 24 "Events" (2026-09-03): declined on sight
+
+**Do not re-raise.** Two cosmetic asks were named and declined by the user during the arc-24 walk,
+not deferred for a later pass: a bigger trash tap target on `EventRowView`'s per-row delete icon in
+the events list, and the type button's (`btnType`, `activity_event_editor.xml`) `140dp` minimum
+width. Both stand as shipped.

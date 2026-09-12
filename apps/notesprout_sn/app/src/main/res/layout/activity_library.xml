@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/paperWhite">
+
+    <!-- Breadcrumb bar. Flush at the top edge: on Ratta the top guard is 0 (no status-bar hazard). -->
+    <!-- 4 dp start/end padding: the notebook's, the calendar's and the pad's bars all carry it, and
+         a bar without it puts its last button 8 px further right than every other screen's — the
+         "icons shift between screens" the user saw after arc 23 / Y4. One shape for every bar. -->
+    <LinearLayout
+        android:id="@+id/topBar"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/toolbar_bar_thickness"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp">
+
+        <!-- Back out of a shelf. Far left, before the title, and the same left arrow as
+             Go-up-a-folder: in a shelf that arrow is the only way back, so it reads as back. -->
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnCloseMode"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_arrow_left"
+            android:contentDescription="@string/cd_close_mode"
+            android:visibility="gone" />
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnUp"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_arrow_left"
+            android:contentDescription="@string/cd_up_folder"
+            android:visibility="gone" />
+
+        <HorizontalScrollView
+            android:id="@+id/breadcrumbScroll"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/breadcrumbContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:gravity="center_vertical" />
+        </HorizontalScrollView>
+
+        <!-- Pinned / Recents / Search replace the breadcrumbs while a mode is on: there is no path
+             to show, only a shelf — and a search shelf's name is the query itself. Exactly one of
+             breadcrumbScroll / modeTitle is ever visible. -->
+        <TextView
+            android:id="@+id/modeTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:textSize="16sp"
+            android:textColor="@color/inkBlack"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:visibility="gone" />
+
+        <!-- Create / view controls: the top bar's right edge is where everything you do
+             *to* the library lives. -->
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnNewNotebook"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_notebook_plus"
+            android:contentDescription="@string/cd_new_notebook" />
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnNewFolder"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_folder_plus"
+            android:contentDescription="@string/cd_new_folder" />
+
+        <!-- Search (arc 20 / Q1) — between the two create buttons and the shelves, the user's
+             placement call: it opens a shelf like Pinned and Recents do, but what it finds is
+             something you were on your way to create into or open. -->
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnSearch"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_search"
+            android:contentDescription="@string/cd_search" />
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnRecents"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_clock"
+            android:contentDescription="@string/cd_recents" />
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnPinned"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_pinned"
+            android:contentDescription="@string/cd_pinned" />
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnSort"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_sort"
+            android:contentDescription="@string/cd_sort" />
+
+        <!-- The Calendar (arc 23). Before the pad — the user's placement call at Y4: the Scratch
+             Pad is the LAST button on every bar. GONE unless a trusted extension is installed —
+             CalendarEntry owns it, re-discovering on every resume. -->
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnCalendar"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_calendar"
+            android:visibility="gone"
+            android:contentDescription="@string/cd_calendar" />
+
+        <!-- The Scratch Pad (arc 11) — always the last button. GONE unless a trusted extension is
+             installed — ScratchPadEntry owns it, re-discovering on every resume. -->
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnScratchPad"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_sketching"
+            android:visibility="gone"
+            android:contentDescription="@string/cd_scratch_pad" />
+
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/inkBlack" />
+
+    <!-- Card grid. Cards are added programmatically; emptyState is a sibling that must survive
+         every bind (LibraryGrid removes only the GridLayout it added last). -->
+    <FrameLayout
+        android:id="@+id/gridContainer"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <TextView
+            android:id="@+id/emptyState"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="@string/library_empty"
+            android:textSize="16sp"
+            android:textColor="@color/inkBlack" />
+    </FrameLayout>
+
+    <!-- [Backup] [Encryption] [Import*] |< < n/n > >|                     [Templates] [debug ⋯] -->
+    <!-- A FrameLayout, not a row: the pager is centred on the SCREEN, not on the space left over
+         between the two groups — and neither group's width is a constant. The right one differs
+         between debug and release (the ⋯ is only there in debug) and the left one differs with
+         whether an importer extension is installed. Anything that must LOOK centred is a
+         FrameLayout child with layout_gravity="center"; centring by layout_weight is the F2 trap. -->
+    <FrameLayout
+        android:id="@+id/bottomBar"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/toolbar_bar_thickness"
+        android:background="@drawable/toolbar_background_bottom"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp">
+
+        <!-- Backup, Encryption, then Import — the user's 2026-08-28 placement call, Encryption
+             added 2026-09-05 (arc 26 / U1). All three are things you do to the library itself, so
+             they lead the bar; the pager sits between them and Templates. -->
+        <LinearLayout
+            android:id="@+id/bottomLeft"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="start"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <!-- Backup (arc 17 / K2). Always visible: backing up needs no extension — the engine,
+                 the SAF destination and the whole run are core. -->
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnBackup"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_backup"
+                android:contentDescription="@string/cd_backup" />
+
+            <!-- Encryption (arc 26 / U1, decision 5), between Backup and Import: the door to the
+                 recovery key — reveal, change (U3), forget. Always visible, like Backup: the key is
+                 core. -->
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnEncryption"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_lock"
+                android:contentDescription="@string/cd_encryption" />
+
+            <!-- Import (arc 16 / I1), right after Backup — moved here from the right-hand group at
+                 K2 on the user's 2026-08-28 call. GONE unless a trusted importer extension is
+                 installed; ImportFlow owns it, re-discovering on every resume. Its counterpart,
+                 Export…, is a row on a notebook's long-press sheet: exporting is something you do
+                 *to* a notebook, importing is something you do to the library. -->
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnImport"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_import"
+                android:visibility="gone"
+                android:contentDescription="@string/cd_import" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/pager"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="center"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:visibility="invisible">
+
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnFirst"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_page_first"
+                android:contentDescription="@string/cd_first_page" />
+
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnPrev"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_page_prev"
+                android:contentDescription="@string/cd_prev_page" />
+
+            <TextView
+                android:id="@+id/pageLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="56dp"
+                android:gravity="center"
+                android:textSize="14sp"
+                android:textColor="@color/inkBlack" />
+
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnNext"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_page_next"
+                android:contentDescription="@string/cd_next_page" />
+
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnLast"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_page_last"
+                android:contentDescription="@string/cd_last_page" />
+        </LinearLayout>
+
+        <!-- Templates, then the debug ⋯ — DebugMenu appends into this same group at runtime
+             (no-op in release, where the group is just Templates). -->
+        <LinearLayout
+            android:id="@+id/bottomRight"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="end"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <!-- Templates (arc 13) — the template library, the one screen behind every paper
+                 decision. Always present: the three built-in papers need no extension and no data. -->
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnTemplates"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_template"
+                android:contentDescription="@string/cd_templates" />
+        </LinearLayout>
+
+    </FrameLayout>
+
+</LinearLayout>

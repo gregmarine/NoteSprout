@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- The readiness flow's offline pre-check (ML Kit's model download hangs silently offline). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Package-visibility for SN's eight extension points (API 30+ filtering). Every
+         screen-owning point (scratch pad, document editor, tag manager, calendar, cloud) needs both
+         actions listed: the service to discover and bind, the screen to resolve and launch for a
+         result — one missing reads as "0 provider(s) of 0 candidate(s)" (arc 21 / W1). -->
+    <queries>
+        <intent>
+            <action android:name="com.symmetricalpalmtree.notesproutsn.extension.HANDWRITING_RECOGNIZER" />
+        </intent>
+        <intent>
+            <action android:name="com.symmetricalpalmtree.notesproutsn.extension.SCRATCH_PAD" />
+        </intent>
+        <intent>
+            <action android:name="com.symmetricalpalmtree.notesproutsn.extension.SCRATCH_PAD_SCREEN" />
+        </intent>
+        <intent>
+            <action android:name="com.symmetricalpalmtree.notesproutsn.extension.NOTEBOOK_EXPORTER" />
+        </intent>
+        <intent>
+            <action android:name="com.symmetricalpalmtree.notesproutsn.extension.NOTEBOOK_IMPORTER" />
+        </intent>
+        <!-- The document editor (arc 19) — two actions like the scratch pad's, for the same
+             reason: the service is discovered by one and its exported screen resolved by the
+             other, and package visibility gates both. -->
+        <intent>
+            <action android:name="com.symmetricalpalmtree.notesproutsn.extension.DOCUMENT_EDITOR" />
+        </intent>
+        <intent>
+            <action android:name="com.symmetricalpalmtree.notesproutsn.extension.DOCUMENT_EDITOR_SCREEN" />
+        </intent>
+        <!-- The tag manager (arc 21) — two actions, same reason again: the service is discovered by
+             one and its exported screen resolved by the other, and package visibility gates both.
+             Without these, `queryIntentServices` answers with **zero candidates** for a service that
+             is plainly installed and correctly registered — which reads exactly like a signature or
+             version mismatch and is neither. -->
+        <intent>
+            <action android:name="com.symmetricalpalmtree.notesproutsn.extension.TAG_MANAGER" />
+        </intent>
+        <intent>
+            <action android:name="com.symmetricalpalmtree.notesproutsn.extension.TAG_MANAGER_SCREEN" />
+        </intent>
+        <!-- The calendar (arc 23) — two actions, the same reason a fourth time. -->
+        <intent>
+            <action android:name="com.symmetricalpalmtree.notesproutsn.extension.CALENDAR" />
+        </intent>
+        <intent>
+            <action android:name="com.symmetricalpalmtree.notesproutsn.extension.CALENDAR_SCREEN" />
+        </intent>
+        <!-- The cloud provider (arc 25) — two actions, the same reason a fifth time. -->
+        <intent>
+            <action android:name="com.symmetricalpalmtree.notesproutsn.extension.CLOUD_STORAGE" />
+        </intent>
+        <intent>
+            <action android:name="com.symmetricalpalmtree.notesproutsn.extension.CLOUD_STORAGE_SCREEN" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".SnApplication"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:theme="@style/Theme.Notesprout"
+        android:allowBackup="false">
+
+        <!-- The launcher gate and the only thing that opens the global index. noHistory: it
+             finishes itself once it has forwarded, so it is never on the back stack. -->
+        <activity
+            android:name=".bootstrap.BootstrapActivity"
+            android:exported="true"
+            android:noHistory="true"
+            android:screenOrientation="portrait">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".bootstrap.RecoveryKeyActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".bootstrap.UnlockActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".library.LibraryActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:configChanges="keyboard|keyboardHidden"
+            android:windowSoftInputMode="adjustNothing" />
+
+        <activity
+            android:name=".library.NewNotebookActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustNothing" />
+
+        <activity
+            android:name=".templates.TemplatesActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <!-- Backup (arc 17 / K2). Reached only from the library's bottom bar; carries no extras —
+             the destination and every stamp live in the index's own backup row. -->
+        <activity
+            android:name=".backup.BackupActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <!-- Encryption (arc 26 / U1): reveal / change (U3) / forget the recovery key. A plain chrome
+             screen behind IndexGuard, opened from the library's bottom bar. -->
+        <activity
+            android:name=".encryption.EncryptionActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <!-- Restore (arc 27 / L3, decision 7): whole-library restore, reached only from the
+             Backup screen's Restore row. Carries no extras — the source is picked on the screen
+             and the tree grant is never persisted (a restore never sets a destination). -->
+        <activity
+            android:name=".restore.RestoreActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".library.FolderPickerActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <!-- keyboard|keyboardHidden (arc 19 / M4): the document editor runs in the extension's
+             process on top of this screen, and attaching a Bluetooth keyboard to type in it is a
+             config change down here. A recreate behind the live editor would tear down the host
+             binder it is holding mid-edit — the exact failure M4 exists to close, provoked by the
+             one act most likely to precede a long piece of writing. The screen is portrait-locked
+             with one layout; there is nothing a recreate would give it (og's manifest records the
+             same defense, and ExportActivity below carries it for its own reason). -->
+        <activity
+            android:name=".notebook.NotebookActivity"
+            android:configChanges="keyboard|keyboardHidden"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <!-- The sticky note editor (arc 28 / H5, D2): a core screen with its own g-paper surface,
+             the second second-paper-surface in one process, launched only by NotebookActivity with
+             an ActivityResultLauncher. It opens no .soil — it writes through the notebook's live
+             session via StickyEditorTransfer, so it is meaningless from anywhere else. The Intent
+             carries the three ids and nothing more. keyboard|keyboardHidden for the notebook's
+             reason: a recreate would drop the in-process transfer for nothing. -->
+        <activity
+            android:name=".notebook.StickyEditorActivity"
+            android:configChanges="keyboard|keyboardHidden"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <!-- Export (arc 15 / E1). Reached only from the library's notebook long-press sheet;
+             receives EXTRA_NOTEBOOK_ID / _NAME and nothing else.
+             keyboard|keyboardHidden (arc 18 / D3): attaching or detaching a keyboard (the folio,
+             a Bluetooth idle drop) is a config change, and a recreate mid-export would cancel the
+             flow past the truncating open — a partial file standing with no dialog, no delete, no
+             verification. The screen is portrait-locked with one layout; there is nothing a
+             recreate would give it (og's manifest records the same defense). -->
+        <activity
+            android:name=".export.ExportActivity"
+            android:exported="false"
+            android:configChanges="keyboard|keyboardHidden"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".notebook.LinkPickerActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+    </application>
+
+</manifest>

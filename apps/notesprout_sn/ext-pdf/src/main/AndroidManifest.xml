@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- No launcher activity: the Supernote launcher lists the package anyway (accepted — "Ratta
+         being Ratta"); everywhere else only Settings → Apps shows it. -->
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/ext_label"
+        android:roundIcon="@mipmap/ic_launcher_round">
+
+        <service
+            android:name=".PdfExporterService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.symmetricalpalmtree.notesproutsn.extension.NOTEBOOK_EXPORTER" />
+            </intent-filter>
+            <!-- 2, not 1: the version the host must understand, not the one this was built
+                 against. A pre-arc-18 host reads ExporterInfo's absent sourceKind tail as
+                 SOURCE_SOIL and would truncate the destination before streaming the wrong thing
+                 at this exporter — declaring 2 makes that host skip it at discovery instead
+                 (ExtensionContract.API_VERSION, the D3 skew guard). -->
+            <meta-data
+                android:name="com.symmetricalpalmtree.notesproutsn.extension.API_VERSION"
+                android:value="2" />
+        </service>
+    </application>
+</manifest>

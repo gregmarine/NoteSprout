@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The template browser (arc 13 / G3) — breadcrumbs, the paginated card grid, and the controls
+     that act on the folder you are standing in.
+
+     One layout, three hosts: the Templates screen, the New Notebook screen (under its own name +
+     Create header) and the notebook's page-paper picker. What differs between them is the header
+     above and what a tap on a card means — never the browser itself, which is the whole point of
+     pulling it out of TemplatesActivity.
+
+     The controls all live on the TOP bar, in the library's order, and the bottom bar is the pager
+     and nothing else.
+
+     The row's head carries a left arrow that steps back ONE layer — btnCloseShelf out of a shelf,
+     btnUp up a folder; they never show at once. The ✕ in the right corner leaves the SCREEN, from
+     wherever you are. Back peels the arrow's order: shelf → folders → out. The breadcrumbs and the
+     shelf title carry the library's 12 dp start padding so a template bar and a library bar are
+     inset identically. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/paperWhite">
+
+    <LinearLayout
+        android:id="@+id/browserTopBar"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/toolbar_bar_thickness"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <!-- Out of the shelf, back into the tree. A left arrow at the row's head, exactly where
+             the library's shelves put theirs — and it never shows at the same time as btnUp, since
+             a shelf has no path to go up out of. -->
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnCloseShelf"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_arrow_left"
+            android:contentDescription="@string/cd_close_shelf"
+            android:visibility="gone" />
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnUp"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_arrow_left"
+            android:contentDescription="@string/cd_up_folder"
+            android:visibility="gone" />
+
+        <HorizontalScrollView
+            android:id="@+id/breadcrumbScroll"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/breadcrumbContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:gravity="center_vertical" />
+        </HorizontalScrollView>
+
+        <!-- In a shelf there is no path to show, only a flat list of paper. Exactly one of
+             breadcrumbScroll / shelfTitle is ever visible (arc 13 / G5).
+
+             18 dp, not the container's 12: a crumb TextView carries 6 dp of its own, so the title
+             has to add it back by hand to start on the same pixel the breadcrumb does. -->
+        <TextView
+            android:id="@+id/shelfTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:paddingStart="18dp"
+            android:paddingEnd="12dp"
+            android:textSize="16sp"
+            android:textColor="@color/inkBlack"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:visibility="gone" />
+
+        <!-- The library's order, so a template bar and a library bar read as the same bar. -->
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnImport"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_photo_plus"
+            android:contentDescription="@string/cd_import_template" />
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnNewFolder"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_folder_plus"
+            android:contentDescription="@string/cd_new_folder" />
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnSearch"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_search"
+            android:contentDescription="@string/cd_search_templates" />
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnRecents"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_clock"
+            android:contentDescription="@string/cd_recent_templates" />
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnPinned"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_pinned"
+            android:contentDescription="@string/cd_pinned_templates" />
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnSort"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_sort"
+            android:contentDescription="@string/cd_sort" />
+
+        <!-- The way out by tap, and the only ✕ on the bar. Always offered on a host that asked
+             for one: it leaves the screen from wherever you are, shelf or folder or root, which is
+             what makes it readable next to the head arrow's one-layer step. -->
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnClose"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_x"
+            android:contentDescription="@string/cd_close_templates"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/inkBlack" />
+
+    <FrameLayout
+        android:id="@+id/gridContainer"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <TextView
+            android:id="@+id/emptyState"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="@string/templates_empty"
+            android:textSize="16sp"
+            android:textColor="@color/inkBlack" />
+    </FrameLayout>
+
+    <!-- The pager and nothing else. Weighted with gravity="center", so it sits in the middle of
+         the bar; INVISIBLE rather than GONE, so the bar never changes height under the grid. -->
+    <LinearLayout
+        android:id="@+id/browserBottomBar"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/toolbar_bar_thickness"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/toolbar_background_bottom">
+
+        <LinearLayout
+            android:id="@+id/pager"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:visibility="invisible">
+
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnFirst"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_page_first"
+                android:contentDescription="@string/cd_first_page" />
+
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnPrev"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_page_prev"
+                android:contentDescription="@string/cd_prev_page" />
+
+            <TextView
+                android:id="@+id/pageLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="56dp"
+                android:gravity="center"
+                android:textSize="14sp"
+                android:textColor="@color/inkBlack" />
+
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnNext"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_page_next"
+                android:contentDescription="@string/cd_next_page" />
+
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnLast"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_page_last"
+                android:contentDescription="@string/cd_last_page" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

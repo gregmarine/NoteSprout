@@ -1,0 +1,358 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Notebook screen: full-bleed paper with chrome overlaid on top.
+  PaperView (g-paper drawing surface) is added into paperContainer programmatically.
+  Both bars (topBar + bottomStrip) and the floating selectionToolbar while it is up are pushed to
+  paper.setExclusionRects after layout so ink never lands under chrome.
+  The openingOverlay is the LAST child (topmost) and starts VISIBLE — the notebook covers its own
+  first frame, so there is no gap after the library's tap-time overlay.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/paperWhite">
+
+    <FrameLayout
+        android:id="@+id/paperContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"/>
+
+    <LinearLayout
+        android:id="@+id/topBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:orientation="vertical"
+        android:background="@color/paperWhite">
+
+        <!-- The button row. -->
+        <LinearLayout
+            android:id="@+id/topBarRow"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/toolbar_bar_thickness"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp">
+
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnBack"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_arrow_left"
+                android:contentDescription="@string/cd_back"/>
+
+            <!-- The Contents (arc 4). GONE until the notebook holds a heading — ContentsFlow owns it. -->
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnContents"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_list"
+                android:visibility="gone"
+                android:contentDescription="@string/cd_contents"/>
+
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnPen"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_pen"
+                android:contentDescription="@string/cd_tool_pen"/>
+
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnEraser"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_eraser"
+                android:contentDescription="@string/cd_tool_eraser"/>
+
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnLasso"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_lasso"
+                android:contentDescription="@string/cd_tool_lasso"/>
+
+            <!-- Insert (arc 28 / H1, D4) — directly after the lasso, because what it places lands
+                 selected under the lasso the moment it appears. It opens a sub-bar rather than
+                 inserting anything itself, and it is a COMMAND, not a tool: the armed tool is
+                 unchanged by an insert. Visible in every build since H2, when the bar got its
+                 first real offer (Text); the sub-bar's other seven buttons stay debug-only until
+                 H4 and H5 wire them. -->
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnInsert"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_plus"
+                android:contentDescription="@string/cd_insert"/>
+
+            <!-- Everything above is a tool; Recents is not, so the row's free space sits here and
+                 pushes it to the far edge — the same edge its panel comes in from (arc 10). -->
+            <View
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1"/>
+
+            <!-- The Document (arc 19). GONE unless a trusted extension is installed —
+                 DocumentEditorEntry owns it, re-discovering on every resume. First of the
+                 "leaves this page" cluster because it is the page-bound one: the page is the
+                 draft, the document is what that page became. -->
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnDocument"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_file_text"
+                android:visibility="gone"
+                android:contentDescription="@string/cd_document"/>
+
+            <!-- Tags (arc 21 / W2). GONE unless a trusted tag manager is installed —
+                 TagManagerEntry owns it, re-discovering on every resume. Next to the Document
+                 button because both are "what this page and this notebook are ABOUT", and before
+                 Recents, which leaves for somewhere else entirely. It opens a secondary bar
+                 rather than a screen: a tag has to land on something, and which thing is the one
+                 question the button cannot answer for you. -->
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnTags"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_tag"
+                android:visibility="gone"
+                android:contentDescription="@string/cd_tags"/>
+
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnRecents"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_clock"
+                android:contentDescription="@string/cd_recents"/>
+
+            <!-- The Calendar (arc 23 / Y3). Before the pad — the user's placement call at Y4: the
+                 Scratch Pad is the LAST button on every bar. The other surface this page's ink can
+                 be sent to. GONE unless a trusted extension is installed — CalendarEntry owns it,
+                 re-discovering on every resume. -->
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnCalendar"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_calendar"
+                android:visibility="gone"
+                android:contentDescription="@string/cd_calendar"/>
+
+            <!-- The Scratch Pad (arc 11) — always the last button; that edge is "things that leave
+                 this page". GONE unless a trusted extension is installed — ScratchPadEntry owns it,
+                 re-discovering on every resume. -->
+            <androidx.appcompat.widget.AppCompatImageButton
+                android:id="@+id/btnScratchPad"
+                style="@style/Widget.Notesprout.ToolbarButton"
+                android:src="@drawable/ic_sketching"
+                android:visibility="gone"
+                android:contentDescription="@string/cd_scratch_pad"/>
+
+        </LinearLayout>
+
+        <!-- Bar's bottom border -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/inkBlack"/>
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/bottomStrip"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:background="@color/paperWhite">
+
+        <!-- Strip's top border -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/inkBlack"/>
+
+        <!-- One bar-thickness row (@dimen/toolbar_bar_thickness), matching every other chrome bar
+             in the app: the notebook's name on the left, the pager centred on the SCREEN — the
+             calendar's and the pad's [‹] [n / N] [›] — with an equal-weight spacer on the right so
+             the centring survives a long name (which ellipsizes inside its half). -->
+        <LinearLayout
+            android:id="@+id/bottomStripRow"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/toolbar_bar_thickness"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp">
+
+            <TextView
+                android:id="@+id/notebookName"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:paddingEnd="8dp"
+                android:textSize="14sp"
+                android:textColor="@color/inkBlack"
+                android:singleLine="true"
+                android:ellipsize="end"/>
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnPrevPage"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:src="@drawable/ic_page_prev"
+                    android:contentDescription="@string/cd_prev_page"/>
+
+                <TextView
+                    android:id="@+id/pageIndicator"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:minWidth="56dp"
+                    android:textSize="14sp"
+                    android:textColor="@color/inkBlack"
+                    android:singleLine="true"/>
+
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnNextPage"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:src="@drawable/ic_page_next"
+                    android:contentDescription="@string/cd_next_page"/>
+
+            </LinearLayout>
+
+            <!-- The right half of the row: nothing but the space that keeps the pager centred. -->
+            <View
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_weight="1"/>
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- The selection's context toolbar — floats over the paper while a lasso selection is up.
+         Positioned by margins (SelectionAnchor.place); buttons (Delete + H) are built in code. -->
+    <LinearLayout
+        android:id="@+id/selectionToolbar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:background="@drawable/shape_dialog_bordered"
+        android:padding="4dp"/>
+
+    <!-- The H1…H6 level sub-toolbar — its own floating bar, hung off the main bar by
+         SelectionAnchor.placeSub when H is tapped (the main bar never moves for it). -->
+    <LinearLayout
+        android:id="@+id/selectionSubToolbar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:background="@drawable/shape_dialog_bordered"
+        android:padding="4dp"/>
+
+    <!-- The lasso button's popup (arc 8) — Paste + Clear for the object clipboard, hung under the
+         armed lasso button by SelectionAnchor.placeUnder. Buttons are built in code. -->
+    <LinearLayout
+        android:id="@+id/lassoPopup"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:background="@drawable/shape_dialog_bordered"
+        android:padding="4dp"/>
+
+    <!-- The tag button's secondary toolbar (arc 21 / W2) — Tag notebook / Tag page / Manage, hung
+         under the tag button by SelectionAnchor.placeUnder. Buttons are built in code. -->
+    <LinearLayout
+        android:id="@+id/tagsPopup"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:background="@drawable/shape_dialog_bordered"
+        android:padding="4dp"/>
+
+    <!-- The Insert button's sub-bar (arc 28 / H1) — Sticky / Text / the six shapes, hung under the
+         Insert button by SelectionAnchor.placeUnder. Buttons are built in code, and each is GONE
+         until its own phase offers it. -->
+    <LinearLayout
+        android:id="@+id/insertBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:background="@drawable/shape_dialog_bordered"
+        android:padding="4dp"/>
+
+    <!-- The eraser button's sub-bar (arc 29 / LE2) — Point / Lasso, hung under the armed eraser
+         button by SelectionAnchor.placeUnder. Buttons are built in code (EraserBar, :sn-screen).
+         A later sibling than every top-bar button it could overlap, which is the FrameLayout rule
+         every floating bar in this layout follows. -->
+    <LinearLayout
+        android:id="@+id/eraserBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:background="@drawable/shape_dialog_bordered"
+        android:padding="4dp"/>
+
+    <!-- The shape transform bar (arc 28 / H4) — the aspect latch and Done, floating beside the
+         shape for as long as g-paper's transform mode has it. Placed by ShapeTransformBar off the
+         shape's box grown by the overlay's reach; buttons are built in code. -->
+    <LinearLayout
+        android:id="@+id/transformBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:background="@drawable/shape_dialog_bordered"
+        android:padding="4dp"/>
+
+    <!-- The collapsed chrome (arc 36 / C1) — what shows while both bars are hidden: the corner
+         tool button at top-right wearing the armed tool's glyph, and, hung under it on a tap, the
+         mini toolbar and its overflow row (buttons built in code — CollapsedChrome, :sn-screen).
+         The button is GONE while the bars show; ChromeToggle flips it with them. All three sit
+         after every bar they may overlap and before the opening overlay, which stays topmost. -->
+    <androidx.appcompat.widget.AppCompatImageButton
+        android:id="@+id/collapsedKnob"
+        style="@style/Widget.Notesprout.ToolbarButton"
+        android:layout_gravity="top|end"
+        android:layout_margin="8dp"
+        android:background="@drawable/shape_dialog_bordered"
+        android:src="@drawable/ic_pen"
+        android:visibility="gone"
+        android:contentDescription="@string/collapsed_tools"/>
+
+    <LinearLayout
+        android:id="@+id/collapsedBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:background="@drawable/shape_dialog_bordered"
+        android:padding="4dp"/>
+
+    <LinearLayout
+        android:id="@+id/collapsedOverflow"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:background="@drawable/shape_dialog_bordered"
+        android:padding="4dp"/>
+
+    <include
+        android:id="@+id/openingOverlay"
+        layout="@layout/overlay_opening"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"/>
+
+</FrameLayout>

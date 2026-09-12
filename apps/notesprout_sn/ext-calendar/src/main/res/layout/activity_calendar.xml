@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Calendar screen (arc 23 / Y1) — the pad's shape: full-bleed paper with two thin chrome bars
+  overlaid. The PaperView is added into paperContainer programmatically; the grid is the page's
+  TEMPLATE, baked at the page's own size and set on the paper, so it scrolls, scales and registers
+  with the ink as one thing.
+
+  Both bars go to paper.setExclusionRects (via PaperChrome) after layout, so ink never lands under
+  chrome. Chrome sits flush at the top edge — the top guard is 0 on Ratta.
+
+  Top bar: Back and the three fixed tools on the left; on the right (Y2) Today, then the
+  Month/Week/Day toggles (text latches — the armed one is a thicker border, set from `showPage`,
+  never assumed from the tap), then Send (GONE without a notebook behind us), then Events (arc 24 /
+  Z2 — always visible, the calendar's door to its own event list), then Scratch Pad last. Bottom
+  bar: the pager and nothing else (F2 + 2026-08-28) — prev, the period's title, next — centred on
+  the SCREEN; the title is itself a tap target (Y2) that opens the day picker.
+
+  openingOverlay is the LAST child (topmost) and starts VISIBLE: the screen covers its own first
+  frame the way the notebook does, so the launch reads as one continuous "Opening…".
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/paperWhite">
+
+    <FrameLayout
+        android:id="@+id/paperContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <LinearLayout
+        android:id="@+id/topBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="@color/paperWhite"
+        android:orientation="vertical">
+
+        <FrameLayout
+            android:id="@+id/topBarRow"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/toolbar_bar_thickness"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_gravity="start"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnBack"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:contentDescription="@string/cd_calendar_back"
+                    android:src="@drawable/ic_arrow_left" />
+
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnPen"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:contentDescription="@string/cd_tool_pen"
+                    android:src="@drawable/ic_pen" />
+
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnEraser"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:contentDescription="@string/cd_tool_eraser"
+                    android:src="@drawable/ic_eraser" />
+
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnLasso"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:contentDescription="@string/cd_tool_lasso"
+                    android:src="@drawable/ic_lasso" />
+            </LinearLayout>
+
+            <!-- Today, the three view toggles, then the out-door — in that order, right-aligned.
+                 btnSend is Send page (this whole page, to the notebook the calendar was opened
+                 from), or Export (the host's Export screen, ic_download — arc 31 / HV4), or a sheet
+                 offering both; CalendarToolbar picks the face. A twelfth button overflows the
+                 Nomad's bar on the notebook door, so there is ONE. GONE when neither door is open
+                 — GONE, never disabled. -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_gravity="end|center_vertical"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <!-- Today and the three view latches are Tabler icons since Y4 (the user's calls):
+                     calendar-star, then calendar-month, calendar-week, and calendar with two ruled
+                     lines (ic_calendar_day, a Tabler derivative). The armed latch
+                     wears the ToolbarButton's selected border — the notebook's own armed-tool look. -->
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnToday"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:layout_marginEnd="8dp"
+                    android:src="@drawable/ic_calendar_star"
+                    android:contentDescription="@string/cd_calendar_today" />
+
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnMonth"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:layout_marginStart="4dp"
+                    android:src="@drawable/ic_calendar_month"
+                    android:contentDescription="@string/cd_calendar_view_month" />
+
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnWeek"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:src="@drawable/ic_calendar_week"
+                    android:contentDescription="@string/cd_calendar_view_week" />
+
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnDay"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:src="@drawable/ic_calendar_day"
+                    android:contentDescription="@string/cd_calendar_view_day" />
+
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnSend"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:layout_marginStart="8dp"
+                    android:contentDescription="@string/cd_calendar_send_page"
+                    android:src="@drawable/ic_pencil_down"
+                    android:visibility="gone" />
+
+                <!-- The Events door (arc 24 / Z2) — always visible; opens the calendar's own event
+                     list + editor for the current period's launch day (EventsLaunch). Sits between
+                     Send and the Scratch Pad door, never last: Scratch Pad keeps that spot on every
+                     bar. -->
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnEvents"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:layout_marginStart="8dp"
+                    android:contentDescription="@string/cd_calendar_events"
+                    android:src="@drawable/ic_calendar_event" />
+
+                <!-- The Scratch Pad door (Y4, the user's call) — the LAST button here as on every
+                     bar. The calendar cannot open another extension itself (an extension screen
+                     refuses any caller but the host), so a tap ends this showing with
+                     RESULT_CALENDAR_OPEN_SCRATCH_PAD and the host opens the pad, then brings the
+                     calendar back when the pad is closed. Shown only when the host said a trusted
+                     pad is installed (EXTRA_CALENDAR_SCRATCH_PAD_AVAILABLE) — GONE, never disabled. -->
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnScratchPad"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:layout_marginStart="8dp"
+                    android:contentDescription="@string/cd_calendar_scratch_pad"
+                    android:src="@drawable/ic_sketching"
+                    android:visibility="gone" />
+
+            </LinearLayout>
+
+        </FrameLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/calendar_bar_rule"
+            android:background="@color/inkBlack" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/bottomBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@color/paperWhite"
+        android:orientation="vertical">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/calendar_bar_rule"
+            android:background="@color/inkBlack" />
+
+        <!-- The pager only, centred on the SCREEN: [‹] [title] [›]. -->
+        <FrameLayout
+            android:id="@+id/bottomBarRow"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/toolbar_bar_thickness"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_gravity="center"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnPrev"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:contentDescription="@string/cd_prev_period"
+                    android:src="@drawable/ic_page_prev" />
+
+                <!-- Tap the title to open the day picker (Y2) — a tap target is dimen-driven even
+                     though this one is text, not an icon. -->
+                <TextView
+                    android:id="@+id/title"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@android:color/transparent"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:minWidth="160dp"
+                    android:minHeight="@dimen/toolbar_button_size"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:singleLine="true"
+                    android:textColor="@color/inkBlack"
+                    android:textSize="16sp"
+                    android:contentDescription="@string/cd_calendar_pick_day" />
+
+                <androidx.appcompat.widget.AppCompatImageButton
+                    android:id="@+id/btnNext"
+                    style="@style/Widget.Notesprout.ToolbarButton"
+                    android:contentDescription="@string/cd_next_period"
+                    android:src="@drawable/ic_page_next" />
+            </LinearLayout>
+
+        </FrameLayout>
+
+    </LinearLayout>
+
+    <!-- The selection's floating bar — Delete, and Send when a notebook is behind us. Placed by
+         :sn-screen's FloatingSelectionBar; the buttons are built in code. -->
+    <LinearLayout
+        android:id="@+id/selectionToolbar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:background="@drawable/shape_dialog_bordered"
+        android:orientation="horizontal"
+        android:padding="4dp"
+        android:visibility="gone" />
+
+    <!-- The collapsed chrome (arc 36 / C2) — what shows while both bars are hidden: the corner
+         tool button at top-right wearing the armed tool's glyph, and, hung under it on a tap, the
+         mini toolbar and its overflow row (buttons built in code — CollapsedChrome, :sn-screen).
+         The button is GONE while the bars show; ChromeToggle flips it with them. All three sit
+         after every bar they may overlap and BEFORE openingOverlay, which stays topmost while the
+         screen opens — a corner button laid over it would take the taps the overlay is there to
+         swallow. -->
+    <androidx.appcompat.widget.AppCompatImageButton
+        android:id="@+id/collapsedKnob"
+        style="@style/Widget.Notesprout.ToolbarButton"
+        android:layout_gravity="top|end"
+        android:layout_margin="8dp"
+        android:background="@drawable/shape_dialog_bordered"
+        android:src="@drawable/ic_pen"
+        android:visibility="gone"
+        android:contentDescription="@string/collapsed_tools" />
+
+    <LinearLayout
+        android:id="@+id/collapsedBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:background="@drawable/shape_dialog_bordered"
+        android:orientation="horizontal"
+        android:padding="4dp"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/collapsedOverflow"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:background="@drawable/shape_dialog_bordered"
+        android:orientation="horizontal"
+        android:padding="4dp"
+        android:visibility="gone" />
+
+    <!-- "Opening…" — the screen's own box (the host's core/OpeningOverlay is :app's and never
+         crosses). Full-screen but transparent and clickable: it swallows the second tap a slow
+         e-ink refresh invites while the page is still being read. -->
+    <FrameLayout
+        android:id="@+id/openingOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/transparent"
+        android:clickable="true"
+        android:focusable="true">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:background="@drawable/shape_dialog_bordered"
+            android:orientation="vertical"
+            android:padding="24dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/calendar_opening"
+                android:textColor="@color/inkBlack"
+                android:textSize="16sp" />
+
+        </LinearLayout>
+
+    </FrameLayout>
+
+    <!-- The eraser button's sub-bar (arc 29 / LE3) — Point / Lasso, hung under the armed eraser
+         button by SelectionAnchor.placeUnder. Buttons are built in code (EraserBar, :sn-screen).
+         **Last child of the root**: a floating bar must be a later sibling than anything it could
+         overlap, and the top bar's buttons are inside the earlier LinearLayout. It is GONE the whole
+         time openingOverlay is up (the bar cannot open before the page is on the paper), so the
+         overlay stays the topmost VISIBLE child while opening. -->
+    <LinearLayout
+        android:id="@+id/eraserBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:background="@drawable/shape_dialog_bordered"
+        android:orientation="horizontal"
+        android:padding="4dp"
+        android:visibility="gone" />
+
+</FrameLayout>

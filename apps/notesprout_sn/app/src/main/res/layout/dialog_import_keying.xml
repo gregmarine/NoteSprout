@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Arc 26 / U5, decision 3: the import keying chooser — three answers, so they are three rows in
+     the dialog's own body rather than a button bar (an AlertDialog has room for two and a Cancel).
+     Cancel stays the negative button, where every other import question puts it. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
+    android:paddingTop="16dp"
+    android:paddingBottom="0dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/import_keying_choose_body"
+        android:textColor="@color/inkBlack"
+        android:textSize="14sp" />
+
+    <androidx.appcompat.widget.AppCompatButton
+        android:id="@+id/choiceKeep"
+        style="@style/Widget.Notesprout.OutlinedButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/import_keying_keep" />
+
+    <androidx.appcompat.widget.AppCompatButton
+        android:id="@+id/choiceDevice"
+        style="@style/Widget.Notesprout.OutlinedButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/import_keying_device" />
+
+    <androidx.appcompat.widget.AppCompatButton
+        android:id="@+id/choiceNew"
+        style="@style/Widget.Notesprout.OutlinedButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/import_keying_new" />
+</LinearLayout>

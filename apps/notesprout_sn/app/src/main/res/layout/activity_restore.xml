@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Restore (arc 27 / L3): one screen with two states in one layout — the source pick, and the
+     backups found in the folder that was picked.
+
+     The chrome is Backup's: a LinearLayout top bar with the back arrow and the title, then a 1dp
+     inkBlack rule, then the body in a ScrollView. There is no top-bar action here — the action is
+     a row in the list, and the confirmation before it is a dialog.
+
+     Nothing is ever disabled: the cloud row is GONE unless a trusted cloud provider is installed,
+     which is the Backup screen's Cloud-section rule — on e-ink a disabled control is invisible and
+     reads as broken. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/paperWhite">
+
+    <LinearLayout
+        android:id="@+id/topBar"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/toolbar_bar_thickness"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnBack"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_arrow_left"
+            android:contentDescription="@string/cd_back" />
+
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="8dp"
+            android:text="@string/restore_title"
+            android:textColor="@color/inkBlack"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:ellipsize="end" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/inkBlack" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:overScrollMode="never"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="16dp">
+
+            <!-- State 1: where to restore from. Two rows and no more — the pick itself is the
+                 platform's folder picker, and the cloud row (arc 27 / L4) reads the same
+                 `Backups/<device>/` folders a cloud backup run writes. -->
+            <LinearLayout
+                android:id="@+id/sourcesPane"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/restore_caption"
+                    android:textColor="@color/inkBlack"
+                    android:textSize="13sp" />
+
+                <androidx.appcompat.widget.AppCompatButton
+                    android:id="@+id/btnFromFolder"
+                    style="@style/Widget.Notesprout.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="@string/restore_from_folder" />
+
+                <!-- The cloud source (arc 27 / L4). GONE — never disabled — while no trusted
+                     cloud provider is installed; the screen re-runs discovery on every resume,
+                     because a package can be disabled or replaced under a standing screen. -->
+                <androidx.appcompat.widget.AppCompatButton
+                    android:id="@+id/btnFromCloud"
+                    style="@style/Widget.Notesprout.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/restore_from_cloud"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <!-- State 2: the backups the chosen source holds. The caption names a local folder by
+                 its display path, never by its URI; the cloud source names its provider instead and
+                 carries its own "Backups in" wording, so the caption goes GONE for it. -->
+            <LinearLayout
+                android:id="@+id/listPane"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/listCaption"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/restore_folder_caption"
+                    android:textColor="@color/inkBlack"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/folderPath"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:textColor="@color/inkBlack"
+                    android:textSize="16sp" />
+
+                <LinearLayout
+                    android:id="@+id/rows"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="vertical" />
+
+                <androidx.appcompat.widget.AppCompatButton
+                    android:id="@+id/btnChooseAnother"
+                    style="@style/Widget.Notesprout.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:text="@string/restore_choose_another" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>

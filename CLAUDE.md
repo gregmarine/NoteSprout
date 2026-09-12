@@ -5,7 +5,11 @@ devices first (BOOX), expanding to iPad, Android tablets, phones, and web.
 
 - **Slogan:** "Where thought has a place to grow 🌱"
 - **License:** MIT · **Monorepo root:** `~/git/Notesprout`
-- `apps/notesprout_android` — Native Android app (primary active codebase)
+- `apps/notesprout_android` — Native Android app for BOOX and generic Android (the original app)
+- `apps/notesprout_sn` — **Notesprout SN**, the official Supernote version: a from-scratch host +
+  extension-APK build over the g-paper Ratta firmware-ink engine (complete, on `main` since
+  2026-09-11; its own `CLAUDE.md`, `docs/`, Gradle root, and module set — read that `CLAUDE.md`
+  before any work there)
 
 ---
 
@@ -144,9 +148,16 @@ skill (`.claude/skills/device-build-install/SKILL.md`) — invoked automatically
 
 ## Branch Strategy
 
-- `main` — stable release branch **and the current working branch** (v1.0 "Seed" through v1.3
-  "Supernote" shipped; the release merge commits are in git history). **No active feature branch** —
-  until the next one is cut, work lands here.
+- `main` — stable release branch (v1.0 "Seed" through v1.3 "Supernote" shipped; the release merge
+  commits are in git history).
+- `ratta` — **merged to `main` 2026-09-11 (`--no-ff`, tag `notesprout-sn-0.1.0`) and deleted** —
+  "on ratta" means `main`. It carried Notesprout SN, the official Supernote version, under
+  `apps/notesprout_sn/` (renamed from `apps/notesprout_ratta` at the merge). Arcs 1–36 are all
+  COMPLETE + FROZEN and `apps/notesprout_sn/PARITY_BACKLOG.md` is closed. That app's `CLAUDE.md`
+  holds the maintenance protocol and the still-binding rules; `RATTA_PLAN.md` + the per-arc
+  `<ARC>_PLAN.md` files there are history (plan + ledger — read for *why*, never resumed). **No
+  NINTH extension point and no new arc without a user decision; no re-raising waived review
+  findings.**
 - `germination` — previous post-MVP feature branch (reference, not active)
 - The former feature branches (`seed`, `sprout`, `sapling`, `supernote`, `paper`) are merged and
   **deleted** (local + remote) — "on sprout/sapling/supernote/paper" means `main`; history lives under

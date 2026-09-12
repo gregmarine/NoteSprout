@@ -1,0 +1,357 @@
+package com.symmetricalpalmtree.notesproutsn.ext.calendar
+
+import android.util.Log
+import com.symmetricalpalmtree.gpaper.core.model.Stroke
+import com.symmetricalpalmtree.notesproutsn.core.Slog
+import com.symmetricalpalmtree.notesproutsn.extension.ExtensionContract
+import com.symmetricalpalmtree.notesproutsn.extension.IExtensionStore
+import com.symmetricalpalmtree.notesproutsn.extension.Row
+import com.symmetricalpalmtree.notesproutsn.extension.Statement
+import com.symmetricalpalmtree.notesproutsn.extension.StoreReads
+import com.symmetricalpalmtree.notesproutsn.ink.InkStore
+import java.time.LocalDate
+
+/**
+ * The events half of the calendar's store (arc 24 / Z1), on `:ext-ink`'s [InkStore] — the same base
+ * the pages half sits on, so the batch split, the compensated multi-batch write, the one-rule error
+ * mapping and the planned stroke read are shared rather than repeated.
+ *
+ * **Blocking** — every call runs on `Dispatchers.IO` or a Binder thread, never Main. Every failure
+ * is `StoreUnavailable`; the two refusals that are *not* store failures ([EventRules.Problem]) are
+ * `IllegalArgumentException`, raised before anything is sent.
+ *
+ * **It does not apply the schema.** [CalendarStore.open] already did, and the host refuses `exec` /
+ * `query` on a binder that has not declared — which is fine here, because the calendar screen is
+ * the only door to the events screens and it always opens first.
+ *
+ * **No read carries an `IN (…)` list** ([EventSql]). A day (or a month's range) costs six queries
+ * whatever it holds: the one-offs the range overlaps and their reminders, then the recurring set
+ * and its three child sets, each by a JOIN. Expansion happens in Kotlin, because no `WHERE` can
+ * answer "does this rule land on that day".
+ *
+ * **A bad row is a dropped event, never a lost day** ([EventRows]): undecodable rows are counted
+ * and logged once per read, and the day still lists everything else. Logs carry counts, ids and
+ * durations — **never a title or a note**: event text is user content.
+ */
+class EventStore(
+    store: IExtensionStore,
+    maxPayloadBytes: Int = ExtensionContract.STORE_MAX_VALUE_BYTES,
+    maxBatchStatements: Int = ExtensionContract.STORE_MAX_BATCH_STATEMENTS,
+    private val clock: () -> Long = System::currentTimeMillis,
+) : InkStore(store, maxPayloadBytes, maxBatchStatements, TAG), MarkSource {
+
+    // ── Reading ──────────────────────────────────────────────────────────────
+
+    /**
+     * The **grid's** read (arc 24 / Z4): every day in `[from, to]` that holds anything, mapped to
+     * its [DayMark]s in [EventOrder.DAY].
+     *
+     * Exactly [eventsInRange]'s six queries and Kotlin expansion — a Month page's 42 cells cost
+     * what one day costs — narrowed to the four fields the template draws. Nothing about the range
+     * is the grid's own: what a page shows is [GridMarks.rangeOf]'s, so the marks and the cells can
+     * never disagree about which days are on the paper.
+     */
+    override fun marksFor(from: LocalDate, to: LocalDate): Map<LocalDate, List<DayMark>> {
+        val byDay = eventsInRange(from, to)
+        val marks = LinkedHashMap<LocalDate, List<DayMark>>(byDay.size)
+        for ((day, events) in byDay) marks[day] = events.map(DayMark::of)
+        // Counts only — an event's title is the person's own words.
+        Slog.d(TAG) { "marks $from..$to: ${marks.size} day(s), ${marks.values.sumOf { it.size }} mark(s)" }
+        return marks
+    }
+
+    /**
+     * Every day in `[from, to]` that holds anything, mapped to its events in [EventOrder.DAY].
+     * Ascending, and **days with nothing are absent** — a month grid asks about 42 days and usually
+     * cares about four of them.
+     */
+    fun eventsInRange(from: LocalDate, to: LocalDate): Map<LocalDate, List<Event>> = guard {
+        // Read order is the pinned one — the one-offs and their reminders, then the recurring set
+        // and its three child sets (`aRangeIsSixQueries_…`).
+        val raw = readOneOffs(EventSql.selectOneOffsOverlapping(from, to), EventSql.selectRemindersOverlapping(from, to))
+        val series = recurringSeries()
+        val oneOffs = raw.decoded(series)
+        reportDropped(series.dropped + oneOffs.dropped)
+        val recurring = series.events
+
+        // Each recurring series is expanded over the whole range ONCE (arc 34 / L7): a COUNT rule
+        // enumerates its own N inside `occursOn`, so asking it per day made a Month grid's 42 cells
+        // regenerate a "100 times" series 42 times. Day order is unchanged — one-offs in row order,
+        // then the recurring set in row order, then `EventOrder.DAY`, whose sort is stable.
+        val recurringDays = recurring.map { it to Recurrence.coveredDays(it, from, to) }
+        val out = LinkedHashMap<LocalDate, List<Event>>()
+        var day = from
+        while (!day.isAfter(to)) {
+            val onDay = ArrayList<Event>()
+            for (e in oneOffs.events) if (!e.startDate.isAfter(day) && !e.endDate.isBefore(day)) onDay += e
+            for ((e, days) in recurringDays) if (day in days) onDay += e
+            if (onDay.isNotEmpty()) out[day] = onDay.sortedWith(EventOrder.DAY)
+            day = day.plusDays(1)
+        }
+        out
+    }
+
+    /** One day's events, in [EventOrder.DAY]. */
+    fun eventsOn(day: LocalDate): List<Event> = eventsInRange(day, day)[day].orEmpty()
+
+    /** The **Upcoming** look-ahead for [day] ([Upcoming]) — the one-offs starting inside the window
+     *  and the whole recurring set, each probed against its own reminders. */
+    fun upcomingOn(day: LocalDate): List<UpcomingEvent> = guard {
+        val raw = lookAhead(day)
+        val series = recurringSeries()
+        val ahead = raw.decoded(series)
+        reportDropped(series.dropped + ahead.dropped)
+        Upcoming.forDay(day, ahead.events, series.events)
+    }
+
+    /** One day's list and its [Upcoming] look-ahead, in **one** pass (arc 34 / L8).
+     *
+     * The events screen wants both and asked for them one after the other, which read the whole
+     * recurring set — the series rows and their three child sets, four of the six queries — and
+     * decoded it twice. Everything the two answers share is read once here; what differs is only
+     * the one-off window (the day itself vs. the look-ahead horizon) and its reminders. */
+    fun dayAndUpcoming(day: LocalDate): DayAndUpcoming = guard {
+        val rawDay = readOneOffs(EventSql.selectOneOffsOverlapping(day, day), EventSql.selectRemindersOverlapping(day, day))
+        val rawAhead = lookAhead(day)
+        val series = recurringSeries()
+        val onDay = rawDay.decoded(series)
+        val ahead = rawAhead.decoded(series)
+        reportDropped(series.dropped + onDay.dropped + ahead.dropped)
+
+        val today = ArrayList<Event>()
+        for (e in onDay.events) if (!e.startDate.isAfter(day) && !e.endDate.isBefore(day)) today += e
+        for (e in series.events) if (Recurrence.occursOn(e, day)) today += e
+        DayAndUpcoming(today.sortedWith(EventOrder.DAY), Upcoming.forDay(day, ahead.events, series.events))
+    }
+
+    /** [dayAndUpcoming]'s two answers. */
+    data class DayAndUpcoming(val today: List<Event>, val upcoming: List<UpcomingEvent>)
+
+    /** One event by id, with its children; null when there is no such row or it will not decode. */
+    fun get(id: String): Event? = guard {
+        val row = StoreReads.all(store, EventSql.selectEvent(id)).rows.firstOrNull() ?: return@guard null
+        val weekdays = LinkedHashSet<Int>()
+        for (r in StoreReads.all(store, EventSql.selectWeekdays(id)).rows) EventRows.weekday(r)?.let { weekdays += it }
+        val exceptions = LinkedHashSet<LocalDate>()
+        for (r in StoreReads.all(store, EventSql.selectExceptions(id)).rows) EventRows.exceptionDate(r)?.let { exceptions += it }
+        val reminders = ArrayList<Reminder>()
+        for (r in StoreReads.all(store, EventSql.selectReminders(id)).rows) EventRows.reminder(r)?.let { reminders += it }
+        EventRows.decode(row, weekdays, exceptions, EventRules.normalize(reminders))
+    }
+
+    /** The event's note, read in planned ranges — a note is one page, but a page has no ceiling. */
+    fun readNote(eventId: String): List<Pair<Long, Stroke>> = guard {
+        readStrokes(eventId, NoteSql.selectStrokeLens(eventId)) { NoteSql.selectStrokes(eventId, it) }
+    }
+
+    /** Where new ink on the note starts numbering; `-1` when it holds none. */
+    fun noteMaxOrder(eventId: String): Long = guard {
+        StoreReads.all(store, NoteSql.selectMaxOrder(eventId)).rows.firstOrNull()?.long("maxOrder") ?: -1L
+    }
+
+    // ── Writing ──────────────────────────────────────────────────────────────
+
+    /**
+     * Save [e] — the row, its three child sets and [note]'s statements, one statement list and
+     * therefore one transaction whenever it fits the batch cap.
+     *
+     * The caps run first ([EventRules]) whatever the editor already did, and a [EventRules.Problem]
+     * is an `IllegalArgumentException` rather than a silent write: a row that occurs on no day is
+     * invisible to every query, which would look exactly like a lost save.
+     *
+     * Past the cap the write is several transactions and a failure part-way is **compensated**. What
+     * the compensation is depends on what this save was: a **new** event that only half landed is
+     * not an event, so it is deleted by id and the cascade takes whatever children did land; an
+     * **existing** event keeps its row and gives back only the strokes this save minted, one
+     * `DELETE` each (never an `IN (…)` list — the calendar's placement rule). The batches go in
+     * [EventWrite]'s order — additions, the note's mutations, the row's rewrite whole and last — so
+     * whatever batch fails, the event as it was before the write is what the compensation leaves
+     * (arc 34 / M5).
+     */
+    fun save(e: Event, isNew: Boolean, note: NoteWrite = NoteWrite.NONE) {
+        val event = refuseProblems(e)
+        val now = clock()
+        guard {
+            write(EventWrites.save(event, now, note)) { compensation(event.id, isNew, note.mintedStrokeIds) }
+        }
+        Slog.d(TAG) { "save ${event.id}: ${if (isNew) "new" else "existing"}, ${note.statements.size} note statement(s)" }
+    }
+
+    /** Delete at [scope] as seen on [viewedDay]; false when the day maps to no occurrence and there
+     *  is nothing to do (never a whole-series delete by accident). */
+    fun delete(scope: Scope, event: Event, viewedDay: LocalDate): Boolean {
+        val statements = EventWrites.deleteWithScope(scope, event, viewedDay, clock()) ?: return false
+        execAll(statements)
+        Slog.d(TAG) { "delete ${event.id} at $scope: ${statements.size} statement(s)" }
+        return true
+    }
+
+    /**
+     * Edit at [scope] as seen on [viewedDay]. Answers **the id the edited fields landed under** —
+     * the original's for an in-place series edit, a freshly minted one for a "this occurrence"
+     * override or a new series — or null when the day maps to no occurrence and there is nothing
+     * to do. [original] is null for a brand-new event, which is always a plain save.
+     *
+     * [note] is asked **for that id** (arc 24 / Z3): the note's own op log when the fields land
+     * in place, a whole copy under fresh stroke ids when they land under a new one — the screen
+     * cannot know which until the scope has been resolved here, so the store asks rather than
+     * takes ([NoteWrite]). [newId] is the id a new row would take; a caller passes its own so it
+     * can build both answers on Main *before* the IO hop (the note's page is Main-thread state,
+     * and the pen keeps writing while the store call runs), and hand [note] a lookup.
+     */
+    fun edit(
+        scope: Scope,
+        original: Event?,
+        edited: Event,
+        viewedDay: LocalDate,
+        newId: String = newId(),
+        note: (landedUnder: String) -> NoteWrite = { NoteWrite.NONE },
+    ): String? {
+        val event = refuseProblems(edited)
+        val landedUnder = EventWrites.editLandsUnder(scope, original, event, viewedDay, newId) ?: return null
+        val now = clock()
+        val write = note(landedUnder)
+        val statements = EventWrites.editWithScope(scope, original, event, viewedDay, newId, now, write) ?: return null
+        guard {
+            write(statements) { compensation(landedUnder, landedUnder == newId, write.mintedStrokeIds) }
+        }
+        Slog.d(TAG) { "edit ${event.id} at $scope → $landedUnder: ${statements.statements.size} statement(s)" }
+        return landedUnder
+    }
+
+    /** A fresh event (or note-page) id. */
+    fun newId(): String = CalendarStore.newId()
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /** [EventRules] applied, and its [EventRules.Problem]s refused — outside `guard`, because these
+     *  are the caller's mistake and not the store being gone. */
+    private fun refuseProblems(e: Event): Event {
+        val event = EventRules.normalize(e)
+        EventRules.problem(event)?.let { throw IllegalArgumentException("event refused: $it") }
+        return event
+    }
+
+    /** [compensated] over [EventWrite.batches] — the rewrite whole and last (arc 34 / M5). */
+    private fun write(w: EventWrite, compensation: () -> List<Statement>) =
+        compensatedBatches(w.batches(maxPayloadBytes, maxBatchStatements), compensation)
+
+    /** What a failed multi-batch write gives back — see [save]. */
+    private fun compensation(id: String, isNew: Boolean, mintedStrokeIds: List<String>): List<Statement> =
+        if (isNew) listOf(EventSql.deleteEvent(id)) else mintedStrokeIds.map { NoteSql.dropStroke(it) }
+
+    /** A decoded set of event rows and how many of them would not decode. */
+    private class Decoded(val events: List<Event>, val dropped: Int)
+
+    /** The whole recurring set with its three child sets — the four queries the day read and the
+     *  look-ahead both need, so a caller that wants both pays for them once. */
+    private fun recurringSeries(): Series {
+        val rows = StoreReads.all(store, EventSql.selectRecurring()).rows
+        val weekdays = weekdaysBy()
+        val exceptions = exceptionsBy()
+        val reminders = remindersBy(EventSql.selectRecurringReminders())
+        val decoded = decodeAll(rows, weekdays, exceptions, reminders)
+        return Series(decoded.events, decoded.dropped, weekdays, exceptions)
+    }
+
+    /** [recurringSeries]' answer: the series themselves, plus the two child maps a one-off read
+     *  still needs (a one-off has neither, but [decode] is one function for both kinds). */
+    private class Series(
+        val events: List<Event>,
+        val dropped: Int,
+        val weekdays: Map<String, Set<Int>>,
+        val exceptions: Map<String, Set<LocalDate>>,
+    )
+
+    /** One-off rows read but not yet decoded — a one-off carries no weekdays and no exceptions,
+     *  but [decode] is one function for both kinds, so the two maps the series read produces are
+     *  what it waits for. Reading first keeps the pinned query order. */
+    private class RawOneOffs(val rows: List<Row>, val reminders: Map<String, List<Reminder>>)
+
+    private fun readOneOffs(rows: Statement, reminders: Statement): RawOneOffs =
+        RawOneOffs(StoreReads.all(store, rows).rows, remindersBy(reminders))
+
+    private fun RawOneOffs.decoded(series: Series): Decoded =
+        decodeAll(rows, series.weekdays, series.exceptions, reminders)
+
+    private fun lookAhead(day: LocalDate): RawOneOffs {
+        val horizon = day.plusDays(Upcoming.MAX_LOOKAHEAD_DAYS.toLong())
+        return readOneOffs(
+            EventSql.selectOneOffsStartingIn(day, horizon),
+            EventSql.selectRemindersStartingIn(day, horizon),
+        )
+    }
+
+    private fun decodeAll(
+        rows: List<Row>,
+        weekdays: Map<String, Set<Int>>,
+        exceptions: Map<String, Set<LocalDate>>,
+        reminders: Map<String, List<Reminder>>,
+    ): Decoded {
+        val out = ArrayList<Event>(rows.size)
+        var dropped = 0
+        for (row in rows) {
+            val e = decode(row, weekdays, exceptions, reminders)
+            if (e == null) dropped++ else out += e
+        }
+        return Decoded(out, dropped)
+    }
+
+    /** Counts only — an event's title is the person's own words. */
+    private fun reportDropped(dropped: Int) {
+        if (dropped > 0) Log.w(TAG, "$dropped event row(s) dropped")
+    }
+
+    private fun decode(
+        row: Row,
+        weekdays: Map<String, Set<Int>>,
+        exceptions: Map<String, Set<LocalDate>>,
+        reminders: Map<String, List<Reminder>>,
+    ): Event? {
+        val id = try {
+            row.text("id")
+        } catch (e: Exception) {
+            return null
+        }
+        return EventRows.decode(row, weekdays[id].orEmpty(), exceptions[id].orEmpty(), reminders[id].orEmpty())
+    }
+
+    private fun weekdaysBy(): Map<String, Set<Int>> {
+        val out = HashMap<String, MutableSet<Int>>()
+        for (row in StoreReads.all(store, EventSql.selectRecurringWeekdays()).rows) {
+            val id = eventIdOf(row) ?: continue
+            EventRows.weekday(row)?.let { out.getOrPut(id) { LinkedHashSet() } += it }
+        }
+        return out
+    }
+
+    private fun exceptionsBy(): Map<String, Set<LocalDate>> {
+        val out = HashMap<String, MutableSet<LocalDate>>()
+        for (row in StoreReads.all(store, EventSql.selectRecurringExceptions()).rows) {
+            val id = eventIdOf(row) ?: continue
+            EventRows.exceptionDate(row)?.let { out.getOrPut(id) { LinkedHashSet() } += it }
+        }
+        return out
+    }
+
+    /** The reminders of whatever set [statement] selects, grouped by event and normalized — one
+     *  order and one cap, wherever the rows came from. */
+    private fun remindersBy(statement: Statement): Map<String, List<Reminder>> {
+        val out = HashMap<String, MutableList<Reminder>>()
+        for (row in StoreReads.all(store, statement).rows) {
+            val id = eventIdOf(row) ?: continue
+            EventRows.reminder(row)?.let { out.getOrPut(id) { ArrayList() } += it }
+        }
+        return out.mapValues { (_, list) -> EventRules.normalize(list) }
+    }
+
+    private fun eventIdOf(row: Row): String? = try {
+        row.text("eventId")
+    } catch (e: Exception) {
+        null
+    }
+
+    companion object {
+        private const val TAG = "EventStore"
+    }
+}

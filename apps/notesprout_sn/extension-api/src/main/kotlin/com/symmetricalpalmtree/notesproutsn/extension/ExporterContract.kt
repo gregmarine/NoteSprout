@@ -1,0 +1,229 @@
+package com.symmetricalpalmtree.notesproutsn.extension
+
+/**
+ * The notebook-exporter capability point (arc 15 / E1 — SN's THIRD, on the user's explicit
+ * 2026-08-27 decision). Any number of trusted exporter extensions may register under
+ * [ACTION_NOTEBOOK_EXPORTER]; each `describe()`s the one format it offers and the host's Export
+ * screen lists whatever is installed.
+ *
+ * **The seam: the host keys, the extension delivers via fds.** Everything that touches a key runs
+ * in the host — the transient checkpoint, the keying transform, the SAF destination. The extension
+ * receives **two `ParcelFileDescriptor`s** (read: the prepared artifact · write: the destination)
+ * plus an [ExportSpec], and produces the output. **No passphrase, no path, no SQLCipher ever
+ * crosses**; the extension writes only through the granted write fd — the writes-nothing-to-disk
+ * rule, kept to the letter.
+ *
+ * Option values cross as a plain id → value map ([ExportSpec.values]). The reserved
+ * [OPTION_KEYING] is recognized and **executed by the host**: its transform runs host-side, and a
+ * typed passphrase never enters the spec — only the chosen value id does. The same rule holds for
+ * any [KIND_PASSPHRASE] option: the host collects the secret with its own fields and the spec
+ * carries **no entry at all** for it — a passphrase-kind option exists to *ask the host* for a
+ * host-executed step, never to receive the secret.
+ *
+ * Two further ids are reserved by arc 18 / D2, both plain toggles the exporter declares and labels
+ * itself: [OPTION_PAGE_TEMPLATE], whose work is the host's render, and [OPTION_PROTECT], whose work
+ * is the extension's — the host only collects the secret and hands it over on
+ * [ExportSpec.exportSecret].
+ */
+object ExporterContract {
+
+    /** Intent action a notebook-exporter `<service>` declares in its intent-filter. */
+    const val ACTION_NOTEBOOK_EXPORTER: String =
+        "com.symmetricalpalmtree.notesproutsn.extension.NOTEBOOK_EXPORTER"
+
+    // ── Descriptor caps (enforced by the parcelable constructors — unmarshal is validation;
+    //    a descriptor that fails them drops that exporter with a log line, never a crash) ──────
+
+    /** Most options one exporter may declare. */
+    const val MAX_OPTIONS: Int = 8
+
+    /** Most choices one single-choice option may declare. */
+    const val MAX_CHOICES: Int = 8
+
+    /** Longest option / choice id (chars). Ids are `[A-Za-z0-9_-]+` — they double as spec-map keys. */
+    const val MAX_ID_CHARS: Int = 32
+
+    /** Longest human label (format label, option label, choice label). */
+    const val MAX_LABEL_CHARS: Int = 80
+
+    /** Longest file extension (chars, lowercase alphanumeric, no leading dot). */
+    const val MAX_FILE_EXTENSION_CHARS: Int = 12
+
+    /** Longest MIME type. */
+    const val MAX_MIME_CHARS: Int = 128
+
+    /** Longest option value in the spec map (a choice id or a toggle "0"/"1" — never free text). */
+    const val MAX_SPEC_VALUE_CHARS: Int = 64
+
+    /** Longest notebook display name carried in the spec (display only — never a path). */
+    const val MAX_NAME_CHARS: Int = 200
+
+    // ── Option kinds ──────
+
+    /** One of a bounded list of choices; the value that crosses is the chosen choice id. */
+    const val KIND_SINGLE_CHOICE: Int = 0
+
+    /** On/off; the value that crosses is `"1"` / `"0"`. */
+    const val KIND_TOGGLE: Int = 1
+
+    /** A secret the host collects and consumes itself. **No entry ever crosses in the spec.** */
+    const val KIND_PASSPHRASE: Int = 2
+
+    // ── Source kinds (arc 18 — `ExporterInfo`'s compatible tail) ──────
+    // What an exporter asks the host to hand it through the read fd. Absent on an old-shape
+    // descriptor, which means SOURCE_SOIL — the tail changed nothing for existing exporters.
+
+    /** The prepared `.soil` artifact, streamed verbatim (arc 15's original, and the default). */
+    const val SOURCE_SOIL: Int = 0
+
+    /**
+     * A host-rendered page bundle ([PageBundle]) — every page baked full-fidelity into encoded
+     * images, for an exporter that could never receive the `.soil` itself (no key ever crosses).
+     * The output is a *transform* of the source, so the host's verbatim byte-count check does not
+     * apply; verification is per source kind (destination corroboration only).
+     */
+    const val SOURCE_PAGES: Int = 1
+
+    /**
+     * The notebook's **document** — the authored Markdown draft (arc 19 / M9) — assembled by the
+     * host into final UTF-8 text bytes and streamed through the read fd. **Final** is the word
+     * that carries the seam: the host executes the reserved [OPTION_TEXT_FORMAT] choice before
+     * the stream (a plain-text export is stripped host-side, through the shared `:markdown`
+     * engine), so the extension is a verbatim streamer exactly like the soil exporter and the
+     * verbatim `bytesWritten == streamBytes` equality applies to this kind too. What the host
+     * assembles: the notebook document when one exists, else the per-page documents in page
+     * order joined by blank lines, undocumented pages skipped — and **never** recognition
+     * (export never recognizes; a notebook with no document at all is refused host-side, and
+     * the Export screen does not list such an exporter for it).
+     *
+     * Declaring this kind requires API version 3 of the host (the D3 skew-guard recipe): a
+     * version-2 host would fail the descriptor's unmarshal on the unknown kind — a silent drop —
+     * but the declared 3 makes the skip happen at discovery, before any bind.
+     */
+    const val SOURCE_DOCUMENT: Int = 2
+
+    // ── Delivery (arc 31 / HV1 — `ExporterInfo`'s third compatible tail) ──────
+    // How many files one export produces. Absent on an old-shape descriptor, which means ONE_FILE —
+    // every exporter that existed before the tail is a one-call-one-file exporter, and the seam's
+    // `export(source, destination, spec)` contract is unchanged: a per-page exporter is still
+    // called once per file. What changes is on the HOST side only — at a scope of more than one
+    // page it bakes the bundle once, splits it into one-page bundles, and calls the exporter once
+    // per page with a fresh destination fd in a folder the user picked.
+
+    /** One export → one file (arc 15's original, and the default). */
+    const val DELIVERY_ONE_FILE: Int = 0
+
+    /**
+     * One export → one file **per page**: a raster format (PNG) that has no notion of a multi-page
+     * document. Legal only with [SOURCE_PAGES] (a `.soil` or a text document has no pages to
+     * split by — `ExportOptions.isRenderable` refuses the pair), and the exporter must treat a
+     * bundle of more than one page as a failure, never silently write the first: the host
+     * guarantees one page per call, and a host that did not would be an old host — which is why a
+     * declaring exporter's manifest carries [MIN_API_VERSION_FOR_DELIVERY] (the D3 skew guard: an
+     * API-8 host reads the tail as absent, streams a whole notebook at it, and would report the
+     * first page as the whole export).
+     */
+    const val DELIVERY_PER_PAGE: Int = 1
+
+    /**
+     * The host version that reads the [ExporterInfo.delivery] tail. A [DELIVERY_PER_PAGE]
+     * exporter declares this in its `<service>` meta-data so an older host skips it at discovery
+     * rather than treating it as a one-file exporter. The host reads the tail only from a service
+     * declaring at least this — a lower declaration is [DELIVERY_ONE_FILE] whatever the parcel
+     * carries, so the declaration and the tail can never disagree about what the host will do.
+     */
+    const val MIN_API_VERSION_FOR_DELIVERY: Int = 9
+
+    /**
+     * Longest export secret ([ExportSpec.exportSecret], chars) — the ONE deliberate secret that
+     * ever crosses an extension seam: user-typed, export-scoped, opens no Notesprout data (a PDF
+     * password, say). Never the global passphrase, never the device key, never [KIND_PASSPHRASE]
+     * (whose never-crosses meaning is unchanged).
+     */
+    const val MAX_EXPORT_SECRET_CHARS: Int = 128
+
+    // ── The reserved keying option ──────
+    // Declared by an exporter like any single-choice option, but recognized by id and EXECUTED BY
+    // THE HOST: the transform (`SoilCrypto`) runs host-side on the cache temp before the fds are
+    // opened, and the "rekey" choice makes the host show its own passphrase + confirm fields.
+
+    /** The reserved option id. */
+    const val OPTION_KEYING: String = "keying"
+
+    /** Keep encrypted under this device's key — a pure file copy. */
+    const val KEYING_KEEP: String = "keep"
+
+    /** Re-key to a passphrase of the file's own (typed + confirmed, host-owned fields). */
+    const val KEYING_REKEY: String = "rekey"
+
+    /** Remove encryption — plaintext output (the host shows the inline plain warning). */
+    const val KEYING_PLAIN: String = "plain"
+
+    // ── The reserved arc-18 option ids (D2) ──────
+    // Both are ordinary [KIND_TOGGLE] options an exporter declares for itself — so the user reads
+    // the exporter's own label — but each is recognized by id, because each one names something
+    // the *host* has to do about it. Declaring neither is still a complete descriptor.
+
+    /**
+     * "Render the page's paper under the ink" — reserved for a [SOURCE_PAGES] exporter, and
+     * **executed by the host**: `"1"` bakes each page's template under its content (the D1
+     * behavior), `"0"` bakes the ink on a white ground. The value crosses in the spec map like any
+     * toggle, so the extension still learns what was asked, but the work is entirely the render's:
+     * there is no template left in the bundle for an extension to put back.
+     */
+    const val OPTION_PAGE_TEMPLATE: String = "template"
+
+    /**
+     * "Protect the output with a password" — arming it (`"1"`) makes the host collect an
+     * export-time secret with its **own dual masked fields** and send it on
+     * [ExportSpec.exportSecret]; `"0"` or absent means no secret at all. The protection itself is
+     * the **extension's** work — this is not a host-executed option, only a host-collected secret.
+     *
+     * [KIND_PASSPHRASE] keeps its never-crosses meaning untouched: this is a password for the file
+     * being written, never the global Notesprout passphrase, never derived from it, never the
+     * device key. See [ExportSpec.exportSecret] and [MAX_EXPORT_SECRET_CHARS].
+     */
+    const val OPTION_PROTECT: String = "protect"
+
+    /**
+     * "Which text format" — reserved for a [SOURCE_DOCUMENT] exporter (arc 19 / M9) and
+     * **executed by the host** twice over: the chosen choice id decides what the host assembles
+     * into the stream (Markdown verbatim, or the `:markdown` engine's plain-text strip), and it
+     * renames the destination — the suggested filename's extension and the picker's MIME type
+     * follow the choice, not the descriptor's defaults. The value still crosses in the spec map
+     * like any single-choice, so the extension learns what was asked, but by then there is
+     * nothing left for it to do about it: the bytes on the read fd are already final.
+     *
+     * A declaring exporter's choice ids must all be known ones ([TEXT_FORMAT_MARKDOWN] /
+     * [TEXT_FORMAT_PLAIN]) — a choice the host has no assembly for takes the exporter out of the
+     * list at discovery, exactly like an unknown keying choice.
+     */
+    const val OPTION_TEXT_FORMAT: String = "textFormat"
+
+    /** Markdown, verbatim — `.md`, `text/markdown`. */
+    const val TEXT_FORMAT_MARKDOWN: String = "md"
+
+    /** Plain text — Markdown syntax stripped host-side, structure kept — `.txt`, `text/plain`. */
+    const val TEXT_FORMAT_PLAIN: String = "txt"
+
+    // ── Timeouts (host-side, over `ExtensionBinder.call`) ──────
+
+    /** `describe()` returns a small in-memory descriptor — fast. */
+    const val DESCRIBE_TIMEOUT_MS: Long = 3_000L
+
+    /**
+     * `export()` streams the whole artifact through two fds. A Binder call cannot be cancelled, so
+     * this is sized generously against a big file on an e-ink CPU rather than guessed (the J5
+     * lesson): measured on the Nomad 2026-08-27, a 100 MB flash copy lands in ~0.45 s (~525 MB/s
+     * dd, ~230 MB/s cp) — two minutes covers a 1 GB artifact even at 10 MB/s through a slow
+     * DocumentsProvider.
+     *
+     * One value for both source kinds. A [SOURCE_PAGES] export is a transform, not a copy, so it
+     * was re-measured rather than assumed (arc 18, Nomad 2026-08-30 — twice: at D1 on the
+     * framework assembly, 3.5 s / ~270 ms a page, and again at D3 when the assembly moved onto
+     * pdfbox, 2.6 s / ~200 ms a page for the same 13-page bundle) — two minutes covers a
+     * ~400-page notebook, far past anything a hand writes. The host's render happens before this
+     * call starts and never counts against it.
+     */
+    const val EXPORT_TIMEOUT_MS: Long = 120_000L
+}

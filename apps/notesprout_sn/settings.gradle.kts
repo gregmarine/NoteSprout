@@ -1,0 +1,32 @@
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        mavenLocal()
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = "notesprout_sn"
+include(":app")
+include(":sn-screen")
+include(":markdown")
+include(":extension-api")
+include(":ext-mlkit")
+include(":ext-ink")
+include(":ext-scratchpad")
+include(":ext-soil")
+include(":ext-pdf")
+include(":ext-document")
+include(":ext-tags")
+include(":ext-calendar")
+include(":ext-cloud")
+include(":ext-image")

@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- New Notebook (arc 13 / G3): a header carrying the name and Create, over the whole template
+     browser. The four radios are gone — paper is a library now, and the screen that picks paper is
+     the same screen everywhere.
+
+     The header is one row at the very top on purpose. This screen has a page on it (a grid of
+     miniatures), so the window never resizes for the keyboard (adjustNothing); the field the IME is
+     up for is above where the IME lands, so it can never be covered. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/paperWhite">
+
+    <LinearLayout
+        android:id="@+id/topBar"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/toolbar_bar_thickness"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <androidx.appcompat.widget.AppCompatImageButton
+            android:id="@+id/btnBack"
+            style="@style/Widget.Notesprout.ToolbarButton"
+            android:src="@drawable/ic_arrow_left"
+            android:contentDescription="@string/cd_back" />
+
+        <EditText
+            android:id="@+id/nameField"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="12dp"
+            android:inputType="text"
+            android:maxLines="1"
+            android:textSize="16sp"
+            android:textColor="@color/inkBlack"
+            android:background="@drawable/shape_bordered"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:importantForAutofill="no"
+            android:hint="@string/new_notebook_name_label" />
+
+        <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/btnCreate"
+            style="@style/Widget.Notesprout.ElevatedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:text="@string/new_notebook_create" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/inkBlack" />
+
+    <!-- The kind of notebook (arc 19 / M8) — the Export screen's radio idiom, in a layout rather
+         than in code because the choice count here is fixed at two: a caption at 13sp (inkBlack
+         made smaller, never inkLight — it carries information) and the family's radio style, whose
+         button drawable is a tick-less ring/dot pair, no colour and no ripple.
+
+         The browser below stays live for BOTH kinds: a text document's pages underneath are still
+         paper, and the type changes only what the create writes. -->
+    <LinearLayout
+        android:id="@+id/typeRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="12dp"
+            android:text="@string/new_notebook_type_label"
+            android:textSize="13sp"
+            android:textColor="@color/inkBlack" />
+
+        <RadioGroup
+            android:id="@+id/typeGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <androidx.appcompat.widget.AppCompatRadioButton
+                android:id="@+id/typeHandwritten"
+                style="@style/Widget.Notesprout.RadioButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="12dp"
+                android:checked="true"
+                android:text="@string/new_notebook_type_handwritten" />
+
+            <androidx.appcompat.widget.AppCompatRadioButton
+                android:id="@+id/typeText"
+                style="@style/Widget.Notesprout.RadioButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/new_notebook_type_text" />
+        </RadioGroup>
+    </LinearLayout>
+
+    <!-- Which key the notebook is written under (arc 26 / U5, D4) — the type row's shape exactly,
+         because it is the same kind of choice: one bit, decided before the create, and the browser
+         below is identical either way. *This device's key* is the default: a notebook with its own
+         passphrase asks for it on every open, which is a deliberate thing to ask for. -->
+    <LinearLayout
+        android:id="@+id/scopeRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="12dp"
+            android:text="@string/new_notebook_scope_label"
+            android:textSize="13sp"
+            android:textColor="@color/inkBlack" />
+
+        <RadioGroup
+            android:id="@+id/scopeGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <androidx.appcompat.widget.AppCompatRadioButton
+                android:id="@+id/scopeDevice"
+                style="@style/Widget.Notesprout.RadioButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="12dp"
+                android:checked="true"
+                android:text="@string/new_notebook_scope_device" />
+
+            <androidx.appcompat.widget.AppCompatRadioButton
+                android:id="@+id/scopeOwn"
+                style="@style/Widget.Notesprout.RadioButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/new_notebook_scope_own" />
+        </RadioGroup>
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/inkBlack" />
+
+    <include
+        android:id="@+id/browser"
+        layout="@layout/view_template_browser"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+</LinearLayout>

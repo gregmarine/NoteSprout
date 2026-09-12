@@ -1,0 +1,1033 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Notesprout SN</string>
+
+    <!-- Shared. `ok` and `cancel` live in :sn-screen — the moved helpers reference them. -->
+    <string name="retry">Retry</string>
+    <string name="close_app">Close app</string>
+
+    <!-- Bootstrap -->
+    <string name="boot_preparing">Preparing your library…</string>
+    <string name="boot_error_title">Couldn\'t open your library</string>
+    <string name="boot_error_body">Something went wrong while preparing Notesprout SN:\n\n%1$s\n\nYour notebooks are untouched. Retry usually resolves a temporary problem (e.g. right after a device restart).</string>
+    <string name="boot_error_foreign">The library index is not a Notesprout SN database (it is unencrypted). It was left untouched.</string>
+    <string name="boot_error_damaged">The library index file exists but cannot be read (it may be truncated by an interrupted copy or restore). It was left untouched — nothing was created over it or deleted.</string>
+
+    <!-- Recovery key -->
+    <string name="recovery_title">🌱  Save your recovery key</string>
+    <string name="recovery_body">Your notes are encrypted. This recovery key is the one secret that unlocks them on a new device or after a reinstall. It is the only copy — write it down or save it in a password manager. We can\'t recover it for you.</string>
+    <string name="recovery_copy">Copy</string>
+    <string name="recovery_saved">I\'ve saved it</string>
+    <string name="recovery_continue">Continue</string>
+    <string name="recovery_copied">Recovery key copied</string>
+    <string name="recovery_tick_title">Recovery key not saved</string>
+    <string name="recovery_tick_first">Tick “I\'ve saved it” to continue</string>
+    <string name="recovery_clip_label">Notesprout SN recovery key</string>
+
+    <!-- Unlock -->
+    <string name="unlock_title">Unlock Notesprout SN</string>
+    <string name="unlock_body">Enter your recovery key — or the passphrase you chose — to open your library on this device.</string>
+    <string name="unlock_hint">Recovery key or passphrase</string>
+    <string name="unlock_button">Unlock</string>
+    <string name="unlock_wrong">That didn\'t open your library. Try again.</string>
+    <string name="unlock_checking">Checking…</string>
+    <string name="unlock_locked_out">Too many attempts. Try again in %1$s.</string>
+
+    <!-- Library -->
+    <string name="library_root">Notebooks</string>
+    <string name="library_empty">No notebooks yet</string>
+    <string name="library_pinned_empty">No pinned notebooks</string>
+    <string name="library_recents_empty">No recent notebooks</string>
+    <string name="mode_title_pinned">Pinned</string>
+    <string name="mode_title_recents">Recent</string>
+    <string name="recents_parent_root">Notebooks</string>
+    <string name="page_indicator">%1$d / %2$d</string>
+
+    <!-- Search (arc 20). A dialog asks; the shelf's title is the answer, quoted the way the
+         template browser quotes its own. -->
+    <string name="mode_title_search">\"%1$s\"</string>
+    <string name="library_search_title">Search</string>
+    <string name="library_search_hint">Folder or notebook name</string>
+    <!-- The same field when a tag manager is installed and tags join the query
+         (arc 21 / W4). Two hints, not one: without the extension nothing is searched by
+         tag, and a hint that promised otherwise would be a control that cannot work. -->
+    <string name="library_search_hint_tags">Folder, notebook or tag</string>
+    <string name="library_search_confirm">Search</string>
+    <string name="library_search_empty">No folders or notebooks match that</string>
+    <string name="library_search_empty_title">Nothing to search for</string>
+    <string name="library_search_empty_body">Type some of the name first.</string>
+
+    <!-- New folder -->
+    <string name="new_folder_title">New folder</string>
+    <string name="new_folder_hint">Folder name</string>
+    <string name="new_folder_duplicate">A folder named \"%1$s\" already exists here.</string>
+
+    <!-- New notebook -->
+    <string name="new_notebook_name_label">Name</string>
+    <string name="new_notebook_create">Create</string>
+    <string name="new_notebook_creating">Creating…</string>
+    <string name="new_notebook_duplicate">A notebook named \"%1$s\" already exists here.</string>
+    <string name="new_notebook_failed_title">Couldn\'t create the notebook</string>
+    <string name="new_notebook_failed_body">%1$s\n\nNothing was added to your library.</string>
+    <!-- The kind of notebook (arc 19 / M8). Handwritten is the default and always will be; Text
+         opens straight into the document editor. Both still pick paper below. -->
+    <string name="new_notebook_type_label">Type</string>
+    <string name="new_notebook_type_handwritten">Handwritten</string>
+    <string name="new_notebook_type_text">Text</string>
+    <string name="template_blank">Blank</string>
+    <string name="template_lined">Lined</string>
+    <string name="template_dotted">Dotted</string>
+    <string name="template_grid">Grid</string>
+
+    <!-- Template library (arc 13). "Default" is a reserved name at the templates root: the folder
+         is hardcoded, not a row, and no folder or template of the user's may take it. -->
+    <string name="templates_title">Templates</string>
+    <string name="templates_empty">No templates here yet</string>
+    <string name="template_default_folder">Default</string>
+    <string name="template_name_reserved">\"%1$s\" is the name of the built-in folder. Choose another.</string>
+    <string name="new_template_folder_duplicate">A folder named \"%1$s\" already exists here.</string>
+    <string name="rename_duplicate_template">A template named \"%1$s\" already exists here.</string>
+    <string name="rename_duplicate_template_folder">A folder named \"%1$s\" already exists here.</string>
+    <string name="action_duplicate">Duplicate</string>
+    <string name="delete_template_title">Delete \"%1$s\"?</string>
+    <string name="delete_template_body">Notebooks that already use it keep their paper — the pattern was copied into them when it was applied. This cannot be undone.</string>
+    <string name="delete_template_folder_title">Delete \"%1$s\"?</string>
+    <string name="delete_template_folder_body">This will permanently remove all templates and subfolders inside it. Notebooks that already use them keep their paper. This cannot be undone.</string>
+    <string name="template_duplicate_gone_title">Couldn\'t duplicate</string>
+    <string name="template_duplicate_gone_body">That template is no longer there. The list has been refreshed.</string>
+    <string name="template_move_title">Move to…</string>
+
+    <!-- Import / export (arc 13 / G4) -->
+    <string name="action_fit">Fit…</string>
+    <string name="action_export">Export…</string>
+    <!-- Tags (arc 21 / W1) — notebooks only; a folder is a place, and a place is not tagged. -->
+    <string name="action_tags">Tags…</string>
+    <string name="template_import_default_name">Imported template</string>
+    <string name="template_fit_title">How should it fill the page?</string>
+    <string name="template_fit_fit">Fit — whole picture, centred</string>
+    <string name="template_fit_stretch">Stretch — pulled to the edges</string>
+    <string name="template_fit_fill">Fill — cover the page, crop the rest</string>
+    <string name="template_import_name_title">Name this template</string>
+    <string name="template_import_name_hint">Template name</string>
+    <string name="template_import_confirm">Import</string>
+    <string name="template_imported">Template imported</string>
+    <string name="template_exported">Template exported</string>
+    <string name="template_import_failed_title">Couldn\'t read that image</string>
+    <string name="template_import_failed_body">The file could not be opened as a PNG, JPEG or WEBP image. Nothing has been added.</string>
+    <string name="template_import_too_big_title">That image is too large</string>
+    <string name="template_import_too_big_body">It comes to %1$s once stored, and a template can be at most %2$s. Try a smaller or less grainy image.</string>
+    <string name="template_import_no_picker_title">No file picker</string>
+    <string name="template_import_no_picker_body">This device has no app for choosing files, so templates cannot be imported or exported here.</string>
+    <string name="template_export_failed_title">Couldn\'t export</string>
+    <string name="template_export_failed_body">The template could not be written to that file. Nothing has been changed.</string>
+    <string name="move_collision_template">A template named \"%1$s\" already exists here.</string>
+
+    <!-- The three shelves (arc 13 / G5): flat, mutually exclusive views across the whole library. -->
+    <string name="shelf_title_pinned_templates">Pinned</string>
+    <string name="shelf_title_recent_templates">Recent</string>
+    <string name="shelf_title_search_templates">\"%1$s\"</string>
+    <string name="templates_pinned_empty">No pinned templates. Hold a template to pin it.</string>
+    <string name="templates_recents_empty">No recently used templates yet</string>
+    <string name="templates_search_empty">No templates match that</string>
+    <string name="template_search_title">Search templates</string>
+    <string name="template_search_hint">Template name</string>
+    <string name="template_search_confirm">Search</string>
+    <string name="template_search_empty_title">Nothing to search for</string>
+    <string name="template_search_empty_body">Type some of the template\'s name first.</string>
+    <string name="cd_templates">Templates</string>
+    <string name="cd_backup">Backup</string>
+    <string name="cd_encryption">Encryption</string>
+    <string name="cd_template_current">Current paper</string>
+    <string name="template_render_failed_title">Couldn\'t draw that paper</string>
+    <string name="template_render_failed_body">The template could not be rendered at this page\'s size. The page has been left as it was.</string>
+    <string name="template_gone_title">Couldn\'t use that template</string>
+    <string name="template_gone_body">That template is no longer in the library. Nothing has been changed.</string>
+
+    <!-- Item actions -->
+    <string name="action_pin">Pin</string>
+    <string name="action_unpin">Unpin</string>
+    <string name="action_rename">Rename</string>
+    <string name="action_move">Move</string>
+    <!-- The exclude toggle (arc 17 / K2), notebooks only. One row, two labels — the Pin/Unpin
+         pattern: the label carries the state, the icon stays the same so the row never moves. -->
+    <string name="action_exclude_backup">Exclude from backup</string>
+    <string name="action_include_backup">Include in backup</string>
+    <string name="action_delete">Delete</string>
+    <string name="rename_title">Rename</string>
+    <string name="rename_hint">Name</string>
+    <string name="rename_duplicate_notebook">A notebook named \"%1$s\" already exists here.</string>
+    <string name="rename_duplicate_folder">A folder named \"%1$s\" already exists here.</string>
+    <string name="name_problem_title">That name won\'t work</string>
+    <string name="name_empty">Name cannot be empty</string>
+    <string name="name_reserved">Invalid name</string>
+    <string name="name_charset">Only letters, numbers, spaces, hyphens, underscores, and dots</string>
+    <string name="delete_notebook_title">Delete \"%1$s\"?</string>
+    <string name="delete_notebook_body">This cannot be undone.</string>
+    <string name="delete_folder_title">Delete \"%1$s\"?</string>
+    <string name="delete_folder_body">This will permanently remove all notebooks and subfolders inside it. This cannot be undone.</string>
+    <string name="delete_confirm">Delete</string>
+
+    <!-- Export (arc 15 / E1). The library's long-press row reuses `action_export` above; the
+         screen owns everything else. Every failure sentence says what happened to the file the
+         picker created — a partial export must never stand there unexplained. -->
+    <string name="export_title">Export</string>
+    <string name="export_action">Export</string>
+    <string name="export_format_caption">Format</string>
+    <string name="export_exporting">Exporting…</string>
+    <string name="export_done_title">Exported</string>
+    <string name="export_done_body">Your notebook was exported.</string>
+    <string name="export_none_title">Nothing to export with</string>
+    <string name="export_none_body">No export extension is installed on this device, so there is no format to export to.</string>
+    <string name="export_no_picker_title">No file picker</string>
+    <string name="export_no_picker_body">This device has no app for choosing where to save a file, so nothing can be exported here.</string>
+    <string name="export_failed_title">Export didn\'t finish</string>
+    <string name="export_failed_body">The export extension didn\'t finish writing the file. Your notebook is untouched.</string>
+    <string name="export_short_body">Only part of the notebook reached that file. Your notebook is untouched.</string>
+    <string name="export_removed_note">The unfinished file was removed.</string>
+    <string name="export_remains_note">An unfinished file may remain where you chose to save.</string>
+    <string name="export_untouched_note">The file you chose was not changed.</string>
+    <string name="export_busy_title">Export in progress</string>
+    <string name="export_busy_body">Wait for the export to finish — leaving now could leave a half-written file behind.</string>
+    <string name="export_verify_title">Check the exported file</string>
+    <string name="export_verify_body">The whole notebook was written, but the destination reports a different size. Open or re-export the file before relying on it.</string>
+    <string name="export_gone_body">The export format you chose is no longer available on this device. Nothing was exported.</string>
+    <string name="export_destination_body">That file could not be opened for writing. Nothing was exported.</string>
+    <string name="export_prepare_failed_body">A copy of the notebook could not be made — the device may be out of space. Nothing was exported and your notebook is untouched.</string>
+    <string name="export_in_use_body">This notebook is open somewhere else in the app. Close it, then export again.</string>
+    <string name="export_locked_body">The library is locked. Unlock Notesprout SN, then export again.</string>
+    <string name="export_notebook_locked_body">This notebook has its own passphrase. Open it once, then export.</string>
+    <string name="export_missing_body">This notebook\'s file is no longer on the device, so there is nothing to export.</string>
+    <string name="export_unreadable_body">This notebook could not be read just now. Nothing was exported and the file was left untouched.</string>
+
+    <!-- Keying (arc 15 / E2). The host runs the transform, so these are the host's sentences: the
+         typed passphrase is collected here, consumed here, and never crosses to an extension. -->
+    <string name="export_passphrase_caption">New passphrase</string>
+    <string name="export_passphrase_hint">New passphrase</string>
+    <string name="export_passphrase_confirm_hint">Confirm passphrase</string>
+    <string name="export_plain_warning">The exported file will be readable by anyone.</string>
+    <string name="export_passphrase_missing_title">Passphrase needed</string>
+    <string name="export_passphrase_missing_body">Type the new passphrase in both fields before exporting.</string>
+    <string name="export_passphrase_mismatch_title">Passphrases don\'t match</string>
+    <string name="export_passphrase_mismatch_body">The two fields must hold the same passphrase. Nothing was exported.</string>
+    <string name="export_passphrase_lost_body">The typed passphrase was lost while choosing where to save. Nothing was exported — type it and try again.</string>
+    <string name="export_transform_body">The notebook could not be converted for this export. Nothing was exported and your notebook is untouched.</string>
+    <string name="export_preparing">Preparing…</string>
+    <string name="export_rekeying">Re-keying…</string>
+    <string name="export_decrypting">Removing encryption…</string>
+    <!-- The page-rendering source kind (arc 18 / D1): a format the host draws the pages for. The
+         count is the whole point of the line — a notebook of eighty pages is a long silence
+         otherwise, and on e-ink an unchanging stage reads as a stall. -->
+    <string name="export_rendering">Rendering page %1$d of %2$d…</string>
+    <string name="export_empty_body">This notebook has no pages, so there is nothing to export.</string>
+    <string name="export_render_failed_body">The notebook\'s pages could not be prepared for this format — the device may be low on memory or space. Nothing was exported and your notebook is untouched.</string>
+    <string name="export_damaged_body">A page in this notebook could not be read at its own size, so it cannot be exported to this format. Nothing was exported and your notebook is untouched.</string>
+    <string name="export_too_long_body">This notebook has more pages than this format can carry. Nothing was exported and your notebook is untouched.</string>
+    <!-- Password protection (arc 18 / D2). The same dual fields as the keying passphrase, worded
+         for what they actually are here: a password for the file being written, not a Notesprout
+         passphrase. The host collects it; the exporter applies it. -->
+    <string name="export_password_caption">Password</string>
+    <string name="export_password_hint">Password</string>
+    <string name="export_password_confirm_hint">Confirm password</string>
+    <string name="export_password_missing_title">Password needed</string>
+    <string name="export_password_missing_body">Type the password in both fields before exporting.</string>
+    <string name="export_password_mismatch_title">Passwords don\'t match</string>
+    <string name="export_password_mismatch_body">The two fields must hold the same password. Nothing was exported.</string>
+    <string name="export_password_long_title">Password too long</string>
+    <string name="export_password_long_body">The password is too long — 128 characters at most. Nothing was exported.</string>
+    <string name="export_password_lost_body">The typed password was lost while choosing where to save. Nothing was exported — type it and try again.</string>
+    <string name="export_protecting">Encrypting and exporting…</string>
+    <!-- The document source kind (arc 19 / M9). Source is the host's own question — the notebook's
+         pages, or what was written in it — and both answers are prepared here, so these are host
+         sentences: an unwritten notebook is an honest refusal rather than an empty file. -->
+    <!-- Scope (arc 30 / PE2): the page-sheet door's row. -->
+    <string name="export_scope_caption">Scope</string>
+    <string name="export_scope_page">This page</string>
+    <string name="export_scope_notebook">Whole notebook</string>
+    <string name="export_done_page_body">This page was exported.</string>
+    <!-- Calendar mode (arc 31 / HV4): the Export screen opened from the calendar's own door. There
+         is no notebook behind it — the pages are drawn by the calendar extension — so these are the
+         host's sentences about a period rather than about a file of notes. -->
+    <string name="export_calendar_line">Calendar · %1$s</string>
+    <string name="export_rendering_calendar">Drawing the calendar…</string>
+    <string name="export_calendar_failed_title">Nothing was exported</string>
+    <string name="export_calendar_failed_body">The calendar could not draw the page.</string>
+    <string name="export_calendar_gone_body">The calendar is no longer available on this device, so there is nothing to draw.</string>
+    <string name="export_done_calendar_body">The calendar was exported.</string>
+    <string name="export_source_caption">Source</string>
+    <string name="export_source_pages">Notebook pages</string>
+    <string name="export_source_document">Document</string>
+    <!-- Arc 28 / D7: shown under the options when the chosen page exporter reads only the
+         version-1 bundle and the notebook has sticky notes with content. -->
+    <string name="export_endnotes_unavailable">Sticky notes will appear as icons only — this exporter does not support endnotes.</string>
+    <string name="export_assembling">Assembling the document…</string>
+    <string name="export_no_document_body">Nothing has been written in this notebook yet, so there is no document to export. Nothing was exported and your notebook is untouched.</string>
+
+    <!-- Destination: this device, or the cloud (arc 25 / V3). The row is GONE when no cloud
+         provider is installed. Every cloud sentence names the provider rather than saying "the
+         cloud", and none of them ever carries a path, a folder name or the account. -->
+    <string name="export_destination_caption">Destination</string>
+    <string name="export_destination_local">File on this device</string>
+    <string name="export_uploading">Uploading to %1$s…</string>
+    <string name="export_cloud_done_body">Your notebook was exported to %1$s.</string>
+    <string name="export_nothing_uploaded_note">Nothing was uploaded.</string>
+    <string name="export_cloud_gone_body">The cloud extension is no longer available on this device.</string>
+    <string name="export_cloud_not_connected_body">No account is connected to %1$s, so nothing was uploaded. Connect an account and export again.</string>
+    <string name="export_cloud_network_body">%1$s could not be reached, so nothing was uploaded. Your notebook is untouched — try again.</string>
+    <string name="export_cloud_unanswered_body">%1$s didn\'t answer. The file may or may not have arrived — check %1$s before exporting again.</string>
+    <string name="export_cloud_verify_body">The whole file was uploaded, but %1$s reports a different size. Open it, or export it again, before relying on it.</string>
+
+    <!-- Arc 31 / HV1: per-page delivery — a raster exporter writes one file per page into a
+         folder. The counts are the whole point of every sentence here: a run that stopped
+         halfway must say how far it got, and a run that finished says how many files there are.
+         The cloud folder is confirmed ONCE, before any work, because the names are not known
+         until the bake has run. -->
+    <string name="export_exporting_image">Exporting image %1$d of %2$d…</string>
+    <string name="export_cloud_folder_title">Upload to %1$s?</string>
+    <string name="export_cloud_folder_body">Each page will be uploaded as its own image. Files with the same names will be replaced.</string>
+    <string name="export_upload_confirm">Upload</string>
+    <plurals name="export_done_images">
+        <item quantity="one">1 image was exported.</item>
+        <item quantity="other">%1$d images were exported.</item>
+    </plurals>
+    <plurals name="export_cloud_done_images">
+        <item quantity="one">1 image was exported to %2$s.</item>
+        <item quantity="other">%1$d images were exported to %2$s.</item>
+    </plurals>
+    <plurals name="export_done_images_partial">
+        <item quantity="one">1 of %2$d images was exported.</item>
+        <item quantity="other">%1$d of %2$d images were exported.</item>
+    </plurals>
+
+    <!-- Export presets (arc 31 / HV3): a named, saved combination of format, options, Source and
+         destination. Never a password (a preset that needs one leaves the fields empty to type
+         into) and never the scope (that is the door's question). The row is absent with nothing to
+         list; the Save action is always there. The cloud folder is the one new piece of screen
+         state a preset can carry — "Chosen at export" is what every export did before this arc,
+         and still the default. -->
+    <string name="export_preset_caption">Preset</string>
+    <string name="export_preset_none">None</string>
+    <string name="export_preset_save_action">Save preset…</string>
+    <string name="export_preset_save_title">Save preset</string>
+    <string name="export_preset_save_confirm">Save</string>
+    <string name="export_preset_name_hint">Preset name</string>
+    <string name="export_preset_exists_title">Name already used</string>
+    <string name="export_preset_exists_body">A preset with this name already exists. Choose another name.</string>
+    <string name="export_preset_saved">Preset saved</string>
+    <string name="export_preset_rename">Rename…</string>
+    <string name="export_preset_delete">Delete…</string>
+    <string name="export_preset_rename_title">Rename preset</string>
+    <string name="export_preset_delete_title">Delete preset %1$s?</string>
+    <string name="export_preset_delete_body">The export choices it saved are forgotten. Nothing that was exported is touched.</string>
+    <string name="export_preset_delete_confirm">Delete</string>
+    <string name="export_preset_cloud_fallback">No cloud account is connected — exporting to this device instead</string>
+    <string name="export_cloud_folder_row">Folder: %1$s</string>
+    <string name="export_cloud_folder_ask">Chosen at export</string>
+    <string name="export_stage_listing">Checking the folder…</string>
+
+    <!-- Import (arc 16 / I1). Export's tone, in the other direction: a toast only confirms an
+         import that happened, and every failure is a sentence naming what went wrong — never a
+         path, never a secret — and saying that the library was left as it was. -->
+    <string name="cd_import">Import notebook</string>
+    <string name="import_here">Import here</string>
+    <string name="import_to_title">Import to…</string>
+    <string name="import_done_title">Imported</string>
+    <string name="import_done_body">Your notebook was imported.</string>
+    <string name="import_done_body_in">Your notebook was imported to %1$s.</string>
+    <string name="import_source_title">Import from</string>
+    <string name="import_source_device">This device</string>
+    <string name="import_stage_downloading">Downloading from %1$s…</string>
+    <string name="import_stage_reading">Reading…</string>
+    <string name="import_stage_unlocking">Unlocking…</string>
+    <string name="import_stage_keying">Preparing…</string>
+    <string name="import_stage_importing">Importing…</string>
+    <string name="import_stage_finishing">Finishing…</string>
+    <string name="import_format_title">Import as</string>
+    <string name="import_none_title">Nothing to import with</string>
+    <string name="import_none_body">No import extension is installed on this device, so there is no format to import from.</string>
+    <string name="import_no_picker_title">No file picker</string>
+    <string name="import_no_picker_body">This device has no app for choosing a file, so nothing can be imported here.</string>
+    <string name="import_unsupported_title">Can\'t import that file</string>
+    <string name="import_unsupported_body">No installed import extension accepts a file of that kind. Nothing was imported.</string>
+    <string name="import_failed_title">Import didn\'t finish</string>
+    <string name="import_generic_body">The import could not be finished. Nothing was imported and your library is untouched.</string>
+    <string name="import_delivery_body">The import extension didn\'t finish reading that file. Nothing was imported.</string>
+    <string name="import_short_body">Only part of that file arrived. Nothing was imported and your library is untouched.</string>
+    <string name="import_not_a_notebook_body">That file is not a Notesprout notebook. Nothing was imported.</string>
+    <string name="import_locked_body">The library is locked. Unlock Notesprout SN, then import again.</string>
+    <string name="import_keying_body">That notebook could not be prepared for this device. Nothing was imported and your library is untouched.</string>
+    <string name="import_unreadable_body">That notebook could not be read — it may be damaged. Nothing was imported.</string>
+    <string name="import_in_use_body">The notebook you chose to replace is open somewhere else in the app. Close it, then import again.</string>
+    <string name="import_write_body">The notebook could not be written — the device may be out of space. Nothing was imported.</string>
+    <string name="import_not_text_body">That file isn\'t readable text. Nothing was imported.</string>
+    <string name="import_text_too_long_body">That text file is too big. Text files up to 10 MB can be imported. Nothing was imported.</string>
+    <string name="import_cloud_gone_body">The cloud extension is no longer available on this device. Nothing was imported.</string>
+    <string name="import_cloud_not_connected_body">No account is connected to %1$s, so nothing was downloaded. Connect an account and import again.</string>
+    <string name="import_cloud_network_body">%1$s could not be reached, so nothing was downloaded. Nothing was imported — try again.</string>
+    <string name="import_cloud_unanswered_body">%1$s didn\'t answer, so nothing was imported. Try again.</string>
+    <string name="import_interrupted_body">The import was interrupted before that folder could be used. Nothing was imported — try again.</string>
+    <string name="import_busy_title">Import in progress</string>
+    <string name="import_busy_body">Wait for the import to finish — leaving now could leave a half-imported notebook behind.</string>
+    <string name="import_passphrase_title">Passphrase needed</string>
+    <string name="import_passphrase_body">This notebook was encrypted on another device. Type its passphrase to import it.</string>
+    <string name="import_passphrase_hint">Passphrase</string>
+    <string name="import_passphrase_wrong">That passphrase didn\'t open the file.</string>
+    <string name="import_unlock_action">Unlock</string>
+    <string name="import_locked_out_title">Too many tries</string>
+    <string name="import_locked_out_body">Wait %1$s before trying that passphrase again. Nothing was imported.</string>
+    <string name="import_replace">Replace</string>
+    <string name="import_keep_both">Keep both</string>
+    <string name="import_collision_title">Already in your library</string>
+    <string name="import_collision_body">\"%1$s\" is the same notebook. Replace it, or keep both as separate notebooks?</string>
+    <string name="import_placement_title">Where should it go?</string>
+    <string name="import_placement_body">This notebook remembers the folders it came from. Put it back there, or choose a folder yourself.</string>
+    <string name="import_placement_own">Notebook\'s folders</string>
+    <string name="import_placement_choose">Choose folder…</string>
+    <string name="import_name_title">Name already used</string>
+    <string name="import_name_body">A notebook called \"%1$s\" is already in that folder. Replace it, or keep both?</string>
+
+    <!-- Backup (arc 17 / K2). Plain verbs, the user's phase-start call: the screen says what it
+         does and the status line says what happened last. A toast confirms a run that finished
+         cleanly; anything a run could not do is a dialog naming the counts — never a path, never a
+         secret. -->
+    <string name="backup_title">Backup</string>
+
+    <!-- Encryption screen (arc 26 / U1). og's wording, "global passphrase" read as "recovery key". -->
+    <string name="encryption_title">Encryption</string>
+    <string name="encryption_key_set">Recovery key: set</string>
+    <string name="encryption_key_not_set">Recovery key: not on this device</string>
+    <string name="encryption_count_zero">No notebooks use this device\'s key</string>
+    <string name="encryption_count_one">1 notebook uses this device\'s key</string>
+    <string name="encryption_count_many">%1$d notebooks use this device\'s key</string>
+    <string name="encryption_reveal">Reveal recovery key…</string>
+    <string name="encryption_reveal_title">Recovery key</string>
+    <string name="encryption_reveal_body">The one secret that unlocks your library on another device or after a reinstall. Keep it safe.</string>
+    <string name="encryption_reveal_none_title">No recovery key</string>
+    <string name="encryption_reveal_none_body">There is no recovery key on this device.</string>
+    <string name="encryption_forget">Forget on this device…</string>
+    <string name="encryption_forget_title">Forget on this device</string>
+    <string name="encryption_forget_body">The recovery key will be removed from this device. The next launch will ask for it before the library opens. No notebooks will be decrypted or modified.</string>
+    <string name="encryption_forget_confirm">Forget</string>
+    <string name="encryption_close">Close</string>
+    <!-- Rotation (arc 26 / U3) -->
+    <string name="encryption_change">Change passphrase…</string>
+    <string name="encryption_resume_banner">A passphrase change is in progress.</string>
+    <string name="encryption_resume">Resume</string>
+    <string name="encryption_continue">Continue</string>
+    <!-- Arc 26 / U4: the notebook passphrase prompt (NotebookPassphrasePrompt) -->
+    <string name="notebook_passphrase_title">Passphrase needed</string>
+    <string name="notebook_passphrase_body">"%1$s" has its own passphrase. Enter it to open the notebook.</string>
+    <string name="notebook_passphrase_hint">Notebook passphrase</string>
+    <string name="notebook_passphrase_wrong">Wrong passphrase. Try again.</string>
+    <string name="notebook_passphrase_checking">Checking…</string>
+    <string name="notebook_passphrase_open">Open</string>
+    <string name="encryption_current_title">Current passphrase</string>
+    <string name="encryption_current_body">Enter the current recovery key or passphrase to continue.</string>
+    <string name="encryption_current_hint">Recovery key or passphrase</string>
+    <string name="encryption_current_wrong">Wrong passphrase. Try again.</string>
+    <string name="encryption_new_title">New passphrase</string>
+    <string name="encryption_new_generate">Generate a new recovery key</string>
+    <string name="encryption_new_choose">Choose my own</string>
+    <string name="encryption_new_hint">New passphrase</string>
+    <string name="encryption_confirm_hint">Confirm passphrase</string>
+    <string name="encryption_new_helper">At least 8 characters.</string>
+    <string name="encryption_rule_short">At least 8 characters.</string>
+    <string name="encryption_rule_mismatch">The two entries do not match.</string>
+    <string name="encryption_rule_same">That is the current passphrase.</string>
+    <string name="encryption_change_title">Change passphrase</string>
+    <string name="encryption_change_body">Every notebook, the extension data and the library index will be re-keyed. Keep the app open — this can take a while.\n\nExisting backups, local and cloud, open only with the current key until the next backup run replaces them. You can start one when this finishes.</string>
+    <string name="encryption_change_minted">The new recovery key will be shown once when the app restarts.</string>
+    <string name="encryption_change_confirm">Change</string>
+    <string name="encryption_progress_title">Changing passphrase</string>
+    <string name="encryption_progress_count">Re-keying %1$d of %2$d…</string>
+    <string name="encryption_progress_notebook">Notebook</string>
+    <string name="encryption_progress_stores">Extension data</string>
+    <string name="encryption_progress_index">Library index</string>
+    <string name="encryption_progress_keep_open">Keep the app open. This can take a while.</string>
+    <string name="encryption_progress_stopping">Stopping after this file…</string>
+    <string name="encryption_done_title">Passphrase changed</string>
+    <string name="encryption_done_zero">No notebooks needed re-keying.</string>
+    <string name="encryption_done_one">1 notebook re-keyed.</string>
+    <string name="encryption_done_many">%1$d notebooks re-keyed.</string>
+    <string name="encryption_done_quarantined_one">1 notebook could not be re-keyed and now needs its own passphrase.</string>
+    <string name="encryption_done_quarantined_many">%1$d notebooks could not be re-keyed and now need their own passphrase.</string>
+    <string name="encryption_done_backup">Back up now</string>
+    <string name="encryption_done_finish">Done</string>
+    <string name="encryption_paused_title">Change paused</string>
+    <string name="encryption_paused_one">1 file still to re-key. Resume from this screen when you are ready.</string>
+    <string name="encryption_paused_many">%1$d files still to re-key. Resume from this screen when you are ready.</string>
+    <string name="encryption_failed_title">Change interrupted</string>
+    <string name="encryption_failed_no_key">The current key is no longer on this device. Unlock with it and resume from this screen.</string>
+    <string name="encryption_failed_transient">A file could not be re-keyed. Resume from this screen to try again.</string>
+    <string name="encryption_failed_stuck">A file could not be opened with either key. Nothing was deleted, but the change cannot continue on its own.</string>
+    <string name="backup_folder_caption">Backup folder</string>
+    <string name="backup_no_folder">No folder chosen</string>
+    <string name="backup_choose">Choose…</string>
+    <string name="backup_run">Back up now</string>
+    <string name="backup_status_never">Never backed up</string>
+    <string name="backup_status_last">Last backup: %1$s — %2$d copied, %3$d skipped</string>
+    <string name="backup_progress">Backing up… %1$d/%2$d</string>
+    <string name="backup_progress_cloud">Uploading to %1$s… %2$d/%3$d</string>
+    <string name="backup_no_destination_title">Nowhere to back up</string>
+    <string name="backup_no_destination_body">Nothing has been backed up. Choose a folder to back up to, or tick “Back up to %1$s” — a backup needs somewhere to go.</string>
+    <string name="backup_local_folder_gone">The backup folder is no longer there, so nothing was copied to it.</string>
+    <string name="backup_done_title">Backup complete</string>
+    <string name="backup_done_body">%1$d copied, %2$d skipped.</string>
+    <string name="backup_no_folder_title">No backup folder</string>
+    <string name="backup_no_folder_body">Choose a folder to back up to first — nothing has been backed up.</string>
+    <string name="backup_folder_gone_title">Backup folder unavailable</string>
+    <string name="backup_folder_gone_body">That folder is no longer there, or Notesprout SN has lost access to it. Choose it again. Nothing was backed up and your notebooks are untouched.</string>
+    <string name="backup_locked_title">Library locked</string>
+    <string name="backup_locked_body">The library is locked. Unlock Notesprout SN, then back up again.</string>
+    <string name="backup_problem_title">Backup didn\'t finish</string>
+    <string name="backup_counts_failed">%1$d copied, %2$d skipped, %3$d failed.</string>
+    <string name="backup_problem_tail">Your notebooks are untouched, and anything that failed will be tried again next time.</string>
+    <string name="backup_stores_copied">%1$d extension store copied.</string>
+    <string name="backup_stores_copied_plural">%1$d extension stores copied.</string>
+    <string name="backup_stores_failed">%1$d extension store was not backed up.</string>
+    <string name="backup_stores_failed_plural">%1$d extension stores were not backed up.</string>
+    <string name="backup_index_copied">The library index was backed up.</string>
+    <string name="backup_index_failed">The library index was not backed up.</string>
+    <string name="backup_folder_failed_title">Couldn\'t use that folder</string>
+    <string name="backup_folder_failed_body">Notesprout SN could not keep lasting access to that folder. Choose it again — the backup folder has not been changed.</string>
+    <string name="backup_no_picker_title">No folder picker</string>
+    <string name="backup_no_picker_body">This device has no app for choosing a folder, so a backup folder cannot be chosen here.</string>
+    <!-- Cloud (arc 25 / V2): the Backup screen's Cloud section, and the connect door. The provider
+         names itself ("Google Drive") — nothing here spells a provider's name. -->
+    <string name="cloud_caption">Cloud</string>
+    <string name="cloud_status_line">%1$s: %2$s</string>
+    <string name="cloud_state_not_connected">not connected</string>
+    <string name="cloud_state_connected">connected</string>
+    <string name="cloud_state_not_configured">not configured</string>
+    <string name="cloud_state_unavailable">unavailable</string>
+    <string name="cloud_connect">Connect</string>
+    <string name="cloud_disconnect">Disconnect</string>
+    <string name="cloud_backup_enabled">Back up to %1$s</string>
+    <string name="cloud_device_folder_caption">Device folder</string>
+    <string name="cloud_device_folder_rename">Rename…</string>
+    <string name="cloud_device_folder_title">Device folder</string>
+    <string name="cloud_device_folder_hint">Folder name</string>
+    <string name="cloud_device_folder_problem_body">That name is too long to use as a folder. Try a shorter one — the folder has not been changed.</string>
+    <string name="cloud_status_never">Never backed up to %1$s</string>
+    <string name="cloud_status_last">Last cloud backup: %1$s — %2$d copied, %3$d skipped</string>
+    <string name="cloud_counts">%1$s: %2$d copied, %3$d skipped.</string>
+    <string name="cloud_counts_failed">%1$s: %2$d copied, %3$d skipped, %4$d failed.</string>
+    <string name="cloud_problem_not_connected">No account is connected to %1$s — connect and back up again.</string>
+    <string name="cloud_problem_network">%1$s could not be reached; nothing more was uploaded. Try again.</string>
+    <string name="cloud_problem_unanswered">%1$s didn\'t answer; check %1$s before relying on this backup.</string>
+    <string name="cloud_problem_gone">%1$s is no longer available on this device.</string>
+    <string name="cloud_connect_failed_title">Couldn\'t open sign-in</string>
+    <string name="cloud_connect_failed_body">The cloud extension did not answer, so its sign-in screen could not be opened. Nothing has been changed. Try again — and if it keeps happening, check that the extension is still installed and enabled.</string>
+    <string name="cloud_not_configured_title">Not set up in this build</string>
+    <string name="cloud_not_configured_body">This build of the cloud extension was made without its sign-in credentials, so no account can be connected. Nothing has been changed.</string>
+    <string name="cloud_disconnect_title">Disconnect %1$s?</string>
+    <string name="cloud_disconnect_body">Backups and exports to it will stop until you connect again. Nothing already there is removed.</string>
+    <string name="cloud_disconnecting">Disconnecting…</string>
+    <string name="cloud_disconnect_failed_title">Couldn\'t disconnect</string>
+    <string name="cloud_disconnect_failed_body">The cloud extension did not answer, so the account is still connected. Nothing has been changed. Try again.</string>
+
+    <!-- The inline Connect offer (arc 25 / V3): shown wherever the cloud is chosen without an
+         account behind it. Two buttons — Connect opens the provider's own sign-in. -->
+    <string name="cloud_connect_offer_title">Connect to %1$s?</string>
+    <string name="cloud_connect_offer_body">Sign in to %1$s so Notesprout SN can put files there. Nothing is uploaded until you choose where to save.</string>
+    <string name="import_cloud_connect_offer_body">Sign in to %1$s so Notesprout SN can read the files it put there. Nothing is downloaded until you choose a file.</string>
+
+    <!-- Replace-by-name: an upload updates a file of the same name in place, so the browser asks
+         first. This is the cloud's stand-in for the file picker's overwrite confirmation. -->
+    <string name="cloud_replace_title">Replace %1$s?</string>
+    <string name="cloud_replace_body">A file of that name is already in this folder. Exporting will replace what it holds.</string>
+    <string name="cloud_replace_confirm">Replace</string>
+
+    <!-- The host-drawn cloud browser (arc 25 / V3). Browsing creates nothing: only New folder
+         does, and only when you ask it to. -->
+    <string name="cloud_browser_save_here">Save here</string>
+    <string name="cloud_browser_crumb_separator">" › "</string>
+    <string name="cloud_browser_loading">Loading…</string>
+    <string name="cloud_browser_creating">Creating the folder…</string>
+    <string name="cloud_browser_empty">This folder is empty.</string>
+    <string name="cloud_browser_new_folder">New folder…</string>
+    <string name="cloud_browser_new_folder_title">New folder</string>
+    <string name="cloud_browser_new_folder_confirm">Create</string>
+    <string name="cloud_browser_new_folder_hint">Folder name</string>
+    <string name="cloud_browser_name_title">That name can\'t be used</string>
+    <string name="cloud_browser_name_body">A folder name can\'t be empty, can\'t contain a slash, and can\'t be longer than 255 characters. Folders can be eight deep at most. Nothing was created.</string>
+    <string name="cloud_browser_network_title">Couldn\'t reach %1$s</string>
+    <string name="cloud_browser_network_body">%1$s could not be reached just now. Nothing has been changed — try again.</string>
+    <string name="cloud_browser_failed_title">No answer</string>
+    <string name="cloud_browser_failed_body">The cloud extension didn\'t answer, so this folder couldn\'t be read. Nothing has been changed.</string>
+    <string name="backup_excluded_toast">Excluded from backup</string>
+    <string name="backup_included_toast">Included in backup</string>
+
+    <!-- Naming schemes (default notebook name) -->
+    <string name="action_naming">Default notebook name…</string>
+    <string name="scheme_caption">Default notebook name</string>
+    <string name="scheme_hint">e.g. Meeting {date} {n:2}</string>
+    <string name="scheme_help">Tokens: {date} {time} {year} {month} {day} {monthname} {mon} {weekday} {wd} {n} {n:3}. Leave empty for the standard name.</string>
+    <string name="naming_problem_title">Naming scheme</string>
+    <string name="err_scheme_unknown_token">%1$s isn\'t a token Notesprout knows.</string>
+    <string name="err_scheme_unclosed_brace">A { was never closed with a }.</string>
+    <string name="err_scheme_counter_twice">Only one {n} per scheme.</string>
+    <string name="err_scheme_illegal_char">Only letters, numbers, spaces, hyphens, underscores, and dots — plus the tokens.</string>
+    <string name="err_scheme_empty">The scheme has to make a name.</string>
+    <string name="err_scheme_too_long">The name this makes would be too long (limit %1$d characters).</string>
+    <string name="naming_save_failed">The folder was created, but its naming scheme could not be saved.</string>
+    <string name="naming_load_failed">The naming scheme couldn\'t be read. Try again.</string>
+    <string name="scheme_save_failed">The naming scheme couldn\'t be saved. Try again.</string>
+
+    <!-- Move -->
+    <string name="move_title">Move to…</string>
+    <string name="move_here">Move here</string>
+    <string name="move_no_folders">No folders here</string>
+    <string name="move_collision_title">Already taken</string>
+    <string name="move_collision_notebook">A notebook named \"%1$s\" already exists here.</string>
+    <string name="move_collision_folder">A folder named \"%1$s\" already exists here.</string>
+    <string name="move_into_self">A folder cannot be moved inside itself.</string>
+
+    <!-- Sort -->
+    <string name="sort_name_asc">Name ↑</string>
+    <string name="sort_name_desc">Name ↓</string>
+    <string name="sort_modified_asc">Modified ↑</string>
+    <string name="sort_modified_desc">Modified ↓</string>
+
+    <!-- Content descriptions -->
+    <string name="cd_debug">Debug tools</string>
+    <string name="cd_back">Back</string>
+    <string name="cd_up_folder">Go up one folder</string>
+    <string name="cd_close_templates">Close</string>
+    <string name="cd_close_shelf">Back to folders</string>
+    <string name="cd_pinned">Pinned notebooks</string>
+    <string name="cd_recents">Recent notebooks</string>
+    <string name="cd_search">Search</string>
+    <string name="cd_pinned_badge">Pinned</string>
+    <string name="cd_close_mode">Back</string>
+    <string name="cd_first_page">First page</string>
+    <string name="cd_prev_page">Previous page</string>
+    <string name="cd_next_page">Next page</string>
+    <string name="cd_last_page">Last page</string>
+    <string name="cd_sort">Sort</string>
+    <string name="cd_new_folder">New folder</string>
+    <string name="cd_import_template">Import template</string>
+    <string name="cd_pinned_templates">Pinned templates</string>
+    <string name="cd_recent_templates">Recent templates</string>
+    <string name="cd_search_templates">Search templates</string>
+    <string name="cd_new_notebook">New notebook</string>
+    <string name="cd_tool_pen">Pen</string>
+    <string name="cd_tool_eraser">Eraser</string>
+    <string name="cd_tool_lasso">Lasso</string>
+
+    <!-- Notebook -->
+    <string name="notebook_opening">Opening…</string>
+    <string name="notebook_open_failed_title">Couldn\'t open notebook</string>
+    <!-- Recovery (arc 26 / U6) — og's wording, "global passphrase" read as "this device's key" -->
+    <string name="notebook_recovery_title">Can\'t open %1$s</string>
+    <string name="notebook_recovery_body">The saved key didn\'t unlock this notebook. This usually means the file was restored from a backup or encrypted with a different passphrase.\n\nIf you know a passphrase for it, you can try it now. The notebook itself is intact.</string>
+    <string name="notebook_recovery_try">Try a passphrase</string>
+    <string name="notebook_recovery_back">Back to library</string>
+    <string name="notebook_recovery_prompt_body">Enter a passphrase to unlock "%1$s".</string>
+    <string name="notebook_recovery_repair_title">Repair this notebook?</string>
+    <string name="notebook_recovery_repair_body">That passphrase worked, but it isn\'t this device\'s key. Re-key this notebook to this device\'s key so it opens normally from now on.\n\nThe notebook\'s contents are not changed.</string>
+    <string name="notebook_recovery_repair_positive">Repair and open</string>
+    <string name="notebook_recovery_repair_failed_title">Repair failed</string>
+    <string name="notebook_recovery_repair_failed_body">The notebook could not be re-keyed. It is unchanged.</string>
+    <string name="notebook_open_locked_body">That passphrase was accepted, but this notebook still wouldn\'t open. Nothing was changed.</string>
+
+    <!-- Notebook pages -->
+    <string name="page_template_action">Page template</string>
+    <string name="delete_page_action">Delete page</string>
+    <string name="delete_page_title">Delete this page?</string>
+    <string name="erase_page_action">Erase page</string>
+    <string name="erase_page_title">Erase this page?</string>
+    <string name="erase_confirm">Erase</string>
+    <string name="export_page_action">Export page</string>
+    <string name="export_notebook_action">Export notebook</string>
+
+    <!-- Save as template (arc 31 / HV2) -->
+    <string name="save_as_template_action">Save as template</string>
+    <string name="template_save_name_title">Name this template</string>
+    <string name="template_save_confirm">Next</string>
+    <string name="template_saved">Template saved</string>
+    <string name="template_save_to_title">Save to…</string>
+    <string name="template_save_here">Save here</string>
+    <string name="template_save_failed_title">Couldn\'t save the template</string>
+    <string name="template_save_failed_body">The page could not be drawn. Try again.</string>
+    <string name="template_save_interrupted_title">Saving was interrupted</string>
+    <string name="template_save_interrupted_body">The screen was rebuilt while the folder was being chosen. Long-press the page and choose Save as template again.</string>
+
+    <!-- Page clipboard (arc 7) -->
+    <string name="copy_page_action">Copy page</string>
+    <string name="cut_page_action">Cut page</string>
+    <string name="paste_page_action">Paste page</string>
+    <string name="paste_before_action">Paste before this page</string>
+    <string name="paste_after_action">Paste after this page</string>
+    <string name="page_copied_toast">Page copied</string>
+    <string name="page_cut_toast">Page cut</string>
+    <string name="pasted_before_toast">Pasted before page %1$d</string>
+    <string name="pasted_after_toast">Pasted after page %1$d</string>
+    <string name="clip_failed_title">Clipboard</string>
+    <string name="clip_capture_failed">This page couldn\'t be read. Nothing was copied.</string>
+    <string name="clip_too_large">There is too much on this page to copy. The clipboard was left unchanged.</string>
+    <string name="clip_paste_failed">The clipboard is empty or its contents couldn\'t be read. Copy a page again.</string>
+    <string name="clip_write_failed">The page couldn\'t be put on the clipboard. The clipboard was left unchanged.</string>
+
+    <!-- Object clipboard (arc 8) -->
+    <string name="copy_objects_action">Copy</string>
+    <string name="cut_objects_action">Cut</string>
+    <string name="paste_objects_action">Paste</string>
+    <string name="clear_clipboard_action">Clear clipboard</string>
+    <string name="objects_copied_toast">Copied</string>
+    <string name="objects_cut_toast">Cut</string>
+    <string name="objects_pasted_toast">Pasted</string>
+    <string name="clipboard_cleared_toast">Clipboard cleared</string>
+    <string name="clip_objects_capture_failed">This selection couldn\'t be read. Nothing was copied.</string>
+    <string name="clip_objects_too_large">There is too much in this selection to copy. The clipboard was left unchanged.</string>
+    <string name="clip_objects_write_failed">The selection couldn\'t be put on the clipboard. Nothing was copied or cut.</string>
+    <string name="clip_objects_paste_failed">The clipboard is empty or its contents couldn\'t be read. Copy a selection again.</string>
+    <string name="clip_objects_cut_moved">The page changed while the copy was being made, so nothing was cut. The selection is on the clipboard.</string>
+
+    <!-- Notebook selection -->
+    <string name="delete_selection_action">Delete strokes</string>
+
+    <!-- Snap to guide (arc 9). One button, two hints — the border says which state it is in. -->
+    <string name="snap_action_on">Snap to guides (on)</string>
+    <string name="snap_action_off">Snap to guides (off)</string>
+
+    <!-- Handwriting recognition (the one extension point) -->
+    <string name="recognize_problem_title">Recognition</string>
+    <string name="recognize_no_extension">No recognizer extension is installed on this device.</string>
+    <string name="recognize_model_needed_title">Recognition model needed</string>
+    <string name="recognize_model_needed_body">Recognizing handwriting needs a one-time download of the English (en-US) model, about 20 MB. Wi-Fi is recommended.\n\nDownload it now?</string>
+    <string name="recognize_model_needed_offline_body">Recognizing handwriting needs a one-time download of the English (en-US) model, about 20 MB — but this device is offline right now. Connect to Wi-Fi, then try again.</string>
+    <string name="recognize_download">Download</string>
+    <string name="recognize_downloading_title">Downloading recognition model</string>
+    <string name="recognize_downloading_body">This takes a minute or so the first time. Your handwriting will be recognized as soon as it finishes.\n\nElapsed: %1$d s</string>
+    <string name="recognize_downloading_offline_body">Waiting for a network connection… The download resumes when the device is back online.\n\nElapsed: %1$d s</string>
+    <string name="recognize_download_failed_title">Download failed</string>
+    <string name="recognize_download_failed_body">The recognition model couldn\'t be downloaded. Check the Wi-Fi connection and try again.</string>
+    <string name="recognize_still_downloading">Model still downloading — try again in a minute.</string>
+    <string name="recognize_unavailable">Recognizer unavailable on this device.</string>
+    <string name="recognize_too_dense">Too much ink to recognize at once.</string>
+    <string name="recognize_failed">The recognizer extension didn\'t respond.</string>
+
+    <!-- Headings (N2) -->
+    <string name="heading_action">Heading</string>
+    <string name="heading_level_hint">Heading %1$d</string>
+    <string name="heading_recognizing">Recognizing…</string>
+    <string name="heading_nothing_recognized">No text could be read from the selected ink. The ink was left unchanged.</string>
+    <string name="heading_edit_title">Edit heading</string>
+    <string name="heading_edit_save">Save</string>
+
+    <!-- Text objects (arc 28 / H2). The Save button is the heading dialog's — one word, one string. -->
+    <string name="text_edit_title">Text</string>
+    <string name="text_convert_action">Make text</string>
+
+    <!-- Contents (table of contents over the notebook's core heading rows) -->
+    <string name="contents_title">Contents</string>
+    <string name="cd_contents">Contents</string>
+    <string name="contents_empty">No headings yet</string>
+    <string name="contents_truncated">Showing the first %1$d headings</string>
+    <string name="cd_expand">Expand</string>
+    <string name="cd_collapse">Collapse</string>
+
+    <!-- Links (arc 6) -->
+    <string name="link_action">Link</string>
+    <string name="link_edit_action">Edit link</string>
+    <string name="link_unlink_action">Unlink</string>
+    <string name="link_result_lost_title">Couldn\'t apply the link</string>
+    <string name="link_result_lost_body">This screen was rebuilt while the picker was open, so the choice was lost. Please try again.</string>
+
+    <!-- Link picker (K2) -->
+    <string name="link_picker_title">Link to…</string>
+    <string name="link_mode_this_notebook">This notebook</string>
+    <string name="link_mode_notebook">Notebook</string>
+    <string name="link_mode_notebook_page">Notebook page</string>
+    <string name="link_style_label">Style</string>
+    <string name="link_style_underline">Underline</string>
+    <string name="link_style_none">None</string>
+    <string name="link_page_label">Page %1$d</string>
+    <string name="link_page_label_titled">%1$d · %2$s</string>
+    <string name="link_picker_no_pages">No other pages in this notebook</string>
+    <string name="link_picker_no_foreign_pages">No pages in this notebook</string>
+    <string name="link_picker_no_notebooks">No other notebooks here</string>
+    <string name="link_pick_none_title">Choose a target first</string>
+    <string name="link_pick_none_page">Tap the page this link should open.</string>
+    <string name="link_pick_none_notebook">Tap the notebook this link should open.</string>
+    <string name="link_pick_none_notebook_page">Open a notebook, then tap the page this link should open.</string>
+
+    <!-- Create-in-picker (K3). The New-folder dialog reuses the library's own strings. -->
+    <string name="link_new_page">New page</string>
+    <string name="link_new_notebook">New notebook</string>
+    <string name="link_new_folder">New folder</string>
+    <string name="link_insert_before">Insert before</string>
+    <string name="link_insert_after">Insert after</string>
+    <string name="link_new_page_failed_title">Couldn\'t add the page</string>
+    <string name="link_new_page_failed_body">The notebook may have changed while the picker was open. Close the picker and try again.</string>
+
+    <!-- Follow (K4). The dead-target dialog offers link_edit_action above as its other button. -->
+    <string name="link_target_gone_title">Can\'t follow this link</string>
+    <string name="link_target_notebook_gone_body">The notebook this link points to no longer exists.</string>
+    <string name="link_target_page_gone_body">The page this link points to no longer exists.</string>
+    <string name="link_target_unreadable_body">This link was made by a newer or different version of Notesprout, so where it points can\'t be read here.</string>
+
+    <!-- Arc 34 / M7: a page op (Erase page, Delete page, a paste, an undo) hit a database or disk
+         failure. Plain problem dialog — a tap that did nothing must say so. -->
+    <string name="page_op_failed_title">Couldn\'t change the page</string>
+    <string name="page_op_failed_body">The page could not be changed. Nothing was saved.</string>
+
+    <!-- Recents in the notebook (arc 10). cd_recents is shared with the library's shelf button. -->
+    <string name="recents_title">Recent notebooks</string>
+    <string name="recents_empty">No recent notebooks</string>
+    <string name="recents_when">%1$s, %2$s</string>
+    <string name="recents_gone_title">Can\'t open that notebook</string>
+    <string name="recents_gone_body">It was deleted while the list was open.</string>
+    <string name="recents_read_failed_body">The library couldn\'t be read just now. Please try again.</string>
+
+    <!-- Document (arc 19) — the notebook top bar's entry button, GONE unless a trusted document
+         editor extension is installed. -->
+    <string name="cd_document">Document</string>
+    <string name="document_failed_title">Document unavailable</string>
+    <string name="document_failed_body">The document editor could not be opened. It may have been disabled or removed.</string>
+    <!-- The open-time seed (M6): shown while the page is recognized, before the editor opens. -->
+    <string name="document_reading_page">Reading this page…</string>
+
+    <!-- Tags (arc 21 / W1) — the doors are GONE unless a trusted tag manager is installed, so this
+         is only ever seen when one was there at the long-press and gone by the tap. -->
+    <string name="tags_failed_title">Tags unavailable</string>
+    <string name="tags_failed_body">Tags could not be opened. The extension may have been disabled or removed.</string>
+
+    <!-- The notebook's tag button and its secondary toolbar (arc 21 / W2). The three doors are
+         icon-only and name themselves on a long press — the user's W2 call, and the recipe every
+         floating bar in the notebook follows. -->
+    <string name="cd_tags">Tags</string>
+    <string name="tag_notebook_action">Tag notebook</string>
+    <string name="tag_page_action">Tag page</string>
+    <string name="tag_manage_action">Manage tags</string>
+    <!-- What the host calls a page when it names one to the tag screen — page NUMBERS are the
+         host's to resolve; the extension has no idea what a page is. -->
+    <string name="tag_page_label">Page %1$d</string>
+    <!-- A search card's second line when a tag is what put the row on the shelf (arc 21 / W4):
+         where it lives, then why it is here. -->
+    <string name="search_where_and_tag">%1$s · %2$s</string>
+
+    <!-- The selection toolbar's Tag button (arc 21 / W3) and the two flows behind it. The hint says
+         "page" because the lasso always tags the page on the paper — never the notebook. -->
+    <string name="tag_selection_action">Tag page with this</string>
+    <!-- The wait box while the silent heading→tag is out at the extension. -->
+    <string name="tag_applying">Tagging…</string>
+    <!-- The silent flow's whole answer: it names the tag in its canonical spelling, which is not
+         necessarily the heading's own casing. -->
+    <string name="tag_applied_toast">Tagged “%1$s”</string>
+    <!-- What can go wrong on the silent path. The tag screen says the same three things in its own
+         words — neither side reads the other's wording. -->
+    <string name="tags_assign_failed_body">That tag could not be saved. Nothing has been changed.</string>
+    <string name="tags_full_body">This library is holding as many tags as it can. Delete one to add another.</string>
+
+    <!-- Scratch Pad (arc 11) — the entry button on both the library's bottom bar and the
+         notebook's top bar. Both are GONE unless a trusted extension is installed. -->
+    <string name="cd_scratch_pad">Scratch pad</string>
+    <string name="scratch_failed_title">Scratch pad unavailable</string>
+    <string name="scratch_failed_body">The scratch pad could not be opened. It may have been disabled or removed.</string>
+
+    <!-- The transfers (arc 11 / J5). The selection toolbar's Pad button, its placement sheet, and
+         the four things that can go wrong on the way there and back. -->
+    <string name="scratch_send_action">Send to Scratch Pad</string>
+    <string name="scratch_placement_title">Send to Scratch Pad</string>
+    <string name="scratch_placement_new_page">New page</string>
+    <string name="scratch_placement_current_page">Current page</string>
+    <string name="scratch_sent_toast">Sent to scratch pad</string>
+    <string name="scratch_too_large_title">Too much to send</string>
+    <string name="scratch_too_large_body">This selection holds more ink than the scratch pad can take. Send a smaller part of it.</string>
+    <string name="transfer_receiving">Receiving…</string>
+    <string name="scratch_receiving">Receiving from the scratch pad…</string>
+    <string name="scratch_drain_failed_title">Nothing came back</string>
+    <string name="scratch_drain_failed_body">The ink from the scratch pad could not be brought back. Nothing was changed — it is still on the pad.</string>
+    <string name="scratch_truncated_title">Not everything came back</string>
+    <string name="scratch_paste_failed_body">The ink from the scratch pad could not be written to this page. Nothing was changed — it is still on the pad.</string>
+    <string name="scratch_truncated_body">The scratch pad had more ink than one transfer can carry. The first %1$d strokes were pasted; the rest are still on the pad.</string>
+
+    <!-- The Calendar extension (arc 23) — the pad's set, mirrored. The two entry buttons and the
+         failure dialogs land in Y1; the transfer strings are Y3's. -->
+    <string name="cd_calendar">Calendar</string>
+    <string name="calendar_failed_title">Calendar unavailable</string>
+    <string name="calendar_failed_body">The calendar could not be opened. It may have been disabled or removed.</string>
+    <string name="calendar_send_action">Send to Calendar</string>
+    <string name="calendar_target_title">Send to Calendar</string>
+    <string name="calendar_target_today_am">Today, morning</string>
+    <string name="calendar_target_today_pm">Today, afternoon</string>
+    <string name="calendar_target_week">This week</string>
+    <string name="calendar_target_month">This month</string>
+    <string name="calendar_sent_toast">Sent to calendar</string>
+    <string name="calendar_too_large_title">Too much to send</string>
+    <string name="calendar_too_large_body">This selection holds more ink than the calendar can take. Send a smaller part of it.</string>
+    <string name="calendar_receiving">Receiving from the calendar…</string>
+    <string name="calendar_drain_failed_title">Nothing came back</string>
+    <string name="calendar_drain_failed_body">The ink from the calendar could not be brought back. Nothing was changed — it is still on the calendar.</string>
+    <!-- The calendar's Export door (arc 31 / HV4): the screen closed asking for an export and then
+         would not say which page it meant. Nothing was drawn and nothing was written. -->
+    <string name="calendar_export_failed_title">Export didn\'t start</string>
+    <string name="calendar_export_failed_body">The calendar didn\'t say which page to export. Nothing was exported.</string>
+    <string name="calendar_truncated_title">Not everything came back</string>
+    <string name="calendar_paste_failed_body">The ink from the calendar could not be written to this page. Nothing was changed — it is still on the calendar.</string>
+    <string name="calendar_truncated_body">The calendar page had more ink than one transfer can carry. The first %1$d strokes were pasted; the rest are still on the calendar.</string>
+    <!-- Arc 31 / HV5 — a whole page from the calendar arrives as a NEW page after the one on
+         screen, papered with the view that was sent. The failure landed nothing at all. -->
+    <string name="calendar_page_received_toast">A page from the calendar was added.</string>
+    <string name="calendar_receive_failed_title">Couldn\'t add the page</string>
+    <string name="calendar_receive_failed_body">The calendar page couldn\'t be added to the notebook. Nothing was changed.</string>
+
+    <!-- Arc 26 / U5 — the doors onto notebook scope. The New Notebook screen's key radio, the one
+         set-passphrase dialog and its verdicts, and the library sheet's two rows. -->
+    <string name="new_notebook_scope_label">Key</string>
+    <string name="new_notebook_scope_device">This device\'s key</string>
+    <string name="new_notebook_scope_own">Its own passphrase</string>
+
+    <string name="set_passphrase_title">Passphrase for %1$s</string>
+    <string name="set_passphrase_helper">You will be prompted for this passphrase every time you open this notebook.</string>
+    <string name="set_passphrase_set">Set</string>
+    <string name="passphrase_rule_too_short">At least %1$d characters.</string>
+    <string name="passphrase_rule_mismatch">The two entries do not match.</string>
+    <string name="passphrase_rule_same">That is the passphrase already in force.</string>
+    <string name="passphrase_rule_same_global">That is this device\'s key.</string>
+
+    <string name="action_change_passphrase">Change passphrase…</string>
+    <string name="action_change_scope">Change encryption scope…</string>
+    <string name="change_passphrase_title">Change passphrase</string>
+    <string name="change_passphrase_global_body">Global notebooks share this device\'s key. To change it, use Encryption.</string>
+    <string name="change_passphrase_open_encryption">Open Encryption</string>
+    <string name="change_key_progress">Re-keying…</string>
+    <string name="change_passphrase_done_toast">Passphrase changed.</string>
+    <string name="change_scope_title">Change encryption scope</string>
+    <string name="change_scope_to_notebook_body">"%1$s" will be re-keyed to its own passphrase. You will be prompted for it every time you open this notebook.</string>
+    <string name="change_scope_to_notebook_confirm">Use its own passphrase</string>
+    <string name="change_scope_to_notebook_done">Now uses its own passphrase.</string>
+    <string name="change_scope_to_global_body">"%1$s" will be re-keyed to this device\'s key. You will need its current passphrase.</string>
+    <string name="change_scope_to_global_confirm">Use this device\'s key</string>
+    <string name="change_scope_to_global_done">Now uses this device\'s key.</string>
+    <string name="change_key_no_session">No key in session.</string>
+    <string name="change_key_failed_body">The notebook could not be re-keyed. Nothing was changed.</string>
+
+    <!-- Arc 26 / U5, decision 3 — the import keying chooser (a foreign passphrase only) and the
+         Export screen's Keep label for a notebook that carries its own passphrase. -->
+    <string name="import_keying_choose_title">Import encrypted notebook</string>
+    <string name="import_keying_choose_body">This notebook was unlocked with a different passphrase.</string>
+    <string name="import_keying_keep">Keep this passphrase</string>
+    <string name="import_keying_device">Use this device\'s key</string>
+    <string name="import_keying_new">Set a new notebook passphrase</string>
+    <string name="export_keying_keep_notebook">Keep encrypted (this notebook\'s passphrase)</string>
+
+    <!-- Restore (arc 27 / L3) — whole-library restore: the source pick, the backup list, the
+         replace confirmation, the key prompt and every outcome. Every one of those is a dialog and
+         never a toast: this screen exists to answer "is my library back". -->
+    <string name="restore_title">Restore</string>
+    <string name="restore_open">Restore from a backup…</string>
+    <string name="restore_caption">A restore replaces everything on this device with a backup.</string>
+    <string name="restore_from_folder">From a folder…</string>
+    <string name="restore_from_cloud">From the cloud…</string>
+    <string name="restore_folder_caption">Backups in</string>
+    <string name="restore_choose_another">Choose another source…</string>
+    <string name="restore_reading">Reading folder…</string>
+    <string name="restore_reading_cloud">Reading the cloud…</string>
+    <string name="restore_cloud_source_label">Backups in %1$s</string>
+    <string name="restore_row_detail">%1$s · %2$s · %3$s</string>
+    <string name="restore_notebooks_one">1 notebook</string>
+    <string name="restore_notebooks_many">%1$d notebooks</string>
+
+    <string name="restore_confirm_title">Replace your library?</string>
+    <string name="restore_confirm_body">\"%1$s\" — %2$s, %3$s.\n\nEverything on this device now — every notebook, folder, tag, calendar, scratch pad and setting — will be replaced by this backup, and cannot be brought back.\n\nYou may need the passphrase or recovery key of the library this backup came from.\n\nThis device\'s own backup destination is kept as it is.</string>
+    <string name="restore_confirm_replace">Replace</string>
+
+    <string name="restore_progress_title">Restoring</string>
+    <string name="restore_progress_copying">Copying %1$d of %2$d…</string>
+    <string name="restore_progress_downloading">Downloading %1$d of %2$d…</string>
+    <string name="restore_progress_checking">Checking…</string>
+    <string name="restore_progress_checking_stores">Checking extension data %1$d of %2$d…</string>
+    <string name="restore_progress_unlocking">Unlocking…</string>
+    <string name="restore_progress_installing">Installing…</string>
+    <string name="restore_progress_keep_open">Keep the app open. This can take a while.</string>
+
+    <string name="restore_key_title">Unlock the backup</string>
+    <string name="restore_key_body">Enter the passphrase or recovery key of the library this backup came from.</string>
+    <string name="restore_key_hint">Passphrase or recovery key</string>
+    <string name="restore_key_wrong">That key does not open this backup.</string>
+    <string name="restore_key_unlock">Unlock</string>
+
+    <string name="restore_done_title">Restore complete</string>
+    <string name="restore_done_one_one">Restored %1$d notebook and %2$d extension store from %3$s.</string>
+    <string name="restore_done_one_many">Restored %1$d notebook and %2$d extension stores from %3$s.</string>
+    <string name="restore_done_many_one">Restored %1$d notebooks and %2$d extension store from %3$s.</string>
+    <string name="restore_done_many_many">Restored %1$d notebooks and %2$d extension stores from %3$s.</string>
+    <string name="restore_done_left_out_one">One file in the backup folder was not part of this backup and was left out:</string>
+    <string name="restore_done_left_out_many">%1$d files in the backup folder were not part of this backup and were left out:</string>
+    <string name="restore_restart">Restart</string>
+    <string name="restore_failed_title">Restore failed</string>
+    <string name="restore_failed_body">Nothing was changed. Your library is as it was. Notesprout SN will restart.</string>
+    <string name="restore_interrupted_title">Restore didn\'t finish</string>
+    <string name="restore_interrupted_body">The backup is installed, but a last step failed (%1$s). Notesprout SN will restart; if it asks, unlock it with the passphrase or recovery key of the library this backup came from.</string>
+
+    <string name="restore_problem_rotation_title">Finish the key change first</string>
+    <string name="restore_problem_rotation_body">A passphrase change is part-way through. Open Encryption and finish it with Resume, then restore. Nothing has been changed.</string>
+    <string name="restore_problem_held_title">A notebook is open</string>
+    <string name="restore_problem_held_body">A notebook is still open in the app. Close it and try again. Nothing has been changed.</string>
+    <string name="restore_problem_space_title">Not enough space</string>
+    <string name="restore_problem_space_body">This backup needs about %1$s more free space on this device. Nothing has been changed.</string>
+    <string name="restore_problem_unreachable_title">Folder unavailable</string>
+    <string name="restore_problem_unreachable_body">That folder is no longer there, or Notesprout SN has lost access to it. Choose it again. Nothing has been changed.</string>
+    <string name="restore_problem_listing_title">Couldn\'t read that folder</string>
+    <string name="restore_problem_listing_body">That folder could not be read. Nothing has been changed — try again, or choose another folder.</string>
+    <string name="restore_problem_not_backup_title">No backup here</string>
+    <string name="restore_problem_not_backup_body">A backup is a folder holding notesprout.db, or a folder whose subfolders hold one. Nothing here is one — choose the folder your backups were written to.</string>
+    <string name="restore_problem_cloud_not_connected_title">Not connected</string>
+    <string name="restore_problem_cloud_not_connected_body">No account is connected to %1$s. Connect one on the Backup screen, then restore. Nothing has been changed.</string>
+    <string name="restore_problem_cloud_network_title">Couldn\'t reach %1$s</string>
+    <string name="restore_problem_cloud_network_body">%1$s could not be reached, so nothing was restored. Your library is untouched. Try again.</string>
+    <string name="restore_problem_cloud_unanswered_title">%1$s didn\'t answer</string>
+    <string name="restore_problem_cloud_unanswered_body">%1$s did not answer, so nothing was restored. Your library is untouched.</string>
+    <string name="restore_problem_cloud_gone_title">Cloud storage unavailable</string>
+    <string name="restore_problem_cloud_gone_body">%1$s is no longer available on this device, so nothing was restored. Your library is untouched.</string>
+    <string name="restore_problem_fetch_title">Couldn\'t copy the backup</string>
+    <string name="restore_problem_fetch_body">%1$s could not be copied out of the backup, so nothing was restored. Your library is untouched.</string>
+    <string name="restore_problem_invalid_title">Backup isn\'t complete</string>
+    <string name="restore_problem_invalid_body">%1$s in this backup is not encrypted, is damaged, or is no longer there, so nothing was restored. Your library is untouched.</string>
+    <string name="restore_problem_park_title">Couldn\'t start the restore</string>
+    <string name="restore_problem_park_body">This device\'s backup settings could not be set aside first, so nothing was changed.</string>
+    <string name="restore_problem_swap_title">Restore failed</string>
+    <string name="restore_problem_swap_body">The library could not be replaced (step %1$s). Nothing was changed — your library is as it was.</string>
+    <string name="restore_problem_unexpected_title">Restore didn\'t finish</string>
+    <string name="restore_problem_unexpected_body">Something went wrong (%1$s) and nothing was restored. Your library is untouched.</string>
+    <string name="restore_no_picker_title">No folder picker</string>
+    <string name="restore_no_picker_body">This device has no app for choosing a folder, so a backup folder cannot be chosen here.</string>
+
+    <!-- The Insert button and its sub-bar (arc 28 / H1, D4). Icon-only with long-press hints, the
+         recipe every floating bar in the notebook follows; each button is offered by its own phase
+         and absent until then. -->
+    <string name="cd_insert">Insert</string>
+    <string name="insert_sticky">Sticky note</string>
+    <string name="insert_text">Text</string>
+    <string name="insert_rectangle">Rectangle</string>
+    <string name="insert_ellipse">Ellipse</string>
+    <string name="insert_triangle">Triangle</string>
+    <string name="insert_line">Line</string>
+    <string name="insert_arrow">Arrow</string>
+    <string name="insert_star">Star</string>
+
+    <!-- The sticky note editor (arc 28 / H5, decisions 2–3). Back saves-and-closes (the ✓ was
+         dropped on the walk — Back already does the one thing it did). The paste notices: a
+         note holds ink only, so a clipboard carrying more says so (toast — the paste happened) and
+         one carrying no ink at all explains (dialog — nothing happened). -->
+    <string name="sticky_editor_title">Sticky Note</string>
+    <string name="sticky_paste_ink_only_toast">Pasted the ink only</string>
+    <string name="sticky_paste_no_ink_title">Paste</string>
+    <string name="sticky_paste_no_ink_body">Only ink can be pasted into a note, and the clipboard holds none.</string>
+
+    <!-- Shapes on the page (arc 28 / H4). Transform is the lasso bar's button on a lone shape;
+         the rest are the floating transform bar's two controls. The aspect latch names the state
+         the shape is IN, not what a tap would make it — the same way an armed tool's border does
+         (ShapeTransformLabels holds the table and the reasoning). -->
+    <string name="shape_transform_action">Transform</string>
+    <string name="shape_transform_done">Done</string>
+    <string name="shape_lock_hint">Aspect lock</string>
+    <string name="shape_lock_circle">Circle</string>
+    <string name="shape_lock_oval">Oval</string>
+    <string name="shape_lock_square">Square</string>
+    <string name="shape_lock_rect">Rect</string>
+    <string name="shape_lock_1_1">1:1</string>
+    <string name="shape_lock_free">Free</string>
+</resources>
