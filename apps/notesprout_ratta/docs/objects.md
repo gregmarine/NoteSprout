@@ -383,6 +383,23 @@ only thing keeping ink inside the note. **Consequence, accepted like the calenda
 twin of decision 3):** an old note's ink sits one bar height higher than the ruling it was
 authored against — nothing is moved or lost, hiding the chrome shows it plainly.
 
+**Since arc 36 / C2 the editor collapses too**, over the same shared `:sn-screen` piece as the
+other three paper screens (`CollapsedChrome` — see [`docs/sn-screen.md`](sn-screen.md)). While the
+top bar is hidden a corner button sits at `top|end` wearing the armed tool's glyph; a tap opens a
+mini toolbar of **Pen · Point eraser · Lasso eraser · Lasso · Back** — the note has one door, and
+one overflow entry is not an overflow (`CollapsedTools.overflowInline`, `INLINE_MAX` 2), so Back
+sits on the mini toolbar itself and there is no `…`. Back is mirrored from the top bar's own
+button, so a tap on it closes the row and performs the bar's own click — saves and closes, exactly
+as the bar's Back does. **The lasso wears the clipboard mark on the corner button and the mini
+toolbar, as it does on the bar** (`syncClipboardMark()` also calls `collapsed.showClipboardLoaded`)
+— the one standing hint that a pen tap on bare paper will paste, read wherever the lasso shows.
+Picking a tool from the mini toolbar arms it through `toolbar.arm` (a host-set tool is never echoed
+back as `onToolChanged`; the corner button repaints from `paper.tool` through `PaperToolbar`'s
+`onSynced`, the one funnel every arm passes through) and closes the row; the corner button itself is built after the toolbar and the
+eraser sub-bar, since a pick lands on `toolbar.arm` and opening the row takes the sub-bar down
+first (`onOpen = { hideEraserBar() }`). `ChromeToggle`'s `whileHidden` is the corner button and its
+`beforeShow` dismisses the row, exactly as the other three screens' toggles do.
+
 **Since arc 29 / LE2 the eraser has two kinds here too**, reached the same way as the notebook's own
 bar: a second tap on the armed eraser opens `:sn-screen`'s `EraserBar` (Point · Lasso) — the last
 child of the editor's root, dismissed on every pointer-down outside the bar and its own eraser

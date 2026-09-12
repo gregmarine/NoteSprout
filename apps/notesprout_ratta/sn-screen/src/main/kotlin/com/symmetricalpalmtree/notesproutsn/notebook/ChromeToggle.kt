@@ -13,9 +13,11 @@ import com.symmetricalpalmtree.notesproutsn.core.Slog
  * 1. `paper.releaseRender()` — unless [apply]'s `releaseRender` is false, when nothing is on
  *    the glass yet;
  * 2. hiding → [beforeHide]: the consumer takes down its button-anchored popups (lasso, tags,
- *    insert, eraser) whose button is about to go;
+ *    insert, eraser) whose button is about to go; showing → [beforeShow]: the rows hung off the
+ *    corner button go the same way (arc 36);
  * 3. every bar `GONE` / `VISIBLE` — **never `INVISIBLE`**: an attached Ratta paper view keeps the
- *    pen claimed whatever a sibling's visibility, and an `INVISIBLE` bar keeps its rect;
+ *    pen claimed whatever a sibling's visibility, and an `INVISIBLE` bar keeps its rect — and
+ *    every [whileHidden] view the inverse (arc 36: the corner tool button);
  * 4. `root.doOnNextLayout { afterLayout() }` — the consumer's `pushExclusions()`, which re-reads the
  *    band ([ChromeBand]), the rects (`PaperToolbar.rectOf`, visibility-aware) and, on the notebook,
  *    the snap margin. One binder call per flip.
@@ -38,6 +40,15 @@ class ChromeToggle(
      * because three screens had grown the same "flip, then write the flag" pair.
      */
     private val onChanged: (Boolean) -> Unit = {},
+    /**
+     * Views that live only while the bars are hidden — arc 36's corner tool button. They take the
+     * inverse visibility of [bars] in the same flip, so the corner button is never up beside a
+     * bar and never absent over bare paper.
+     */
+    private val whileHidden: List<View> = emptyList(),
+    /** The hide → show counterpart of [beforeHide]: the consumer takes down the rows hung off the
+     *  corner button, whose button is about to go (arc 36). */
+    private val beforeShow: () -> Unit = {},
 ) {
     /** The current state; `false` (shown) until the first [apply]. */
     var hidden: Boolean = false
@@ -54,9 +65,13 @@ class ChromeToggle(
         val changed = this.hidden != hidden
         this.hidden = hidden
         if (releaseRender) paper.releaseRender()
-        if (hidden) beforeHide()
+        // The hooks name a transition, so they fire only on one: the first application from
+        // `onCreate` (nothing is up yet) and a re-apply of the same state call neither.
+        if (changed) { if (hidden) beforeHide() else beforeShow() }
         val visibility = if (hidden) View.GONE else View.VISIBLE
         bars.forEach { it.visibility = visibility }
+        val inverse = if (hidden) View.VISIBLE else View.GONE
+        whileHidden.forEach { it.visibility = inverse }
         Slog.d(TAG) { "chrome hidden=$hidden" }
         root.doOnNextLayout { afterLayout() }
         root.requestLayout()

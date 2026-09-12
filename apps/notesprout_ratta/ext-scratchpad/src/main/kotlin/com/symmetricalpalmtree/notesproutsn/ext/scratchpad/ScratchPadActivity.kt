@@ -4,6 +4,8 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.ImageButton
+import android.widget.LinearLayout
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.lifecycleScope
@@ -20,6 +22,7 @@ import com.symmetricalpalmtree.notesproutsn.extension.WireStroke
 import com.symmetricalpalmtree.notesproutsn.ink.InkAction
 import com.symmetricalpalmtree.notesproutsn.ink.InkPage
 import com.symmetricalpalmtree.notesproutsn.ink.InkScreenActivity
+import com.symmetricalpalmtree.notesproutsn.notebook.CollapsedChrome
 import com.symmetricalpalmtree.notesproutsn.notebook.InkSelectionBar
 import com.symmetricalpalmtree.notesproutsn.notebook.PageGestures
 import com.symmetricalpalmtree.notesproutsn.notebook.EraserBar
@@ -89,6 +92,11 @@ class ScratchPadActivity : InkScreenActivity<ScratchAction>() {
     override val topBarView: View? get() = if (::binding.isInitialized) binding.topBar else null
     override val bottomBarView: View? get() = if (::binding.isInitialized) binding.bottomBar else null
     override val openingOverlay: View? get() = if (::binding.isInitialized) binding.openingOverlay else null
+    override val backButtonView: View? get() = if (::binding.isInitialized) binding.btnBack else null
+    // The collapsed chrome (arc 36 / C2) — the corner tool button and its two rows.
+    override val collapsedKnobView: ImageButton? get() = if (::binding.isInitialized) binding.collapsedKnob else null
+    override val collapsedBarView: LinearLayout? get() = if (::binding.isInitialized) binding.collapsedBar else null
+    override val collapsedOverflowView: LinearLayout? get() = if (::binding.isInitialized) binding.collapsedOverflow else null
     override val inkPage: InkPage? get() = document
     override val storeFailedTitleRes: Int get() = R.string.scratch_store_failed_title
     override val storeFailedBodyRes: Int get() = R.string.scratch_store_failed_body
@@ -103,6 +111,18 @@ class ScratchPadActivity : InkScreenActivity<ScratchAction>() {
     override fun record(action: InkAction) = undo.record(ScratchAction.Ink(action))
 
     override fun syncTool(tool: Tool) = toolbar.sync(tool)
+
+    override fun armTool(tool: Tool) = toolbar.arm(tool)
+
+    /**
+     * Back · Send (decision 5) — the pad's two doors, and no pager: a swipe flips pages while the
+     * chrome is collapsed. Send is **mirrored**, so the row shows it only when the bar does: opened
+     * from the library there is no notebook behind us and the button is GONE on both.
+     */
+    override fun collapsedOverflow(): List<CollapsedChrome.Entry> = listOfNotNull(
+        backEntry(),
+        CollapsedChrome.Entry.mirroring(R.drawable.ic_pencil_down, binding.btnSend),
+    )
 
     override fun showPage() = showPage(firstLoad = false)
 
@@ -146,6 +166,7 @@ class ScratchPadActivity : InkScreenActivity<ScratchAction>() {
 
         toolbar = ScratchToolbar(
             paper = paper,
+            onSynced = { syncCollapsed() },   // arc 36: the corner button repaints with the bar
             bottomBar = binding.bottomBar,
             btnBack = binding.btnBack,
             btnPen = binding.btnPen,
@@ -362,6 +383,7 @@ class ScratchPadActivity : InkScreenActivity<ScratchAction>() {
         currentSelection = null
         selectionBar.hide()   // idempotent — clearSelection fires onSelectionDismissed too
         hideEraserBar()       // a floating bar never survives a content swap
+        dismissCollapsed()    // and neither do the corner button's rows (arc 36 / C2)
         if (!firstLoad) paper.clearForContentSwap()
         paper.setPageSize(doc.pageWidth.toInt(), doc.pageHeight.toInt())
         paper.setTemplate(null)   // the pad is plain paper: no templates, ever

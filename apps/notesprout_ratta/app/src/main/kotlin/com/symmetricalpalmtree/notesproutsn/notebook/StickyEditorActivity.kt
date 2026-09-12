@@ -91,6 +91,10 @@ class StickyEditorActivity : AppCompatActivity() {
     /** The one global chrome flag (arc 33) — read at open, written at every toggle. */
     private lateinit var chromePrefs: ChromePrefs
     private lateinit var chromeToggle: ChromeToggle
+
+    /** The collapsed chrome (arc 36 / C2) — the corner tool button and its two rows, what this
+     *  screen shows while its one bar is hidden. */
+    private lateinit var collapsed: CollapsedChrome
     private lateinit var showing: StickyEditorTransfer.Showing
     private val clipStore by lazy { ClipStore() }
 
@@ -222,6 +226,9 @@ class StickyEditorActivity : AppCompatActivity() {
             btnLasso = binding.btnLasso,
             paper = paper,
             onBack = { exit() },
+            // Arc 36: the corner button repaints with the bar — the one funnel every tool change
+            // passes through, so no by-hand arm can leave it out.
+            onSynced = { if (::collapsed.isInitialized) collapsed.sync() },
             // A second tap on the armed eraser opens its sub-bar — Point · Lasso — and a third
             // closes it again (arc 29 / LE2, the notebook's toggle exactly).
             onEraserReTap = { if (eraserBar.isShowing) hideEraserBar() else showEraserBar() },
@@ -240,6 +247,23 @@ class StickyEditorActivity : AppCompatActivity() {
             bandBottom = { chromeBand()?.last },
             paper = paper,
             onPicked = { hideEraserBar(); toolbar.arm(it) },
+        )
+        // Arc 36 / C2: while the bar is hidden it collapses to a corner tool button with a mini
+        // toolbar under it — the four tools and an overflow row that is Back alone here (a note
+        // has one door). Built after the toolbar and the sub-bar, because a pick lands on
+        // `toolbar.arm` and opening a row takes the sub-bar down.
+        collapsed = CollapsedChrome(
+            root = binding.root,
+            knob = binding.collapsedKnob,
+            miniBar = binding.collapsedBar,
+            overflowBar = binding.collapsedOverflow,
+            paper = paper,
+            bandBottom = { chromeBand()?.last },
+            canOpen = { shown && !closing },
+            overflow = listOf(CollapsedChrome.Entry.mirroring(R.drawable.ic_arrow_left, binding.btnBack)),
+            onOpen = { hideEraserBar() },
+            onArmed = { toolbar.arm(it) },
+            onChanged = ::pushExclusions,
         )
         // The lasso wears the clipboard mark exactly as the notebook's does (arc 8): the one
         // standing hint that a pen tap on bare paper will paste. Re-read after every copy/cut.
@@ -278,6 +302,8 @@ class StickyEditorActivity : AppCompatActivity() {
             beforeHide = { hideEraserBar() },
             afterLayout = ::pushExclusions,
             onChanged = { chromePrefs.hidden = it },
+            whileHidden = listOf(binding.collapsedKnob),
+            beforeShow = { collapsed.dismiss() },
         )
 
         gestures = PageGestures(
@@ -368,6 +394,7 @@ class StickyEditorActivity : AppCompatActivity() {
             // pen arrives as ACTION_POINTER_DOWN (the notebook's O2 finding).
             if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
                 dismissEraserBarOnContact(ev, ev.actionIndex)
+                dismissCollapsedOnContact(ev, ev.actionIndex)
             }
             if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
                 val tool = ev.getToolType(0)
@@ -389,6 +416,7 @@ class StickyEditorActivity : AppCompatActivity() {
         closing = true
         // The floating bars belong to a screen that is leaving.
         hideEraserBar()
+        dismissCollapsed()
         flushNow()
         StickyEditorTransfer.leave(ink.strokes)
         setResult(Activity.RESULT_OK)
@@ -442,6 +470,7 @@ class StickyEditorActivity : AppCompatActivity() {
         selection = null
         selectionBar.hide()
         hideEraserBar()   // a floating bar never survives a content swap
+        dismissCollapsed()   // and neither do the corner button's rows (arc 36 / C2)
         paper.clearForContentSwap()
         paper.loadStrokes(ink.strokes)
         pushExclusions()
@@ -563,11 +592,13 @@ class StickyEditorActivity : AppCompatActivity() {
         }
     }
 
-    /** The notebook's `showClipboardLoaded`, for this screen's lasso button. */
+    /** The notebook's `showClipboardLoaded`, for this screen's lasso button — and, since arc 36,
+     *  for the corner button and the mini toolbar's lasso, which wear the same mark. */
     private fun syncClipboardMark() {
         binding.btnLasso.setImageResource(
             if (SnClipboard.hasObjects) R.drawable.ic_lasso_clipboard else R.drawable.ic_lasso,
         )
+        if (::collapsed.isInitialized) collapsed.showClipboardLoaded(SnClipboard.hasObjects)
     }
 
     private fun armLassoForLanding() {
@@ -612,7 +643,8 @@ class StickyEditorActivity : AppCompatActivity() {
         val loc = IntArray(2).also { v.getLocationInWindow(it) }
         val chrome = (
             listOfNotNull(PaperToolbar.rectOf(binding.topBar)) + selectionBar.rects() +
-                (if (::eraserBar.isInitialized) eraserBar.rects() else emptyList())
+                (if (::eraserBar.isInitialized) eraserBar.rects() else emptyList()) +
+                (if (::collapsed.isInitialized) collapsed.rects() else emptyList())
             )
             .map { Rect(it.left - loc[0], it.top - loc[1], it.right - loc[0], it.bottom - loc[1]) }
         // Already paper px — the page's own geometry, not a view in the root's coordinates.
@@ -645,7 +677,8 @@ class StickyEditorActivity : AppCompatActivity() {
         val x = ev.x.toInt(); val y = ev.y.toInt()
         return PaperToolbar.rectOf(binding.topBar)?.contains(x, y) == true ||
             selectionBar.contains(x, y) ||
-            (::eraserBar.isInitialized && eraserBar.contains(x, y))
+            (::eraserBar.isInitialized && eraserBar.contains(x, y)) ||
+            (::collapsed.isInitialized && collapsed.contains(x, y))
     }
 
     // ── The eraser sub-bar (arc 29 / LE2) ────────────────────────────────────
@@ -675,6 +708,20 @@ class StickyEditorActivity : AppCompatActivity() {
         if (PaperToolbar.rectOf(binding.btnEraser)?.contains(x, y) == true) return
         if (eraserBar.contains(x, y)) return
         hideEraserBar()
+    }
+
+    // ── The collapsed chrome (arc 36 / C2) ───────────────────────────────────
+
+    /** Both of the corner button's rows down. Idempotent, safe before the chrome is built. */
+    private fun dismissCollapsed() {
+        if (::collapsed.isInitialized) collapsed.dismiss()
+    }
+
+    /** The outside-contact dismissal — the rule lives in [CollapsedChrome], and this screen hangs
+     *  no sub-bar off the rows, so there is nothing to keep alive under a contact. */
+    private fun dismissCollapsedOnContact(ev: MotionEvent, index: Int) {
+        if (!::collapsed.isInitialized) return
+        collapsed.dismissOnContact(ev.getX(index).toInt(), ev.getY(index).toInt())
     }
 
     private fun toast(text: String) {

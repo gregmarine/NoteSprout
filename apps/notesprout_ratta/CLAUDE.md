@@ -284,8 +284,27 @@ deps without discussion, no Material Components, no `runBlocking` on main, `Slog
     outbound FIFO, `ExtensionScreenEntry.drainFurtherPages` + `onDrained(List)`,
     `Action.PagesReceived`; **a "Receiving from …" box over the caller for every send** (calendar
     and pad). No code review (the user's call); walked by the user on the **Manta** (release, the
-    migrated library). Final counts: 1654 `:app` / 3079 JVM tests. **Arcs 1–35 are all frozen; no
-    next arc without a user decision.**
+    migrated library). Final counts: 1654 `:app` / 3079 JVM tests.
+  - **Arc 36 "Corner"** (C1–C3, 2026-09-11; `CORNER_PLAN.md`; references `docs/notebook.md` §
+    Layout / § Gestures, `docs/sn-screen.md`, `docs/scratchpad.md`, `docs/calendar.md`,
+    `docs/objects.md` § Sticky notes) — a fresh user decision: arc 33's "hidden" chrome now
+    **collapses to a corner tool button** (top|end, wearing the armed tool's glyph) whose tap opens
+    a **mini toolbar** (Pen · Point eraser · Lasso eraser · Lasso · the notebook's Insert · `…`) and
+    an **overflow row** of Back + the screen's doors, every entry **mirroring** its bar button
+    (visibility / selected / glyph read at each open, `performClick()` of the bar's own button);
+    one or two overflow entries sit on the mini toolbar itself (`CollapsedTools.overflowInline`,
+    `INLINE_MAX` 2 — the pad's Back · Send, the sticky editor's Back), three or more go behind
+    `…` (notebook, calendar). One `:sn-screen` `CollapsedChrome` + pure `CollapsedTools` for all
+    four screens; `ChromeToggle(whileHidden, beforeShow)`, `AnchoredBar.show(anchor)`; the
+    notebook's Insert / Tags hang their sub-bars under the mini toolbar's / overflow's own buttons
+    (a GONE bar's button keeps stale edges). No point, no API bump, no schema change, the one
+    global flag unchanged in meaning. **`/code-review high` at the freeze (the user's call) — its
+    findings fixed in C3; do not re-raise.** Walked over adb and by the user on the Nomad.
+    **Standing trap:** the Nomad carries the release AND `.dev` build of every extension; the
+    `.dev` host binds the release scratch pad / calendar first (`caller is not the host`) — the two
+    release packages were `pm disable-user`'d there for the walk (re-enable on request). Final
+    counts: 1662 `:app` / 3097 JVM tests. **Arcs 1–36 are all frozen; no next arc without a user
+    decision.**
 - **Every extension APK wears the same icon — the Tabler "puzzle", byte-identical, no exception**
   (the user's call, 2026-09-05, which reversed the three per-subject glyphs granted along the way:
   `:ext-tags`' `tag`, `:ext-calendar`'s `calendar`, `:ext-cloud`'s `cloud`). A package is found by

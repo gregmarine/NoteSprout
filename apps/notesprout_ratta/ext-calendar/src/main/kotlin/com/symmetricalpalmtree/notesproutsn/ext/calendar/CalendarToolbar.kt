@@ -93,6 +93,8 @@ class CalendarToolbar(
     sendEnabled: Boolean,
     scratchPadAvailable: Boolean,
     exportEnabled: Boolean,
+    /** After every sync (arc 36) — the collapsed chrome's corner button repaints from here. */
+    onSynced: () -> Unit = {},
 ) {
 
     private val tools: PaperToolbar
@@ -114,6 +116,7 @@ class CalendarToolbar(
             onBack = onBack,
             onEraserReTap = onEraserReTap,
             onToolTapped = onToolTapped,
+            onSynced = onSynced,
         )
 
         // Every button carries a hint naming it — the word buttons included: their tooltip is their

@@ -69,7 +69,9 @@ class InsertBar(
     /** Whether anything at all is on offer — `true` in every build since H2 offered Text. */
     val hasOffers: Boolean get() = buttons.values.any { it.visibility == View.VISIBLE }
 
-    fun show(): Boolean = bar.show()
+    /** Open under the Insert button — or under [anchor] when named: the collapsed chrome's own
+     *  Insert button (arc 36), because the bar's is inside a `GONE` bar and keeps stale edges. */
+    fun show(anchor: View? = null): Boolean = if (anchor == null) bar.show() else bar.show(anchor)
 
     /** Idempotent — every dismiss path calls it without checking. */
     fun hide() = bar.hide()

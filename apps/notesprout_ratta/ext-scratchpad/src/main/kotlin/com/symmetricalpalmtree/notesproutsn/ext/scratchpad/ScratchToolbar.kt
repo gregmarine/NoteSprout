@@ -56,6 +56,8 @@ class ScratchToolbar(
     /** Any actual tool change — the screen closes the sub-bar that belonged to the old tool. */
     onToolTapped: () -> Unit,
     sendEnabled: Boolean,
+    /** After every sync (arc 36) — the collapsed chrome's corner button repaints from here. */
+    onSynced: () -> Unit = {},
 ) {
 
     private val tools: PaperToolbar
@@ -77,6 +79,7 @@ class ScratchToolbar(
             onBack = onBack,
             onEraserReTap = onEraserReTap,
             onToolTapped = onToolTapped,
+            onSynced = onSynced,
         )
 
         listOf(btnPrevPage, btnNextPage, btnSend).forEach {

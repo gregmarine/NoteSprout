@@ -137,6 +137,8 @@ class NotebookActivity : AppCompatActivity() {
     private lateinit var chromePrefs: ChromePrefs
     private lateinit var chromeToggle: ChromeToggle
     private val doubleTapRule = DoubleTapToggleRule()
+    /** Arc 36: the corner tool button + mini toolbar that stand in for the hidden bars. */
+    private lateinit var collapsed: CollapsedChrome
     /** The Scratch Pad's entry button (arc 11) — the host half of the EPD handoff lives in it. */
     private lateinit var scratchPad: ScratchPadEntry
     /** The Calendar's entry button (arc 23 / Y3) — the pad's shape, the same handoff inside it. */
@@ -244,7 +246,7 @@ class NotebookActivity : AppCompatActivity() {
         }
         override fun launchEditor(intent: Intent) = stickyEditorLauncher.launch(intent)
         override fun syncClipboardMark() {
-            if (this@NotebookActivity::toolbar.isInitialized) toolbar.showClipboardLoaded(SnClipboard.hasObjects)
+            if (this@NotebookActivity::toolbar.isInitialized) markClipboard(SnClipboard.hasObjects)
         }
     })
 
@@ -548,6 +550,10 @@ class NotebookActivity : AppCompatActivity() {
                 hideInsertBar()
                 hideEraserBar()
             },
+            // Arc 36: the collapsed chrome's corner button repaints with the bar — the one funnel
+            // every tool change passes through (a tap, `arm`, `armLasso`, every by-hand sync,
+            // `onToolChanged`), so no path can leave it wearing a tool that is no longer armed.
+            onSynced = { if (::collapsed.isInitialized) collapsed.sync() },
         )
         // The bottom strip's pager (the calendar's and the pad's [‹] [n / N] [›]). It flips only
         // WITHIN the notebook: the swipe past the last page still grows the notebook, but a button
@@ -807,9 +813,10 @@ class NotebookActivity : AppCompatActivity() {
             anchor = binding.btnTags,
             bandBottom = { chromeBand()?.last },
             releaseRender = { paper.releaseRender() },
-            onTagNotebook = { hideTagsPopup(); openTagsFor(TagShowing.TARGET_NOTEBOOK) },
-            onTagPage = { hideTagsPopup(); openTagsFor(TagShowing.TARGET_PAGE) },
-            onManage = { hideTagsPopup(); openTagManage() },
+            // Arc 36: the popup may hang off the collapsed overflow row — a door taken closes it too.
+            onTagNotebook = { hideTagsPopup(); dismissCollapsed(); openTagsFor(TagShowing.TARGET_NOTEBOOK) },
+            onTagPage = { hideTagsPopup(); dismissCollapsed(); openTagsFor(TagShowing.TARGET_PAGE) },
+            onManage = { hideTagsPopup(); dismissCollapsed(); openTagManage() },
         )
         binding.btnTags.setOnClickListener {
             if (!opened || closing) return@setOnClickListener
@@ -835,6 +842,7 @@ class NotebookActivity : AppCompatActivity() {
             // selected (D4).
             onInsert = { kind ->
                 hideInsertBar()
+                dismissCollapsed()   // arc 36: the bar may hang off the mini toolbar
                 val shape = InsertBar.shapeType(kind)
                 when {
                     shape != null -> shapeFlow.insertAtCentre(shape)
@@ -884,13 +892,58 @@ class NotebookActivity : AppCompatActivity() {
         // raises (selection toolbar, transform bar) keep working over bare paper. Applied from the
         // persisted flag before the first layout, so a screen opened hidden never shows its bars.
         chromePrefs = ChromePrefs(this)
+        // Arc 36: while hidden, the bars collapse to a corner tool button with a mini toolbar under
+        // it — the tools, Insert, and an overflow row of Back and every door. Entries mirror the
+        // bar buttons they stand for (visibility, glyph, click), so a door absent from the bar is
+        // absent here and the bar's own handler runs. Insert and Tags hang their sub-bars under
+        // the mini toolbar's own buttons — the bar's are inside a GONE bar with stale edges.
+        collapsed = CollapsedChrome(
+            root = binding.root,
+            knob = binding.collapsedKnob,
+            miniBar = binding.collapsedBar,
+            overflowBar = binding.collapsedOverflow,
+            paper = paper,
+            bandBottom = { chromeBand()?.last },
+            canOpen = { opened && !closing && canvasShown },
+            commands = listOf(
+                // Insert hangs its bar under the mini toolbar's own button; the overflow row
+                // shares that edge, so it goes first (two rows under one bar would overlap).
+                CollapsedChrome.Entry.mirroring(R.drawable.ic_plus, binding.btnInsert) { anchor ->
+                    if (insertBar.isShowing) { hideInsertBar(); return@mirroring }
+                    collapsed.hideOverflow()
+                    showInsertBar(anchor)
+                },
+            ),
+            overflow = listOf(
+                CollapsedChrome.Entry.mirroring(R.drawable.ic_arrow_left, binding.btnBack),
+                CollapsedChrome.Entry.mirroring(R.drawable.ic_list, binding.btnContents),
+                CollapsedChrome.Entry.mirroring(R.drawable.ic_file_text, binding.btnDocument),
+                CollapsedChrome.Entry.mirroring(R.drawable.ic_tag, binding.btnTags) { anchor ->
+                    if (tagsPopup.isShowing) hideTagsPopup() else showTagsPopup(anchor)
+                },
+                CollapsedChrome.Entry.mirroring(R.drawable.ic_clock, binding.btnRecents),
+                CollapsedChrome.Entry.mirroring(R.drawable.ic_calendar, binding.btnCalendar),
+                CollapsedChrome.Entry.mirroring(R.drawable.ic_sketching, binding.btnScratchPad),
+            ),
+            onOpen = { endTransformIfRunning(); hideLassoPopup(); hideTagsPopup(); hideInsertBar(); hideEraserBar() },
+            // The two sub-bars hung off the rows go with them, by every path a row can close —
+            // raw hides: the one exclusion push follows in `onChanged`.
+            onClose = { insertBar.hide(); tagsPopup.hide() },
+            onArmed = { toolbar.arm(it) },
+            onChanged = ::pushExclusions,
+        )
         chromeToggle = ChromeToggle(
             paper = paper,
             root = binding.root,
             bars = listOf(binding.topBar, binding.bottomStrip),
+            // The corner button is about to appear: it is made honest here, where the tool it must
+            // wear is whatever the bar last armed — a host-set tool (a bar tap, an eraser sub-bar
+            // pick) is never echoed back as `onToolChanged` (arc 36 / C2).
             beforeHide = { hideLassoPopup(); hideTagsPopup(); hideInsertBar(); hideEraserBar() },
             afterLayout = ::pushExclusions,
             onChanged = { chromePrefs.hidden = it },
+            whileHidden = listOf(binding.collapsedKnob),
+            beforeShow = { dismissCollapsed() },
         )
         chromeToggle.apply(chromePrefs.hidden, releaseRender = false)
 
@@ -985,7 +1038,7 @@ class NotebookActivity : AppCompatActivity() {
             // …and the same read decides whether the lasso button wears its clipboard mark: the
             // clipboard survives a force-stop, so a notebook opened tomorrow must still say that a
             // tap will paste.
-            toolbar.showClipboardLoaded(SnClipboard.hasObjects)
+            markClipboard(SnClipboard.hasObjects)
             // M8 — the route. A showing that ended while all of the above was on IO is re-decided
             // first and outranks everything (the S2 trap, [TextDocRouting.parkClose]); after that a
             // text document opens into its editor and leaves the paper alone.
@@ -1987,6 +2040,7 @@ class NotebookActivity : AppCompatActivity() {
         hideTagsPopup()           // and its Tag page door would now aim at a page nobody chose
         hideInsertBar()           // whatever it would place belongs to the page being left
         hideEraserBar()           // and the eraser's own sub-bar goes with every other floating bar
+        dismissCollapsed()        // arc 36: the mini toolbar's rows too
         paper.clearForContentSwap()
         paper.setPageSize(page.width, page.height)
         paper.setTemplate(session.template)
@@ -2826,7 +2880,7 @@ class NotebookActivity : AppCompatActivity() {
                 return@runPageOp
             }
             SnClipboard.set(header)
-            toolbar.showClipboardLoaded(true)
+            markClipboard(true)
             if (cut) {
                 if (displayedPageId != pageId) {
                     // The page moved under the capture (only reachable through a race): the copy
@@ -2969,7 +3023,7 @@ class NotebookActivity : AppCompatActivity() {
     /** Retire the clipboard row and everything that advertises it. Never throws. */
     private suspend fun retireClipboard() {
         SnClipboard.set(null)
-        toolbar.showClipboardLoaded(false)
+        markClipboard(false)
         runCatching { withContext(Dispatchers.IO) { clipStore.clear(System.currentTimeMillis()) } }
             .onFailure { Log.w(TAG, "clipboard clear failed", it) }
     }
@@ -3436,11 +3490,12 @@ class NotebookActivity : AppCompatActivity() {
      * its pages has none. The bar stays absent rather than opening with a door that would do
      * nothing (J4 — a control that cannot work is not shown greyed).
      */
-    private fun showTagsPopup() {
+    private fun showTagsPopup(anchor: View? = null) {
         if (!opened || closing || !canvasShown) return
         endTransformIfRunning()
         hideEraserBar()
-        if (tagsPopup.show()) pushExclusions()
+        hideInsertBar()   // arc 36: from the overflow row the contact that opens this is inside the collapsed chrome, which the Insert bar's own dismissal leaves alone
+        if (tagsPopup.show(anchor)) pushExclusions()
     }
 
     private fun hideTagsPopup() {
@@ -3457,13 +3512,26 @@ class NotebookActivity : AppCompatActivity() {
      * its pages has none. The two other floating bars come down first: they are three answers to
      * three different buttons, and the newest tap wins.
      */
-    private fun showInsertBar() {
+    private fun showInsertBar(anchor: View? = null) {
         if (!opened || closing || !canvasShown) return
         endTransformIfRunning()
         hideLassoPopup()
         hideTagsPopup()
         hideEraserBar()
-        if (insertBar.show()) pushExclusions()
+        if (insertBar.show(anchor)) pushExclusions()
+    }
+
+    // ── The collapsed chrome (arc 36 / C1) ───────────────────────────────────
+
+    /** Both of the corner button's rows down. Idempotent, safe before the surface is built. */
+    private fun dismissCollapsed() {
+        if (::collapsed.isInitialized) collapsed.dismiss()
+    }
+
+    /** The lasso's clipboard mark, on the bar and on the collapsed chrome alike (arc 8 / arc 36). */
+    private fun markClipboard(loaded: Boolean) {
+        toolbar.showClipboardLoaded(loaded)
+        if (::collapsed.isInitialized) collapsed.showClipboardLoaded(loaded)
     }
 
     private fun hideInsertBar() {
@@ -3861,7 +3929,7 @@ class NotebookActivity : AppCompatActivity() {
         SnClipboard.set(header)
         // One slot, kind wins (arc 8): a page copy takes the objects' place, so the lasso's mark
         // has to stop promising a paste it no longer holds.
-        toolbar.showClipboardLoaded(false)
+        markClipboard(false)
         hideLassoPopup()
         if (cut) {
             val snap = session.deleteCurrent()
@@ -3970,7 +4038,8 @@ class NotebookActivity : AppCompatActivity() {
         val rects = (
             listOfNotNull(rectOf(binding.topBar), rectOf(binding.bottomStrip)) +
                 selectionToolbar.rects() + lassoPopup.rects() + tagsPopup.rects() +
-                insertBar.rects() + eraserBar.rects() + transformBar.rects()
+                insertBar.rects() + eraserBar.rects() + transformBar.rects() +
+                (if (::collapsed.isInitialized) collapsed.rects() else emptyList())
             )
             .map { Rect(it.left - paperLoc[0], it.top - paperLoc[1], it.right - paperLoc[0], it.bottom - paperLoc[1]) }
         paper.setExclusionRects(rects)
@@ -4023,6 +4092,7 @@ class NotebookActivity : AppCompatActivity() {
                 dismissTagsPopupOnContact(ev, ev.actionIndex)
                 dismissInsertBarOnContact(ev, ev.actionIndex)
                 dismissEraserBarOnContact(ev, ev.actionIndex)
+                dismissCollapsedOnContact(ev, ev.actionIndex)
             }
             if (action == MotionEvent.ACTION_DOWN) {
                 val tool = ev.getToolType(0)
@@ -4065,6 +4135,9 @@ class NotebookActivity : AppCompatActivity() {
         val x = ev.getX(index).toInt(); val y = ev.getY(index).toInt()
         if (rectOf(binding.btnTags)?.contains(x, y) == true) return
         if (tagsPopup.contains(x, y)) return
+        // Arc 36: the popup may hang off the overflow row, whose Tags button toggles it — the same
+        // close-then-reopen trap as the bar's button, so a contact on the rows is theirs to answer.
+        if (::collapsed.isInitialized && collapsed.contains(x, y)) return
         hideTagsPopup()
     }
 
@@ -4076,6 +4149,7 @@ class NotebookActivity : AppCompatActivity() {
         val x = ev.getX(index).toInt(); val y = ev.getY(index).toInt()
         if (rectOf(binding.btnInsert)?.contains(x, y) == true) return
         if (insertBar.contains(x, y)) return
+        if (::collapsed.isInitialized && collapsed.contains(x, y)) return   // arc 36, the tag bar's reason
         hideInsertBar()
     }
 
@@ -4091,6 +4165,24 @@ class NotebookActivity : AppCompatActivity() {
         hideEraserBar()
     }
 
+    /**
+     * The collapsed chrome's outside-tap dismissal (arc 36) — the rule lives in [CollapsedChrome];
+     * the sub-bars hung off its rows (Insert, Tags) keep the rows up under a contact of their own.
+     *
+     * It **does** write [tapDismissedPopup], the lasso popup's latch: the mini toolbar sits open
+     * under an armed lasso wearing the clipboard mark, so a pen tap spent closing it must not also
+     * paste — the same second meaning that latch was minted for. Runs after the lasso popup's
+     * dismissal, which rewrites the latch at every pointer-down, so this only ever adds to it.
+     */
+    private fun dismissCollapsedOnContact(ev: MotionEvent, index: Int) {
+        if (!::collapsed.isInitialized) return
+        val dismissed = collapsed.dismissOnContact(ev.getX(index).toInt(), ev.getY(index).toInt()) { x, y ->
+            (::insertBar.isInitialized && insertBar.contains(x, y)) ||
+                (::tagsPopup.isInitialized && tagsPopup.contains(x, y))
+        }
+        if (dismissed) tapDismissedPopup = true
+    }
+
     /** Both bars, the selection toolbar and the two floating popups — a floating bar is chrome
      *  like any other. */
     private fun overChrome(ev: MotionEvent): Boolean {
@@ -4104,7 +4196,8 @@ class NotebookActivity : AppCompatActivity() {
             (::tagsPopup.isInitialized && tagsPopup.contains(x, y)) ||
             (::insertBar.isInitialized && insertBar.contains(x, y)) ||
             (::eraserBar.isInitialized && eraserBar.contains(x, y)) ||
-            (::transformBar.isInitialized && transformBar.contains(x, y))
+            (::transformBar.isInitialized && transformBar.contains(x, y)) ||
+            (::collapsed.isInitialized && collapsed.contains(x, y))
     }
 
     /** The shared rule — visibility-aware since arc 33, so a hidden bar has no rect. */

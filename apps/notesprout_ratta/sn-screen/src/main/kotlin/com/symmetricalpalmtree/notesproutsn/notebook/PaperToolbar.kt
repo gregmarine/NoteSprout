@@ -46,6 +46,10 @@ class PaperToolbar(
     /** Any **actual** tool change (arc 29 / LE2) — the screen closes floating chrome that belonged
      *  to the old tool. It deliberately does not fire on a re-tap: see [select]. */
     private val onToolTapped: () -> Unit = {},
+    /** Fires after every [sync] (arc 36) — the one funnel every tool change passes through (a
+     *  bar tap, [arm], every by-hand sync, `onToolChanged`), so anything else that shows the armed
+     *  tool (the collapsed chrome's corner button) repaints from here and can never be left out. */
+    private val onSynced: () -> Unit = {},
 ) {
     init {
         listOf(btnBack, btnPen, btnEraser, btnLasso).forEach {
@@ -118,6 +122,7 @@ class PaperToolbar(
             btnEraser.setImageResource(if (lassoKind) R.drawable.ic_lasso_eraser else R.drawable.ic_eraser)
         }
         btnLasso.isSelected = tool == Tool.LASSO
+        onSynced()
     }
 
     /** The bar's rect in window coordinates (for `setExclusionRects`), or null before layout. */

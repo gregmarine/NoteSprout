@@ -36,7 +36,7 @@ import com.symmetricalpalmtree.notesproutsn.screen.R
 class AnchoredBar(
     private val root: ViewGroup,
     private val bar: LinearLayout,
-    /** The top-bar button the bar hangs under. */
+    /** The top-bar button the bar hangs under by default — [show] may name another (arc 36). */
     private val anchor: View,
     /** The free band's bottom edge in root coordinates (the bottom strip's top); null before layout. */
     private val bandBottom: () -> Int?,
@@ -55,15 +55,20 @@ class AnchoredBar(
         button(iconRes, hint, onClick).also { bar.addView(it) }
 
     /**
-     * Open the bar under the anchor. Returns false — showing nothing — before the root has been
-     * laid out, which is what makes a caller's "second tap = no-op" honest at every moment the
-     * geometry is not yet knowable.
+     * Open the bar under [anchor] — the constructor's button unless a caller names another: the
+     * collapsed chrome (arc 36) hangs the Insert bar and the tags popup off its own mini-toolbar
+     * buttons, because the bar button they were built on is inside a `GONE` bar and keeps stale
+     * edges. Returns false — showing nothing — before the root has been laid out, which is what
+     * makes a caller's "second tap = no-op" honest at every moment the geometry is not yet knowable.
      */
-    fun show(): Boolean {
+    fun show(anchor: View = this.anchor): Boolean {
         val band = bandBottom() ?: return false
         val rootLoc = IntArray(2).also { root.getLocationInWindow(it) }
         val anchorLoc = IntArray(2).also { anchor.getLocationInWindow(it) }
-        if (anchor.width == 0 || anchor.height == 0) return false
+        // Visibility-aware, like every rect reader since arc 33: a `GONE` anchor (a bar button while
+        // the chrome is collapsed) keeps stale edges, and a bar hung under it would land under
+        // nothing — so that show is a loud no-op rather than a misplaced bar.
+        if (PaperToolbar.rectOf(anchor) == null) return false
 
         // Measure before placing: the anchor centres on the bar's real width, and a bar that has
         // never been visible has none (the SelectionToolbar lesson).

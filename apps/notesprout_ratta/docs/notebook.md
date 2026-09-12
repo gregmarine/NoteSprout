@@ -151,6 +151,80 @@ holds **one global boolean**, default shown, shared by all four paper surfaces �
 page" is a way of working, not a property of a page or a notebook. It is device-local: never backed
 up, never restored, and not in the index or any `.soil`.
 
+**Arc 36 ("Corner") replaces the bare-paper state.** While the bars are `GONE` a single floating
+**corner button** sits at `top|end` (8dp margin, `shape_dialog_bordered`, the toolbar-button dimen)
+wearing the armed tool's glyph — `CollapsedTools.iconFor(tool, clipboardLoaded)`, the same
+clipboard-loaded lasso mark the bar's own lasso button wears (arc 8), and `Tool.NONE` wearing the
+pen (a surface that captures nothing still names what a tap brings back). It is declared in
+`activity_notebook.xml` before the opening overlay, `GONE` while the bars show and flipped to
+`VISIBLE` by `ChromeToggle`'s new `whileHidden` list in the same pass that hides the bars — never up
+beside a bar, never absent over bare paper. It caches nothing: `CollapsedChrome.sync()` repaints
+from `paper.tool`, and is wired once into `NotebookToolbar`'s `onSynced` — the one funnel every tool
+change passes through (a bar tap, `arm`, `armLasso`, every by-hand sync, `onToolChanged`) — so no
+path, echoed by g-paper or host-set, can leave it wearing a tool that is no longer armed (the C3
+review's finding: two by-hand arms had been left out of a per-site fan-out).
+
+A tap on the corner button opens a **mini toolbar** (`CollapsedChrome`, `:sn-screen`) hung under it
+by `AnchoredBar`: the four tools in `CollapsedTools.ORDER` (Pen · Point eraser · Lasso eraser ·
+Lasso), the armed one bordered, then the notebook's own commands — Insert — then a `…` button
+opening a second **overflow row**: Back · Contents · Document · Tags · Recents · Calendar · Scratch
+Pad, mirroring the bar buttons of the same name. **A small overflow is not an overflow**
+(`CollapsedTools.overflowInline`, `INLINE_MAX` = 2, the user's call after the C2 walks): the sticky
+editor's Back and the pad's Back · Send sit on the mini toolbar itself with no `…` at all, because
+opening a row for one or two buttons is two taps for one; the notebook and the calendar have seven
+and eight doors respectively and keep the `…`.
+
+Every mirrored entry (`CollapsedChrome.Entry.mirroring(iconRes, button, onTap)` — the hint is the
+bar button's own content description) copies its bar
+button's state at the moment the row opens, never cached: visibility (a door `GONE` on the bar —
+Tags without a trusted tag manager, Calendar/Scratch Pad without their extensions — is absent here
+too), the selected look, and, for an image button, its current glyph. A tap on a plain mirrored
+entry closes both rows and `performClick()`s the bar's own button — one handler, never a second copy
+of it. Insert and Tags are the two entries with their own `onTap`: each hangs its sub-bar under
+**its own mini-toolbar / overflow button**, via `AnchoredBar.show(anchor)`'s new optional anchor
+parameter, and leaves the row open beneath it. **This is load-bearing, not a style choice**: the
+bar's own `btnInsert` / `btnTags` sit inside a `GONE` top bar while the chrome is collapsed, and a
+`GONE` view keeps its last measured position — hanging a sub-bar off it would land the bar exactly
+where the top bar used to be, not under the corner button's row. Picking a tool instead **arms** it
+(`CollapsedChrome.pick`) — the assignment is skipped when the tool is already armed, so a re-tap
+changes nothing on the surface but still closes the rows, because a tap on a tool is an answer — and
+calls back into `onArmed`, which is where the notebook's own `toolbar.arm(it)` runs (again because
+the pick is never echoed as `onToolChanged`).
+
+**Dismissal.** Any contact that starts outside the corner button, both rows, or a sub-bar hung off
+them (`CollapsedChrome.dismissOnContact`, the `keep` lambda checking the Insert bar and the tags
+popup) takes both rows down — a bare pen tap, a stroke, a finger gesture, or any bar button. The
+corner button is deliberately excluded from that rule: closing it there and letting its own
+`setOnClickListener` reopen it in the same contact is the lasso popup's own close-then-reopen trap.
+The rows also go down at every place the notebook's other floating bars do: a page swap, the
+hide → show flip (`ChromeToggle`'s new `beforeShow` hook — `dismissCollapsed()` — because a shown
+bar button is about to reappear and its would-be sub-bar is stale), a tool pick, and every one of the
+overflow's own actions (Insert's landed shape, a Tags pick, Contents/Document/Recents/Calendar/
+Scratch Pad's own launches).
+
+**Chrome, not paper.** The corner button and both rows join every existing list: `pushExclusions()`
+(so the pen refuses to ink under them), `overChrome()` (so a finger landing on them is not a page
+gesture), and the outside-contact dismissals of the tags popup and the Insert bar, which now also
+leave a contact inside the collapsed chrome alone — a tap on the mini toolbar's own Insert / Tags
+button toggles its sub-bar rather than being read as an outside tap by the bar-level dismissal that
+would otherwise fire first.
+
+**Render release** follows the existing split: opening a row is one chrome frame at a deliberate tap
+with the pen still hovering — an ungated `paper.releaseRender()`, the Insert bar's own rule — while
+a tool pick goes through the eraser sub-bar's pen-gated `PenIdle.releaseRenderIfIdle`. Nothing about
+the collapsed chrome is a new frame-silence exception: it rides the chrome toggle's own exception 6
+(§ Frame-silence rule) exactly, because opening or closing a row is answered by the same deliberate
+act — a chrome tap or a gesture that already passed `PageGestures.gateOpen()` — that every other
+floating bar answers.
+
+**Nothing new is persisted.** The one boolean `ChromePrefs.hidden` is unchanged in meaning —
+"hidden" now means "collapsed to the corner" rather than "bare paper" — and whether a row is open is
+not state: it is never written, never restored, and starts closed on every open of the screen.
+
+**Trap 3:** a sub-bar hung under a `GONE`-parented anchor lands where the bar used to be, not where
+its own button now sits — the reason `AnchoredBar.show` takes an optional `anchor` and the mini
+toolbar's Insert / Tags entries always pass their own button, never the top bar's.
+
 ## Toolbar — fixed tools (P1)
 
 Paper v0's bar shape, and Paper v0's fixed tools. **There are no panels and nothing is
@@ -1222,7 +1296,7 @@ paper is full-bleed and the chrome is two thin bars.
 | 1-finger vertical swipe ↓ | open the Contents (C1 — silent while the notebook has no heading) |
 | 1-finger vertical swipe ↑ | walk back the link trail (K4 — silent while the trail is empty; [`docs/links.md`](links.md)) |
 | 1-finger tap on a link | follow it (K4 — finger only, never stylus; the escrowed inverse-recogniser tap below) |
-| 1-finger double-tap on bare paper | **hide / show all chrome** (arc 33 / F1 — the top bar and the bottom strip go `GONE` together and come back on the next pair; a pair where either tap hit a sticky or a link is that tap's act, never a toggle — `DoubleTapToggleRule`; the flag is global and persisted, `ChromePrefs`; guarded `opened && !closing`, the same shape every other gesture handler uses) |
+| 1-finger double-tap on bare paper | **hide / show all chrome** (arc 33 / F1 — the top bar and the bottom strip go `GONE` together and come back on the next pair; a pair where either tap hit a sticky or a link is that tap's act, never a toggle — `DoubleTapToggleRule`; the flag is global and persisted, `ChromePrefs`; guarded `opened && !closing`, the same shape every other gesture handler uses. **Since arc 36 "hidden" shows a floating corner tool button and its mini toolbar / overflow row rather than bare paper** — § Layout) |
 | 2-finger horizontal swipe ← / → | insert a page after / before this one |
 | 2-finger vertical swipe ↓ | open the **Recents** (T1 — its upward twin is unassigned) |
 | 2-finger stationary double-tap | undo |
@@ -1874,6 +1948,12 @@ does; and it is deliberately *not* idle-gated, for exceptions 2, 3 and 6's reaso
 counts hover, and a hovering pen would hold the bars back long after the taps that asked for them.
 The floating bars a lasso raises keep working over bare paper (exception 2 covers their show), and
 the button-anchored popups go down at hide as a deliberate act (exception 7's hides).
+
+**Arc 36 added no new exception**: the collapsed chrome's corner button and its two rows ride
+exception 6 exactly — opening or closing a row follows a chrome tap on the corner button, a
+mirrored bar button, or a tool pick, each already `releaseRender()`-ed and none idle-gated, for the
+same hover reason exceptions 2, 3 and 6 already give. A tool pick's own release is the eraser
+sub-bar's pen-gated `PenIdle.releaseRenderIfIdle`, not this exception's ungated one.
 
 Any new exception needs the same written justification.
 

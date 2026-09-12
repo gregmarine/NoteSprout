@@ -8,4 +8,10 @@
          all four paper surfaces share the one EraserBar. -->
     <string name="eraser_point">Point eraser</string>
     <string name="eraser_lasso">Lasso eraser</string>
+    <!-- The collapsed chrome (arc 36): the corner tool button's hint, the overflow button's, and
+         the mini toolbar's Pen / Lasso hints — the four screens say the same four words. -->
+    <string name="collapsed_tools">Tools</string>
+    <string name="collapsed_more">More</string>
+    <string name="tool_pen">Pen</string>
+    <string name="tool_lasso">Lasso</string>
 </resources>

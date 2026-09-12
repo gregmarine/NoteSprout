@@ -5,6 +5,8 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.ImageButton
+import android.widget.LinearLayout
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -26,6 +28,7 @@ import com.symmetricalpalmtree.notesproutsn.extension.WireStroke
 import com.symmetricalpalmtree.notesproutsn.ink.InkAction
 import com.symmetricalpalmtree.notesproutsn.ink.InkPage
 import com.symmetricalpalmtree.notesproutsn.ink.InkScreenActivity
+import com.symmetricalpalmtree.notesproutsn.notebook.CollapsedChrome
 import com.symmetricalpalmtree.notesproutsn.notebook.InkSelectionBar
 import com.symmetricalpalmtree.notesproutsn.notebook.PageGestures
 import com.symmetricalpalmtree.notesproutsn.notebook.EraserBar
@@ -166,6 +169,11 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
     override val topBarView: View? get() = if (::binding.isInitialized) binding.topBar else null
     override val bottomBarView: View? get() = if (::binding.isInitialized) binding.bottomBar else null
     override val openingOverlay: View? get() = if (::binding.isInitialized) binding.openingOverlay else null
+    override val backButtonView: View? get() = if (::binding.isInitialized) binding.btnBack else null
+    // The collapsed chrome (arc 36 / C2) — the corner tool button and its two rows.
+    override val collapsedKnobView: ImageButton? get() = if (::binding.isInitialized) binding.collapsedKnob else null
+    override val collapsedBarView: LinearLayout? get() = if (::binding.isInitialized) binding.collapsedBar else null
+    override val collapsedOverflowView: LinearLayout? get() = if (::binding.isInitialized) binding.collapsedOverflow else null
     override val inkPage: InkPage? get() = document
     override val storeFailedTitleRes: Int get() = R.string.calendar_store_failed_title
     override val storeFailedBodyRes: Int get() = R.string.calendar_store_failed_body
@@ -256,6 +264,30 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
 
     override fun syncTool(tool: Tool) = toolbar.sync(tool)
 
+    override fun armTool(tool: Tool) = toolbar.arm(tool)
+
+    /**
+     * Back, then every door and action on the top bar in bar order (decision 5): Today · Month ·
+     * Week · Day · the out-door · Events · Scratch Pad. No pager — a swipe steps the period while
+     * the chrome is collapsed.
+     *
+     * Every entry **mirrors** its bar button, so none of this is copied: the armed view's latch,
+     * the out-door's Send-or-Export glyph and its absence when neither door is open are all read
+     * off the bar at each open, and a tap performs the bar button's own click.
+     */
+    override fun collapsedOverflow(): List<CollapsedChrome.Entry> = listOfNotNull(
+        backEntry(),
+        CollapsedChrome.Entry.mirroring(R.drawable.ic_calendar_star, binding.btnToday),
+        CollapsedChrome.Entry.mirroring(R.drawable.ic_calendar_month, binding.btnMonth),
+        CollapsedChrome.Entry.mirroring(R.drawable.ic_calendar_week, binding.btnWeek),
+        CollapsedChrome.Entry.mirroring(R.drawable.ic_calendar_day, binding.btnDay),
+        // The out-door's Send-or-Export glyph and wording were decided by [CalendarToolbar]
+        // before this is read; mirroring reads them off the button.
+        CollapsedChrome.Entry.mirroring(R.drawable.ic_pencil_down, binding.btnSend),
+        CollapsedChrome.Entry.mirroring(R.drawable.ic_calendar_event, binding.btnEvents),
+        CollapsedChrome.Entry.mirroring(R.drawable.ic_sketching, binding.btnScratchPad),
+    )
+
     override fun showPage() = showPage(firstLoad = false)
 
     override suspend fun revert(action: InkAction) {
@@ -311,6 +343,7 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
 
         toolbar = CalendarToolbar(
             paper = paper,
+            onSynced = { syncCollapsed() },   // arc 36: the corner button repaints with the bar
             topBar = binding.topBar,
             btnBack = binding.btnBack,
             btnPen = binding.btnPen,
@@ -598,6 +631,7 @@ class CalendarActivity : InkScreenActivity<InkAction>() {
         currentSelection = null
         selectionBar.hide()
         hideEraserBar()   // a floating bar never survives a content swap
+        dismissCollapsed()   // and neither do the corner button's rows (arc 36 / C2)
         if (!firstLoad) paper.clearForContentSwap()
         applyTemplate(force = forceBake)
         paper.loadStrokes(doc.strokes)

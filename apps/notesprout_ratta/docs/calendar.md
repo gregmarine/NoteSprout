@@ -849,7 +849,27 @@ also answers `Nothing` rather than guessing. `Toggle` calls the base class's `to
 `CalendarActivity.onFingerDoubleTap` runs the decision inside `runPageOp`, serialised against a
 flip's own `showPage`. Walk detail: a Month cell's centre is `77 + row·200 + 99` on the Nomad, and
 the hairline between two rows is `Nothing` by design — a tap that lands exactly on one does
-nothing, on purpose.
+nothing, on purpose. **The zone rule is untouched by arc 36** — a Month/Week cell double-tap still
+opens the day even while the chrome is collapsed to the corner.
+
+**Since arc 36 / C2 "hidden" collapses to a corner tool button, as on the other three paper
+screens** (`:sn-screen`'s `CollapsedChrome`, shared with the pad and the sticky editor — see
+[`docs/sn-screen.md`](sn-screen.md)). While the bars are hidden the button sits at `top|end`
+wearing the armed tool's glyph; tapping it opens the mini toolbar — Pen · Point eraser · Lasso
+eraser · Lasso — and, because the calendar has eight doors to offer (three or more is an overflow,
+`CollapsedTools.INLINE_MAX` 2), **the calendar keeps the `…`**: a second row underneath holds
+**Back · Today · Month · Week · Day · Send/Export · Events · Scratch Pad**, in bar order. Every
+overflow entry **mirrors its bar button** — read fresh at each open, never cached — so the row can
+never show a door the bar itself would not: a button absent from the bar is absent here, the
+Month/Week/Day view latch (`isSelected`) reads the same on both, and the out-door's glyph (Send vs.
+Export, whichever `sendOrExport()` last set) is copied off the bar button's own drawable rather
+than picked independently. Tapping an entry closes both rows and performs the bar button's own
+click — one handler, never a second copy of `exportPage()`/`sendOrExport()`/the navigation calls.
+No pager on the mini toolbar: a swipe still steps the period while collapsed. `CalendarActivity`
+supplies nothing beyond its `armTool = toolbar.arm`, the toolbar's `onSynced = syncCollapsed` and
+this overflow list — the corner button's repaint (from `paper.tool`, through the toolbar's one sync
+funnel), the exclusion rects, the outside-tap dismissal and every page-swap dismissal are
+`InkScreenActivity`'s, once, shared with the pad.
 
 ## Undo
 

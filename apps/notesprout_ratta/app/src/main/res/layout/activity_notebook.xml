@@ -314,6 +314,41 @@
         android:background="@drawable/shape_dialog_bordered"
         android:padding="4dp"/>
 
+    <!-- The collapsed chrome (arc 36 / C1) — what shows while both bars are hidden: the corner
+         tool button at top-right wearing the armed tool's glyph, and, hung under it on a tap, the
+         mini toolbar and its overflow row (buttons built in code — CollapsedChrome, :sn-screen).
+         The button is GONE while the bars show; ChromeToggle flips it with them. All three sit
+         after every bar they may overlap and before the opening overlay, which stays topmost. -->
+    <androidx.appcompat.widget.AppCompatImageButton
+        android:id="@+id/collapsedKnob"
+        style="@style/Widget.Notesprout.ToolbarButton"
+        android:layout_gravity="top|end"
+        android:layout_margin="8dp"
+        android:background="@drawable/shape_dialog_bordered"
+        android:src="@drawable/ic_pen"
+        android:visibility="gone"
+        android:contentDescription="@string/collapsed_tools"/>
+
+    <LinearLayout
+        android:id="@+id/collapsedBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:background="@drawable/shape_dialog_bordered"
+        android:padding="4dp"/>
+
+    <LinearLayout
+        android:id="@+id/collapsedOverflow"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:orientation="horizontal"
+        android:visibility="gone"
+        android:background="@drawable/shape_dialog_bordered"
+        android:padding="4dp"/>
+
     <include
         android:id="@+id/openingOverlay"
         layout="@layout/overlay_opening"

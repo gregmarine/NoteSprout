@@ -101,6 +101,26 @@ withholds the band entirely, so a floating bar refuses to show until it can be p
 The pad **persists nothing**: it is handed the flag on the way in and echoes its final state on the
 way out (below); the one global, persisted `ChromePrefs` boolean lives on the host.
 
+**Since arc 36 / C2 "hidden" no longer means bare paper — it collapses to a corner tool button.**
+While the bars are hidden a single floating button sits at `top|end` wearing the armed tool's
+glyph (`:sn-screen`'s `CollapsedChrome`, one copy shared by all four paper screens — see
+[`docs/sn-screen.md`](sn-screen.md)). Tapping it opens a **mini toolbar** hung under it: Pen ·
+Point eraser · Lasso eraser · Lasso, then the pad's own two doors **Back · Send** — one or two
+overflow entries are not an overflow (`CollapsedTools.overflowInline`, `INLINE_MAX` 2, the user's
+call after the C2 walk), so the pad builds no `…` and no second row at all. Send is **mirrored**
+from the top bar's own Send button — present only when the bar's is (a pad opened from the
+library with no notebook behind it shows neither) — and a tap on it performs the bar button's own
+click. Tapping the armed tool in the mini toolbar closes it and arms nothing new; any other tool
+pick arms it (`toolbar.arm`, since a host-set tool is never echoed back as `onToolChanged`), closes
+the rows and repaints the corner button. A tap anywhere else — bare paper, a stroke, a finger
+gesture — dismisses it. `InkScreenActivity` owns all of this once for the pad and the calendar:
+`initCollapsed` builds the chrome before `initChrome`'s `ChromeToggle` (`whileHidden` = the corner
+button, `beforeShow` = dismiss both rows), the corner button repaints through the pad toolbar's
+`onSynced` (`syncCollapsed` — the one funnel every tool change passes through, reading `paper.tool`
+fresh), and every page swap / exit that takes the eraser sub-bar down takes the collapsed chrome
+down with it. Nothing new is persisted: the flag's meaning is unchanged, and
+whether a row is open is not state.
+
 **The caller check is the first statement in `onCreate`**, before anything is inflated. The screen is
 exported (the host launches it by action) and only a `startActivityForResult` from the host package
 with a matching signature gets in — a plain `am start` has a null `callingPackage` and is refused.

@@ -7,6 +7,9 @@ import android.os.Bundle
 import android.util.Log
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
+import android.widget.ImageButton
+import android.widget.LinearLayout
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -23,6 +26,7 @@ import com.symmetricalpalmtree.notesproutsn.extension.InkChunks
 import com.symmetricalpalmtree.notesproutsn.extension.WireStroke
 import com.symmetricalpalmtree.notesproutsn.notebook.ChromeBand
 import com.symmetricalpalmtree.notesproutsn.notebook.ChromeToggle
+import com.symmetricalpalmtree.notesproutsn.notebook.CollapsedChrome
 import com.symmetricalpalmtree.notesproutsn.notebook.EraserBar
 import com.symmetricalpalmtree.notesproutsn.notebook.InkSelectionBar
 import com.symmetricalpalmtree.notesproutsn.notebook.PageGestures
@@ -83,6 +87,12 @@ import kotlinx.coroutines.withContext
  *   first datum this seam's result has ever carried, and the only one. The extension persists
  *   nothing: the host writes the flag it is handed back. [chromeBand] is [ChromeBand]'s answer, so
  *   the floating bars keep working over bare paper while the chrome is hidden.
+ * - **the collapsed chrome** (arc 36 / C2): `:sn-screen`'s [CollapsedChrome] over the corner tool
+ *   button and its two rows, built by [initChrome] **before** the toggle that flips the button with
+ *   the bars. The screen says only what differs — its [collapsedOverflow] entries and how it
+ *   arms a tool ([armTool]); its toolbar's `onSynced` repaints it ([syncCollapsed]); the rects, the hit test, the
+ *   outside-contact dismissal and every page-swap / exit dismissal live here once, beside the
+ *   eraser sub-bar's, which they follow exactly.
  *
  * **`HostCallerCheck.enforceActivity` stays the first statement of the concrete `onCreate`**, before
  * anything is inflated, and the subclass assigns [paper], [chrome], [gestures], [selectionBar] and
@@ -109,6 +119,12 @@ import kotlinx.coroutines.withContext
  *
  * [A] is the consumer's undo action type: the pad's `ScratchAction` (which wraps an [InkAction]
  * alongside its page-level one) or the calendar's bare [InkAction].
+ *
+ * **Why this file is over the ~800-line line** (arc 36 / C2 took it past it): every line here is a
+ * line that would otherwise be written twice — once in the pad and once in the calendar — and the
+ * app's standing answer to that is the `RattaNotebookView` sibling-copy trap. Splitting it by
+ * subject would mean splitting one Activity's lifecycle across files, which is the worse of the
+ * two costs; it is organised by the section rules instead.
  */
 abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
 
@@ -121,6 +137,11 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
     /** The eraser button's sub-bar (arc 29 / LE3) — Point · Lasso. Assigned in `onCreate` after
      *  the toolbar, because a pick lands on the toolbar's `arm`. */
     protected lateinit var eraserBar: EraserBar
+
+    /** The collapsed chrome (arc 36 / C2) — the corner tool button and its two rows, what this
+     *  screen shows while the bars are hidden. Built by [initChrome], before the toggle that flips
+     *  the button with them; never initialised on a screen whose layout carries no corner button. */
+    protected lateinit var collapsed: CollapsedChrome
 
     /** Both bars' hide / show (arc 33 / F3). Built by [initChrome], which the subclass calls in
      *  `onCreate` once [paper], [eraserBar] and the bar views exist and right after its root
@@ -159,6 +180,40 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
     /** The top bar's eraser button — the one contact that never dismisses the eraser sub-bar
      *  (its own re-tap toggles it; a dismissal here would make the toggle reopen what it closed). */
     protected abstract val eraserButtonView: View?
+
+    /** The top bar's Back button — the first entry of the collapsed chrome's overflow row (arc 36 /
+     *  C2), mirrored: the row's button performs this one's own click, never a copy of its handler. */
+    protected abstract val backButtonView: View?
+
+    /** The collapsed chrome's three views (arc 36 / C2) — the corner tool button, the mini toolbar
+     *  and the overflow row, declared in the screen's own layout after every bar they may overlap.
+     *  All three null (a screen that has not grown them) = no collapsed chrome at all. */
+    protected abstract val collapsedKnobView: ImageButton?
+    protected abstract val collapsedBarView: LinearLayout?
+    protected abstract val collapsedOverflowView: LinearLayout?
+
+    /**
+     * The overflow row's entries, Back first (decision 5). The default is Back alone — every screen
+     * has one and nothing else is universal; the pad adds Send, the calendar its doors. Read once,
+     * at [initChrome]: what a *button* shows is mirrored at every open, but which buttons exist is
+     * the screen's shape and does not change.
+     */
+    protected open fun collapsedOverflow(): List<CollapsedChrome.Entry> = listOfNotNull(backEntry())
+
+    /**
+     * Back as a mirrored entry, or null before the bar exists. The hint is the button's own content
+     * description — the screens name Back differently ("Back to the notebook", "Back to the
+     * calendar") and the row should say what the bar's long press says.
+     */
+    protected fun backEntry(): CollapsedChrome.Entry? =
+        backButtonView?.let { CollapsedChrome.Entry.mirroring(R.drawable.ic_arrow_left, it) }
+
+    /**
+     * Arm [tool] from the host side on the screen's own toolbar (`toolbar.arm`) — what a pick from
+     * the mini toolbar lands on. It exists for `arm`'s own reason: a host-set tool is never echoed
+     * back as `onToolChanged`, so the bar has to be told by hand.
+     */
+    protected abstract fun armTool(tool: Tool)
 
     /** The page being written on, or null before the document is built. */
     protected abstract val inkPage: InkPage?
@@ -304,6 +359,15 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
         }
 
         override fun onToolChanged(tool: Tool) = syncTool(tool)
+    }
+
+    /**
+     * The collapsed chrome's repaint (arc 36) — what the subclass wires into its toolbar's
+     * `onSynced`, the one funnel every tool change passes through (a bar tap, `arm`, every by-hand
+     * `syncTool`, `onToolChanged`), so the corner button can never be left out of one of them.
+     */
+    protected fun syncCollapsed() {
+        if (::collapsed.isInitialized) collapsed.sync()
     }
 
     // ── Page operations ──────────────────────────────────────────────────────
@@ -511,15 +575,34 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
         if (::chrome.isInitialized) chrome.pushExclusions()
     }
 
-    /** Every floating bar's rect, in window coordinates — the [PaperChrome] `extraRects` supplier. */
+    /** Every floating bar's rect, in window coordinates — the [PaperChrome] `extraRects` supplier.
+     *  The corner button and its rows are chrome like any other (arc 36 / C2): the pen refuses
+     *  under them. */
     protected fun floatingRects(): List<Rect> =
         (if (::selectionBar.isInitialized) selectionBar.rects() else emptyList()) +
-            (if (::eraserBar.isInitialized) eraserBar.rects() else emptyList())
+            (if (::eraserBar.isInitialized) eraserBar.rects() else emptyList()) +
+            (if (::collapsed.isInitialized) collapsed.rects() else emptyList())
 
     /** The matching hit test in root view-local coordinates — the `extraContains` supplier. */
     protected fun floatingContains(x: Int, y: Int): Boolean =
         (::selectionBar.isInitialized && selectionBar.contains(x, y)) ||
-            (::eraserBar.isInitialized && eraserBar.contains(x, y))
+            (::eraserBar.isInitialized && eraserBar.contains(x, y)) ||
+            (::collapsed.isInitialized && collapsed.contains(x, y))
+
+    // ── The collapsed chrome (arc 36 / C2) ───────────────────────────────────
+
+    /** Both of the corner button's rows down. Idempotent, and safe before the chrome is built —
+     *  every page swap and every exit calls it beside [hideEraserBar], for the same reason. */
+    protected fun dismissCollapsed() {
+        if (::collapsed.isInitialized) collapsed.dismiss()
+    }
+
+    /** The outside-contact dismissal — the rule lives in [CollapsedChrome], and these two screens
+     *  hang no sub-bar off the rows, so there is nothing to keep alive under a contact. */
+    private fun dismissCollapsedOnContact(ev: MotionEvent, index: Int) {
+        if (!::collapsed.isInitialized) return
+        collapsed.dismissOnContact(ev.getX(index).toInt(), ev.getY(index).toInt())
+    }
 
     // ── The eraser sub-bar (arc 29 / LE3) ────────────────────────────────────
 
@@ -591,18 +674,55 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
      */
     protected fun initChrome(savedInstanceState: Bundle? = null) {
         val root = screenRoot ?: return
+        initCollapsed(root)
         chromeToggle = ChromeToggle(
             paper = paper,
             root = root,
             bars = listOfNotNull(topBarView, bottomBarView),
             beforeHide = { hideEraserBar() },
             afterLayout = { pushExclusions() },
+            // Arc 36 / C2: the corner button lives exactly as long as the bars do not, and the
+            // rows hung under it go down before they come back.
+            whileHidden = listOfNotNull(collapsedKnobView),
+            beforeShow = { dismissCollapsed() },
         )
         val launched = intent.getBooleanExtra(ExtensionContract.EXTRA_CHROME_HIDDEN, false)
         val hidden = savedInstanceState?.takeIf { it.containsKey(KEY_CHROME_HIDDEN) }
             ?.getBoolean(KEY_CHROME_HIDDEN)
             ?: launched
         chromeToggle.apply(hidden, releaseRender = false)
+    }
+
+    /**
+     * Build the collapsed chrome (arc 36 / C2) — **before** the toggle, which flips the corner
+     * button with the bars and would otherwise have nothing to flip. A screen whose layout carries
+     * no corner button (or whose root is not a [ViewGroup] to hang the rows in) simply has none:
+     * every call site is `isInitialized`-guarded, as the eraser sub-bar's are.
+     *
+     * What the screen says is only what differs — its overflow entries and how it arms a tool.
+     * Everything else is [CollapsedChrome]'s; the corner button repaints through the toolbar's
+     * `onSynced` ([syncCollapsed]).
+     */
+    private fun initCollapsed(root: View) {
+        val knob = collapsedKnobView ?: return
+        val miniBar = collapsedBarView ?: return
+        val overflowBar = collapsedOverflowView ?: return
+        val group = root as? ViewGroup ?: return
+        collapsed = CollapsedChrome(
+            root = group,
+            knob = knob,
+            miniBar = miniBar,
+            overflowBar = overflowBar,
+            paper = paper,
+            bandBottom = { chromeBand()?.last },
+            canOpen = { opened && !closing },
+            overflow = collapsedOverflow(),
+            // The eraser's own sub-bar is the one other thing that could be up: it belongs to the
+            // bar's eraser button, which is not on the glass while the rows are.
+            onOpen = { hideEraserBar() },
+            onArmed = { armTool(it) },
+            onChanged = { pushExclusions() },
+        )
     }
 
     /** The chrome state survives a rebuild (arc 34 / L19) — it is the person's way of working, and
@@ -643,6 +763,7 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
         // arrives as ACTION_POINTER_DOWN (the notebook's O2 finding).
         if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
             dismissEraserBarOnContact(ev, ev.actionIndex)
+            dismissCollapsedOnContact(ev, ev.actionIndex)
         }
         if (::chrome.isInitialized && action == MotionEvent.ACTION_DOWN) {
             val tool = ev.getToolType(0)
@@ -682,6 +803,7 @@ abstract class InkScreenActivity<A : Any> : AppCompatActivity() {
         if (closing) return
         closing = true
         hideEraserBar()   // a floating bar belongs to a screen that is leaving
+        dismissCollapsed()   // and so do the corner button's rows (arc 36 / C2)
         screenRoot?.removeCallbacks(saveRunnable)
         val page = inkPage ?: run { finishWithHandoff(resultCode); return }
         appScope.launch {

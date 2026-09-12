@@ -47,6 +47,10 @@ class NotebookToolbar(
     private val onEraserReTap: () -> Unit = {},
     /** Any tool tap at all — the screen closes floating chrome that belonged to the old tool. */
     private val onToolTapped: () -> Unit = {},
+    /** Fires after every [sync] (arc 36) — the one funnel every tool change passes through (a
+     *  bar tap, [arm], every by-hand sync, `onToolChanged`), so the collapsed chrome's corner
+     *  button repaints from here and can never be left out of a by-hand arm. */
+    private val onSynced: () -> Unit = {},
 ) {
 
     init {
@@ -152,6 +156,7 @@ class NotebookToolbar(
             btnEraser.setImageResource(if (lassoKind) R.drawable.ic_lasso_eraser else R.drawable.ic_eraser)
         }
         btnLasso.isSelected = tool == Tool.LASSO
+        onSynced()
     }
 
     /** [PenIdle.releaseRenderIfIdle] — [PaperView.releaseRender]'s own pen-gated contract. */
